@@ -28,6 +28,12 @@ public interface IDownload
     Task<string?> PathAsync();
 
     /// <summary>
+    /// Returns the failure reason if the download failed, or null if it succeeded.
+    /// </summary>
+    /// <returns>The failure reason, or null.</returns>
+    Task<string?> FailureAsync();
+
+    /// <summary>
     /// Deletes the downloaded file.
     /// </summary>
     Task DeleteAsync();

@@ -16,4 +16,7 @@ public sealed record LocatorOptions
 
     /// <summary>Maximum time in milliseconds to wait for the element.</summary>
     public double? Timeout { get; init; }
+
+    /// <summary>Whether to pierce shadow DOM boundaries when locating elements. Null uses the engine default (true).</summary>
+    public bool? PierceShadow { get; init; }
 }

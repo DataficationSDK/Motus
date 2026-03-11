@@ -14,9 +14,9 @@ namespace Motus.Abstractions;
 public sealed record Cookie(
     string Name,
     string Value,
-    string? Domain = null,
-    string? Path = null,
-    double? Expires = null,
-    bool? HttpOnly = null,
-    bool? Secure = null,
-    SameSiteAttribute? SameSite = null);
+    string Domain,
+    string Path,
+    double Expires,
+    bool HttpOnly,
+    bool Secure,
+    SameSiteAttribute SameSite);

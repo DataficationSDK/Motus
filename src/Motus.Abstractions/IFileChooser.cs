@@ -11,9 +11,9 @@ public interface IFileChooser
     IPage Page { get; }
 
     /// <summary>
-    /// Gets the input element associated with the file chooser.
+    /// Gets the locator for the input element associated with the file chooser.
     /// </summary>
-    IElementHandle Element { get; }
+    ILocator Element { get; }
 
     /// <summary>
     /// Gets whether the file chooser allows multiple file selection.
@@ -24,5 +24,6 @@ public interface IFileChooser
     /// Sets the files for the file chooser.
     /// </summary>
     /// <param name="files">The files to select.</param>
-    Task SetFilesAsync(IEnumerable<FilePayload> files);
+    /// <param name="ct">Cancellation token.</param>
+    Task SetFilesAsync(IEnumerable<FilePayload> files, CancellationToken ct = default);
 }

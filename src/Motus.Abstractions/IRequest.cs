@@ -38,11 +38,10 @@ public interface IRequest
     /// <summary>
     /// Gets the frame that initiated this request.
     /// </summary>
-    IFrame? Frame { get; }
+    IFrame Frame { get; }
 
     /// <summary>
-    /// Returns the response for this request, or null if the request was not fulfilled.
+    /// Gets the response for this request, or null if the request was not fulfilled.
     /// </summary>
-    /// <returns>The response, or null.</returns>
-    Task<IResponse?> ResponseAsync();
+    IResponse? Response { get; }
 }

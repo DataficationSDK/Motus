@@ -36,21 +36,29 @@ public interface IResponse
     IRequest Request { get; }
 
     /// <summary>
+    /// Gets the frame that initiated the request for this response.
+    /// </summary>
+    IFrame Frame { get; }
+
+    /// <summary>
     /// Returns the response body as a byte array.
     /// </summary>
+    /// <param name="ct">Cancellation token.</param>
     /// <returns>The response body bytes.</returns>
-    Task<byte[]> BodyAsync();
+    Task<byte[]> BodyAsync(CancellationToken ct = default);
 
     /// <summary>
     /// Returns the response body as text.
     /// </summary>
+    /// <param name="ct">Cancellation token.</param>
     /// <returns>The response body text.</returns>
-    Task<string> TextAsync();
+    Task<string> TextAsync(CancellationToken ct = default);
 
     /// <summary>
     /// Deserializes the response body as JSON.
     /// </summary>
     /// <typeparam name="T">The expected deserialized type.</typeparam>
+    /// <param name="ct">Cancellation token.</param>
     /// <returns>The deserialized object.</returns>
-    Task<T> JsonAsync<T>();
+    Task<T> JsonAsync<T>(CancellationToken ct = default);
 }

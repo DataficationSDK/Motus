@@ -18,7 +18,7 @@ public sealed record ContextOptions
     public Geolocation? Geolocation { get; init; }
 
     /// <summary>Permissions to grant to all pages in this context.</summary>
-    public IEnumerable<string>? Permissions { get; init; }
+    public IReadOnlyList<string>? Permissions { get; init; }
 
     /// <summary>The preferred color scheme.</summary>
     public ColorScheme? ColorScheme { get; init; }
@@ -27,7 +27,7 @@ public sealed record ContextOptions
     public string? UserAgent { get; init; }
 
     /// <summary>Whether to ignore HTTPS errors.</summary>
-    public bool? IgnoreHttpsErrors { get; init; }
+    public bool IgnoreHTTPSErrors { get; init; }
 
     /// <summary>HTTP credentials for HTTP authentication.</summary>
     public HttpCredentials? HttpCredentials { get; init; }
@@ -44,9 +44,6 @@ public sealed record ContextOptions
     /// <summary>Extra HTTP headers to send with every request.</summary>
     public IDictionary<string, string>? ExtraHttpHeaders { get; init; }
 
-    /// <summary>Whether to bypass content security policy.</summary>
-    public bool? BypassCSP { get; init; }
-
-    /// <summary>Whether the context is offline.</summary>
-    public bool? Offline { get; init; }
+    /// <summary>Base URL to use for relative URL navigations.</summary>
+    public string? BaseURL { get; init; }
 }

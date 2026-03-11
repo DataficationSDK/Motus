@@ -19,11 +19,8 @@ public interface IRoute
     /// <summary>
     /// Continues the route with optional modifications to the request.
     /// </summary>
-    /// <param name="url">Optional URL override.</param>
-    /// <param name="method">Optional HTTP method override.</param>
-    /// <param name="headers">Optional headers override.</param>
-    /// <param name="postData">Optional post data override.</param>
-    Task ContinueAsync(string? url = null, string? method = null, IDictionary<string, string>? headers = null, string? postData = null);
+    /// <param name="options">Options for continuing the route.</param>
+    Task ContinueAsync(RouteContinueOptions? options = null);
 
     /// <summary>
     /// Aborts the route.

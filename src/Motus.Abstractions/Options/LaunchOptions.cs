@@ -6,7 +6,7 @@ namespace Motus.Abstractions;
 public sealed record LaunchOptions
 {
     /// <summary>Whether to run the browser in headless mode.</summary>
-    public bool? Headless { get; init; }
+    public bool Headless { get; init; } = true;
 
     /// <summary>The browser distribution channel to use.</summary>
     public BrowserChannel? Channel { get; init; }
@@ -15,26 +15,26 @@ public sealed record LaunchOptions
     public string? ExecutablePath { get; init; }
 
     /// <summary>Additional command-line arguments to pass to the browser.</summary>
-    public IEnumerable<string>? Args { get; init; }
+    public IReadOnlyList<string>? Args { get; init; }
 
     /// <summary>Slows down operations by the specified number of milliseconds.</summary>
-    public double? SlowMo { get; init; }
+    public int SlowMo { get; init; }
 
     /// <summary>Maximum time in milliseconds to wait for the browser to start.</summary>
-    public double? Timeout { get; init; }
+    public int Timeout { get; init; } = 30_000;
 
     /// <summary>Path to a user data directory for the browser profile.</summary>
     public string? UserDataDir { get; init; }
 
-    /// <summary>Whether to auto-download the browser if not found.</summary>
-    public bool? HandleSIGINT { get; init; }
+    /// <summary>Whether to handle the SIGINT signal.</summary>
+    public bool HandleSIGINT { get; init; } = true;
 
-    /// <summary>Whether to pipe browser process stderr to the parent process.</summary>
-    public bool? HandleSIGTERM { get; init; }
+    /// <summary>Whether to handle the SIGTERM signal.</summary>
+    public bool HandleSIGTERM { get; init; } = true;
 
-    /// <summary>Proxy settings for all browser contexts.</summary>
-    public ProxySettings? Proxy { get; init; }
+    /// <summary>If specified, default arguments that should be filtered out.</summary>
+    public IReadOnlyList<string>? IgnoreDefaultArgs { get; init; }
 
-    /// <summary>Environment variables to set for the browser process.</summary>
-    public IDictionary<string, string>? Env { get; init; }
+    /// <summary>Path to a folder for browser downloads.</summary>
+    public string? DownloadsPath { get; init; }
 }

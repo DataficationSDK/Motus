@@ -3,14 +3,14 @@ namespace Motus.Abstractions;
 /// <summary>
 /// Represents a read-only collection of HTTP headers.
 /// </summary>
-public interface IHeaderCollection : IEnumerable<KeyValuePair<string, string>>
+public interface IHeaderCollection : IEnumerable<KeyValuePair<string, IReadOnlyList<string>>>
 {
     /// <summary>
     /// Gets the value of the header with the specified name.
     /// </summary>
     /// <param name="name">The header name (case-insensitive).</param>
-    /// <returns>The header value, or null if the header is not present.</returns>
-    string? this[string name] { get; }
+    /// <returns>The header value.</returns>
+    string this[string name] { get; }
 
     /// <summary>
     /// Gets all values for the header with the specified name.
