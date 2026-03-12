@@ -19,6 +19,7 @@ internal sealed class CdpTransport : IAsyncDisposable
     private const int InitialBufferSize = 16 * 1024;
 
     private readonly ICdpSocket _socket;
+    private readonly TimeSpan _slowMo;
     private readonly CancellationTokenSource _cts = new();
     private Task? _receiveLoop;
     private bool _disposed;
@@ -32,9 +33,10 @@ internal sealed class CdpTransport : IAsyncDisposable
     /// </summary>
     internal event Action<Exception?>? Disconnected;
 
-    internal CdpTransport(ICdpSocket socket)
+    internal CdpTransport(ICdpSocket socket, TimeSpan slowMo = default)
     {
         _socket = socket;
+        _slowMo = slowMo;
     }
 
     /// <summary>
@@ -60,6 +62,9 @@ internal sealed class CdpTransport : IAsyncDisposable
 
         try
         {
+            if (_slowMo > TimeSpan.Zero)
+                await Task.Delay(_slowMo, ct);
+
             var envelope = new CdpCommandEnvelope(id, method, paramsElement, sessionId);
             var bytes = JsonSerializer.SerializeToUtf8Bytes(envelope, CdpJsonContext.Default.CdpCommandEnvelope);
             await _socket.SendAsync(bytes, ct);
