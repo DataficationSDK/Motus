@@ -100,20 +100,20 @@ internal sealed class Locator : ILocator
         if (_nthIndex is null)
         {
             if (handles.Count == 0)
-                throw new InvalidOperationException($"No element found for selector: {_selector}");
+                throw new ElementNotFoundException(_selector, _page.Url);
             selected = handles[0];
         }
         else if (_nthIndex == -1)
         {
             if (handles.Count == 0)
-                throw new InvalidOperationException($"No element found for selector: {_selector}");
+                throw new ElementNotFoundException(_selector, _page.Url);
             selected = handles[^1];
         }
         else
         {
             var idx = _nthIndex.Value;
             if (idx < 0 || idx >= handles.Count)
-                throw new InvalidOperationException($"No element found for selector: {_selector}");
+                throw new ElementNotFoundException(_selector, _page.Url);
             selected = handles[idx];
         }
 
@@ -194,6 +194,12 @@ internal sealed class Locator : ILocator
         {
             await action();
         }
+        catch (MotusException mex) when (mex.Screenshot is null)
+        {
+            error = mex;
+            await FailureCapture.AttachScreenshotAsync(mex, _page);
+            throw;
+        }
         catch (Exception ex)
         {
             error = ex;
@@ -213,6 +219,12 @@ internal sealed class Locator : ILocator
         try
         {
             return await action();
+        }
+        catch (MotusException mex) when (mex.Screenshot is null)
+        {
+            error = mex;
+            await FailureCapture.AttachScreenshotAsync(mex, _page);
+            throw;
         }
         catch (Exception ex)
         {
@@ -257,7 +269,7 @@ internal sealed class Locator : ILocator
             var objectId = await ActionabilityChecker.WaitForActionabilityAsync(
                 _page, ResolveObjectIdCoreAsync,
                 ActionabilityFlags.Visible | ActionabilityFlags.Enabled | ActionabilityFlags.Stable | ActionabilityFlags.ReceivesEvents,
-                cts.Token);
+                _selector, cts.Token);
             var box = await GetBoundingBoxOrThrowAsync(objectId, cts.Token);
             await _page.Mouse.ClickAsync(box.X + box.Width / 2, box.Y + box.Height / 2);
         });
@@ -271,7 +283,7 @@ internal sealed class Locator : ILocator
             var objectId = await ActionabilityChecker.WaitForActionabilityAsync(
                 _page, ResolveObjectIdCoreAsync,
                 ActionabilityFlags.Visible | ActionabilityFlags.Enabled | ActionabilityFlags.Stable | ActionabilityFlags.ReceivesEvents,
-                cts.Token);
+                _selector, cts.Token);
             var box = await GetBoundingBoxOrThrowAsync(objectId, cts.Token);
             await _page.Mouse.DblClickAsync(box.X + box.Width / 2, box.Y + box.Height / 2);
         });
@@ -285,7 +297,7 @@ internal sealed class Locator : ILocator
             var objectId = await ActionabilityChecker.WaitForActionabilityAsync(
                 _page, ResolveObjectIdCoreAsync,
                 ActionabilityFlags.Visible | ActionabilityFlags.Enabled | ActionabilityFlags.Editable,
-                cts.Token);
+                _selector, cts.Token);
             await EvalOnElementVoidAsync(objectId,
                 """
                 function(value) {
@@ -308,7 +320,7 @@ internal sealed class Locator : ILocator
             var objectId = await ActionabilityChecker.WaitForActionabilityAsync(
                 _page, ResolveObjectIdCoreAsync,
                 ActionabilityFlags.Visible | ActionabilityFlags.Enabled | ActionabilityFlags.Editable,
-                cts.Token);
+                _selector, cts.Token);
             await EvalOnElementVoidAsync(objectId,
                 """
                 function() {
@@ -329,7 +341,7 @@ internal sealed class Locator : ILocator
             var objectId = await ActionabilityChecker.WaitForActionabilityAsync(
                 _page, ResolveObjectIdCoreAsync,
                 ActionabilityFlags.Visible | ActionabilityFlags.Enabled | ActionabilityFlags.Editable,
-                cts.Token);
+                _selector, cts.Token);
             await EvalOnElementVoidAsync(objectId, "function() { this.focus(); }", null, cts.Token);
             await _page.Keyboard.TypeAsync(text, options);
         });
@@ -343,7 +355,7 @@ internal sealed class Locator : ILocator
             var objectId = await ActionabilityChecker.WaitForActionabilityAsync(
                 _page, ResolveObjectIdCoreAsync,
                 ActionabilityFlags.Visible | ActionabilityFlags.Enabled | ActionabilityFlags.Editable,
-                cts.Token);
+                _selector, cts.Token);
             await EvalOnElementVoidAsync(objectId, "function() { this.focus(); }", null, cts.Token);
             await _page.Keyboard.PressAsync(key, options);
         });
@@ -357,7 +369,7 @@ internal sealed class Locator : ILocator
             var objectId = await ActionabilityChecker.WaitForActionabilityAsync(
                 _page, ResolveObjectIdCoreAsync,
                 ActionabilityFlags.Visible | ActionabilityFlags.Enabled,
-                cts.Token);
+                _selector, cts.Token);
             var isChecked = await EvalOnElementAsync<bool>(objectId, "function() { return this.checked; }", null, cts.Token);
             if (!isChecked)
             {
@@ -375,7 +387,7 @@ internal sealed class Locator : ILocator
             var objectId = await ActionabilityChecker.WaitForActionabilityAsync(
                 _page, ResolveObjectIdCoreAsync,
                 ActionabilityFlags.Visible | ActionabilityFlags.Enabled,
-                cts.Token);
+                _selector, cts.Token);
             var isChecked = await EvalOnElementAsync<bool>(objectId, "function() { return this.checked; }", null, cts.Token);
             if (isChecked)
             {
@@ -401,7 +413,7 @@ internal sealed class Locator : ILocator
             var objectId = await ActionabilityChecker.WaitForActionabilityAsync(
                 _page, ResolveObjectIdCoreAsync,
                 ActionabilityFlags.Visible | ActionabilityFlags.Enabled,
-                cts.Token);
+                _selector, cts.Token);
             return await EvalOnElementAsync<string[]>(objectId,
                 """
                 function(values) {
@@ -429,7 +441,7 @@ internal sealed class Locator : ILocator
             var objectId = await ActionabilityChecker.WaitForActionabilityAsync(
                 _page, ResolveObjectIdCoreAsync,
                 ActionabilityFlags.Visible | ActionabilityFlags.Enabled,
-                cts.Token);
+                _selector, cts.Token);
             var tempFiles = new List<string>();
 
             try
@@ -468,7 +480,7 @@ internal sealed class Locator : ILocator
             var objectId = await ActionabilityChecker.WaitForActionabilityAsync(
                 _page, ResolveObjectIdCoreAsync,
                 ActionabilityFlags.Visible | ActionabilityFlags.Stable | ActionabilityFlags.ReceivesEvents,
-                cts.Token);
+                _selector, cts.Token);
             var box = await GetBoundingBoxOrThrowAsync(objectId, cts.Token);
             await _page.Mouse.MoveAsync(box.X + box.Width / 2, box.Y + box.Height / 2);
         });
@@ -480,7 +492,7 @@ internal sealed class Locator : ILocator
         var objectId = await ActionabilityChecker.WaitForActionabilityAsync(
             _page, ResolveObjectIdCoreAsync,
             ActionabilityFlags.None,
-            cts.Token);
+            _selector, cts.Token);
         await EvalOnElementVoidAsync(objectId, "function() { this.focus(); }", null, cts.Token);
     }
 
@@ -492,7 +504,7 @@ internal sealed class Locator : ILocator
             var objectId = await ActionabilityChecker.WaitForActionabilityAsync(
                 _page, ResolveObjectIdCoreAsync,
                 ActionabilityFlags.Visible | ActionabilityFlags.Enabled | ActionabilityFlags.Stable | ActionabilityFlags.ReceivesEvents,
-                cts.Token);
+                _selector, cts.Token);
             var box = await GetBoundingBoxOrThrowAsync(objectId, cts.Token);
             await _page.Touchscreen.TapAsync(box.X + box.Width / 2, box.Y + box.Height / 2);
         });
@@ -504,7 +516,7 @@ internal sealed class Locator : ILocator
         var objectId = await ActionabilityChecker.WaitForActionabilityAsync(
             _page, ResolveObjectIdCoreAsync,
             ActionabilityFlags.None,
-            cts.Token);
+            _selector, cts.Token);
         await EvalOnElementVoidAsync(objectId,
             "function() { this.scrollIntoViewIfNeeded ? this.scrollIntoViewIfNeeded() : this.scrollIntoView({ block: 'center' }); }",
             null, cts.Token);
@@ -516,7 +528,7 @@ internal sealed class Locator : ILocator
         var objectId = await ActionabilityChecker.WaitForActionabilityAsync(
             _page, ResolveObjectIdCoreAsync,
             ActionabilityFlags.Visible,
-            cts.Token);
+            _selector, cts.Token);
         var box = await GetBoundingBoxOrThrowAsync(objectId, cts.Token);
 
         var format = options?.Type == ScreenshotType.Jpeg ? "jpeg" : "png";
@@ -743,14 +755,20 @@ internal sealed class Locator : ILocator
                 };
                 if (satisfied) return;
             }
-            catch (InvalidOperationException) when (target is ElementState.Detached or ElementState.Hidden)
+            catch (Exception ex) when (ex is InvalidOperationException or MotusSelectorException
+                && target is ElementState.Detached or ElementState.Hidden)
             {
                 return; // element not found satisfies Detached/Hidden
             }
-            catch (InvalidOperationException) { /* not found, retry for Attached/Visible */ }
+            catch (Exception ex) when (ex is InvalidOperationException or MotusSelectorException)
+            { /* not found, retry for Attached/Visible */ }
             catch (OperationCanceledException)
             {
-                throw new TimeoutException($"WaitForAsync('{target}') timed out for selector '{_selector}'.");
+                throw new WaitTimeoutException(
+                    condition: target.ToString(),
+                    timeoutDuration: TimeSpan.FromMilliseconds(timeout ?? _defaultTimeout ?? ActionabilityChecker.DefaultTimeoutMs),
+                    lastEvaluatedValue: null,
+                    message: $"WaitForAsync('{target}') timed out for selector '{_selector}'.");
             }
             await Task.Delay(ActionabilityChecker.PollingIntervalMs, ct);
         }
@@ -813,8 +831,11 @@ internal sealed class Locator : ILocator
         }
         catch (OperationCanceledException)
         {
-            throw new TimeoutException(
-                $"WaitForCondition('{condition.ConditionName}') timed out after {timeoutMs}ms.");
+            throw new WaitTimeoutException(
+                condition: condition.ConditionName,
+                timeoutDuration: TimeSpan.FromMilliseconds(timeoutMs),
+                lastEvaluatedValue: null,
+                message: $"WaitForCondition('{condition.ConditionName}') timed out after {timeoutMs}ms.");
         }
     }
 

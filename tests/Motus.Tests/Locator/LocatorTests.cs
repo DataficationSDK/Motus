@@ -393,7 +393,7 @@ public class LocatorTests
         _socket.QueueResponse("""{"id": 9, "sessionId": "session-1", "result": {"result": {"type": "object", "objectId": "arr-empty"}}}""");
         _socket.QueueResponse("""{"id": 10, "sessionId": "session-1", "result": {"result": []}}""");
 
-        await Assert.ThrowsExceptionAsync<InvalidOperationException>(
+        await Assert.ThrowsExceptionAsync<ElementNotFoundException>(
             () => locator.TextContentAsync());
     }
 }

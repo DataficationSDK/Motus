@@ -29,7 +29,7 @@ internal sealed partial class Page
             _pageCts.Token);
 
         if (result.ErrorText is not null)
-            throw new InvalidOperationException($"Navigation failed: {result.ErrorText}");
+            throw new MotusNavigationException(url, errorCode: result.ErrorText, pageUrl: Url);
 
         await waiter;
 
@@ -158,8 +158,11 @@ internal sealed partial class Page
             await Task.Delay(100, cts.Token);
         }
 
-        throw new TimeoutException(
-            $"WaitForURL timed out waiting for '{urlPattern}' after {timeout.TotalMilliseconds}ms.");
+        throw new WaitTimeoutException(
+            condition: $"URL match '{urlPattern}'",
+            timeoutDuration: timeout,
+            lastEvaluatedValue: Url,
+            message: $"WaitForURL timed out waiting for '{urlPattern}' after {timeout.TotalMilliseconds}ms.");
     }
 
     public async Task WaitForTimeoutAsync(double timeout) =>
@@ -179,7 +182,9 @@ internal sealed partial class Page
         var cts = new CancellationTokenSource(timeout);
 
         cts.Token.Register(() => tcs.TrySetException(
-            new TimeoutException($"Navigation timed out after {timeout.TotalMilliseconds}ms.")));
+            new NavigationTimeoutException(
+                url: string.Empty, timeoutDuration: timeout, lastNetworkEvents: null,
+                message: $"Navigation timed out after {timeout.TotalMilliseconds}ms.")));
 
         if (waitUntil == WaitUntil.DOMContentLoaded)
         {

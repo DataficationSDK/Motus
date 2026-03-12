@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Motus.Abstractions;
 
 namespace Motus;
 
@@ -39,6 +40,8 @@ internal static class CdpEndpointPoller
             await Task.Delay(PollInterval, ct);
         }
 
-        throw new TimeoutException($"Browser did not provide a CDP endpoint within {timeout.TotalSeconds}s on port {port}.");
+        throw new MotusTimeoutException(
+            timeoutDuration: timeout,
+            message: $"Browser did not provide a CDP endpoint within {timeout.TotalSeconds}s on port {port}.");
     }
 }

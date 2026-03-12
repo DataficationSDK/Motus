@@ -122,7 +122,7 @@ public class PageNavigationTests
             }
             """);
 
-        await Assert.ThrowsExceptionAsync<InvalidOperationException>(() => gotoTask);
+        await Assert.ThrowsExceptionAsync<MotusNavigationException>(() => gotoTask);
     }
 
     [TestMethod]

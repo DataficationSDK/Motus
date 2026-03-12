@@ -37,10 +37,25 @@ internal sealed class CdpSession
         JsonTypeInfo<TResponse> responseTypeInfo,
         CancellationToken ct)
     {
-        var paramsElement = JsonSerializer.SerializeToElement(command, paramsTypeInfo);
-        var resultElement = await _transport.SendRawAsync(method, paramsElement, SessionId, ct);
-        return JsonSerializer.Deserialize(resultElement, responseTypeInfo)
-               ?? throw new CdpProtocolException($"Null result for {method}");
+        try
+        {
+            var paramsElement = JsonSerializer.SerializeToElement(command, paramsTypeInfo);
+            var resultElement = await _transport.SendRawAsync(method, paramsElement, SessionId, ct);
+            return JsonSerializer.Deserialize(resultElement, responseTypeInfo)
+                   ?? throw new CdpProtocolException($"Null result for {method}");
+        }
+        catch (CdpProtocolException cdpEx)
+        {
+            throw new Abstractions.MotusProtocolException(
+                cdpErrorCode: cdpEx.Code, commandSent: method,
+                message: cdpEx.Message, innerException: cdpEx);
+        }
+        catch (CdpDisconnectedException discEx)
+        {
+            throw new Abstractions.MotusTargetClosedException(
+                targetType: "session", targetId: SessionId,
+                message: discEx.Message, innerException: discEx);
+        }
     }
 
     /// <summary>
@@ -51,10 +66,25 @@ internal sealed class CdpSession
         JsonTypeInfo<TResponse> responseTypeInfo,
         CancellationToken ct)
     {
-        var emptyParams = EmptyJsonElement();
-        var resultElement = await _transport.SendRawAsync(method, emptyParams, SessionId, ct);
-        return JsonSerializer.Deserialize(resultElement, responseTypeInfo)
-               ?? throw new CdpProtocolException($"Null result for {method}");
+        try
+        {
+            var emptyParams = EmptyJsonElement();
+            var resultElement = await _transport.SendRawAsync(method, emptyParams, SessionId, ct);
+            return JsonSerializer.Deserialize(resultElement, responseTypeInfo)
+                   ?? throw new CdpProtocolException($"Null result for {method}");
+        }
+        catch (CdpProtocolException cdpEx)
+        {
+            throw new Abstractions.MotusProtocolException(
+                cdpErrorCode: cdpEx.Code, commandSent: method,
+                message: cdpEx.Message, innerException: cdpEx);
+        }
+        catch (CdpDisconnectedException discEx)
+        {
+            throw new Abstractions.MotusTargetClosedException(
+                targetType: "session", targetId: SessionId,
+                message: discEx.Message, innerException: discEx);
+        }
     }
 
     /// <summary>
@@ -66,8 +96,23 @@ internal sealed class CdpSession
         JsonTypeInfo<TParams> paramsTypeInfo,
         CancellationToken ct)
     {
-        var paramsElement = JsonSerializer.SerializeToElement(command, paramsTypeInfo);
-        await _transport.SendRawAsync(method, paramsElement, SessionId, ct);
+        try
+        {
+            var paramsElement = JsonSerializer.SerializeToElement(command, paramsTypeInfo);
+            await _transport.SendRawAsync(method, paramsElement, SessionId, ct);
+        }
+        catch (CdpProtocolException cdpEx)
+        {
+            throw new Abstractions.MotusProtocolException(
+                cdpErrorCode: cdpEx.Code, commandSent: method,
+                message: cdpEx.Message, innerException: cdpEx);
+        }
+        catch (CdpDisconnectedException discEx)
+        {
+            throw new Abstractions.MotusTargetClosedException(
+                targetType: "session", targetId: SessionId,
+                message: discEx.Message, innerException: discEx);
+        }
     }
 
     /// <summary>

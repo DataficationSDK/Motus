@@ -118,7 +118,7 @@ public class ActionabilityTests
             _socket.QueueResponse($@"{{""id"": {10 + i}, ""sessionId"": ""session-1"", ""result"": {{""result"": []}}}}");
         }
 
-        await Assert.ThrowsExceptionAsync<TimeoutException>(
+        await Assert.ThrowsExceptionAsync<ActionTimeoutException>(
             () => locator.ClickAsync(timeout: 200));
     }
 

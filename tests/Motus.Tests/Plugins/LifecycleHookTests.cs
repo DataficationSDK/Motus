@@ -223,7 +223,7 @@ public class LifecycleHookTests
         {
             await locator.ClickAsync(timeout: 200);
         }
-        catch (TimeoutException)
+        catch (ActionTimeoutException)
         {
             // Expected
         }

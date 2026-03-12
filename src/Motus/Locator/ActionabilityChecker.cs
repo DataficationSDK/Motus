@@ -23,13 +23,17 @@ internal static class ActionabilityChecker
         Page page,
         Func<CancellationToken, Task<string>> resolveObjectId,
         ActionabilityFlags flags,
+        string selector,
         CancellationToken ct)
     {
+        string lastCheckName = "resolve";
+
         try
         {
             while (true)
             {
                 ct.ThrowIfCancellationRequested();
+                lastCheckName = "resolve";
 
                 string objectId;
                 try
@@ -37,7 +41,7 @@ internal static class ActionabilityChecker
                     objectId = await resolveObjectId(ct);
                 }
                 catch (OperationCanceledException) { throw; }
-                catch (InvalidOperationException)
+                catch (Exception ex) when (ex is InvalidOperationException or MotusSelectorException)
                 {
                     await Task.Delay(PollingIntervalMs, ct);
                     continue;
@@ -48,30 +52,35 @@ internal static class ActionabilityChecker
                     if (flags == ActionabilityFlags.None)
                         return objectId;
 
+                    lastCheckName = "visible";
                     if (flags.HasFlag(ActionabilityFlags.Visible) && !await IsVisibleAsync(page, objectId, ct))
                     {
                         await Task.Delay(PollingIntervalMs, ct);
                         continue;
                     }
 
+                    lastCheckName = "enabled";
                     if (flags.HasFlag(ActionabilityFlags.Enabled) && !await IsEnabledAsync(page, objectId, ct))
                     {
                         await Task.Delay(PollingIntervalMs, ct);
                         continue;
                     }
 
+                    lastCheckName = "editable";
                     if (flags.HasFlag(ActionabilityFlags.Editable) && !await IsEditableAsync(page, objectId, ct))
                     {
                         await Task.Delay(PollingIntervalMs, ct);
                         continue;
                     }
 
+                    lastCheckName = "stable";
                     if (flags.HasFlag(ActionabilityFlags.Stable) && !await IsStableAsync(page, objectId, ct))
                     {
                         await Task.Delay(PollingIntervalMs, ct);
                         continue;
                     }
 
+                    lastCheckName = "receivesEvents";
                     if (flags.HasFlag(ActionabilityFlags.ReceivesEvents) && !await ReceivesEventsAsync(page, objectId, ct))
                     {
                         await Task.Delay(PollingIntervalMs, ct);
@@ -81,7 +90,7 @@ internal static class ActionabilityChecker
                     return objectId;
                 }
                 catch (OperationCanceledException) { throw; }
-                catch (InvalidOperationException)
+                catch (Exception ex) when (ex is InvalidOperationException or MotusSelectorException)
                 {
                     // Element went stale during checks, retry from scratch
                     await Task.Delay(PollingIntervalMs, ct);
@@ -90,7 +99,10 @@ internal static class ActionabilityChecker
         }
         catch (OperationCanceledException)
         {
-            throw new TimeoutException("Actionability checks timed out.");
+            throw new ActionTimeoutException(
+                selector, lastCheckName, elementState: null, pageUrl: page.Url,
+                timeoutDuration: TimeSpan.FromMilliseconds(DefaultTimeoutMs),
+                message: $"Actionability check '{lastCheckName}' timed out for selector '{selector}'.");
         }
     }
 
