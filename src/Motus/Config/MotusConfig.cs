@@ -7,13 +7,20 @@ internal sealed record MotusFailureConfig(
     string ScreenshotPath = "test-results/failures",
     bool Trace = false);
 
+internal sealed record MotusAssertionsConfig(
+    int Timeout = 30_000);
+
+internal sealed record MotusRootConfig(
+    MotusFailureConfig? Failure = null,
+    MotusAssertionsConfig? Assertions = null);
+
 internal static class MotusConfigLoader
 {
-    private static readonly Lazy<MotusFailureConfig> _config = new(Load);
+    private static readonly Lazy<MotusRootConfig> _config = new(Load);
 
-    internal static MotusFailureConfig Config => _config.Value;
+    internal static MotusRootConfig Config => _config.Value;
 
-    private static MotusFailureConfig Load()
+    private static MotusRootConfig Load()
     {
         try
         {
@@ -24,7 +31,7 @@ internal static class MotusConfigLoader
                 if (File.Exists(configPath))
                 {
                     var json = File.ReadAllText(configPath);
-                    var config = JsonSerializer.Deserialize(json, MotusConfigJsonContext.Default.MotusFailureConfig);
+                    var config = JsonSerializer.Deserialize(json, MotusConfigJsonContext.Default.MotusRootConfig);
                     if (config is not null)
                         return config;
                 }
@@ -36,6 +43,6 @@ internal static class MotusConfigLoader
             // Config loading must never fail; return defaults
         }
 
-        return new MotusFailureConfig();
+        return new MotusRootConfig();
     }
 }

@@ -38,6 +38,41 @@ internal sealed class Locator : ILocator
         _pierceShadow = pierceShadow;
     }
 
+    // --- Internal Properties for Assertions ---
+
+    internal string Selector => _selector;
+    internal string PageUrl => _page.Url;
+
+    internal async Task<bool> IsEmptyAsync(CancellationToken ct)
+    {
+        var objectId = await ResolveObjectIdCoreAsync(ct);
+        return await EvalOnElementAsync<bool>(objectId,
+            """
+            function() {
+                var tag = this.tagName.toLowerCase();
+                if (tag === 'input' || tag === 'textarea' || tag === 'select')
+                    return this.value === '';
+                return this.textContent.trim() === '';
+            }
+            """, null, ct);
+    }
+
+    internal async Task<string?> GetComputedStyleAsync(string property, CancellationToken ct)
+    {
+        var objectId = await ResolveObjectIdCoreAsync(ct);
+        return await EvalOnElementAsync<string?>(objectId,
+            "function(prop) { return window.getComputedStyle(this).getPropertyValue(prop); }",
+            [new RuntimeCallArgument(Value: JsonSerializer.SerializeToElement(property))], ct);
+    }
+
+    internal async Task<bool> HasClassAsync(string className, CancellationToken ct)
+    {
+        var objectId = await ResolveObjectIdCoreAsync(ct);
+        return await EvalOnElementAsync<bool>(objectId,
+            "function(cls) { return this.classList.contains(cls); }",
+            [new RuntimeCallArgument(Value: JsonSerializer.SerializeToElement(className))], ct);
+    }
+
     // --- Timeout Helper ---
 
     private CancellationTokenSource BuildActionCts(double? methodTimeout)
