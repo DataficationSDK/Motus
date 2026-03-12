@@ -43,14 +43,18 @@ public class PageNetworkIntegrationTests
             {
                 Status = 200,
                 ContentType = "application/json",
-                Body = """{"mocked": true}"""
+                Body = """{"mocked": true}""",
+                Headers = new Dictionary<string, string>
+                {
+                    ["Access-Control-Allow-Origin"] = "*"
+                }
             });
         });
 
-        // Use evaluate to fetch the mocked URL
+        // Use absolute URL since data: pages have no origin for relative URLs
         var result = await page.EvaluateAsync<string>("""
             (async () => {
-                const res = await fetch('/mock-api');
+                const res = await fetch('http://localhost:19999/mock-api');
                 return await res.text();
             })()
         """);
@@ -72,7 +76,7 @@ public class PageNetworkIntegrationTests
         var result = await page.EvaluateAsync<string>("""
             (async () => {
                 try {
-                    await fetch('/blocked');
+                    await fetch('http://localhost:19999/blocked');
                     return 'success';
                 } catch(e) {
                     return 'blocked';
@@ -126,21 +130,27 @@ public class PageNetworkIntegrationTests
         await page.GotoAsync("data:text/html,<h1>Test</h1>");
 
         string? interceptedMethod = null;
+        var intercepted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         await page.RouteAsync("**/test-continue", async route =>
         {
             interceptedMethod = route.Request.Method;
             await route.ContinueAsync();
+            intercepted.TrySetResult();
         });
 
-        // Trigger a fetch to the intercepted URL
-        await page.EvaluateAsync<string>("""
+        // Use absolute URL and fire-and-forget since the request will fail after continue
+        _ = page.EvaluateAsync<string>("""
             (async () => {
-                try { await fetch('/test-continue'); } catch {}
+                try { await fetch('http://localhost:19999/test-continue'); } catch {}
                 return 'done';
             })()
         """);
 
-        await Task.Delay(300);
+        // Wait for the route handler to fire (with timeout)
+        var timeoutCts = new CancellationTokenSource(5000);
+        timeoutCts.Token.Register(() => intercepted.TrySetCanceled());
+        await intercepted.Task;
+
         Assert.AreEqual("GET", interceptedMethod);
     }
 }
