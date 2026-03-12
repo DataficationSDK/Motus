@@ -11,6 +11,7 @@ internal sealed class FakeCdpSocket : ICdpSocket
 {
     private readonly Channel<byte[]> _inbox = Channel.CreateUnbounded<byte[]>();
     private readonly List<byte[]> _sent = new();
+    private readonly Queue<string> _autoResponses = new();
 
     public bool IsOpen { get; private set; } = true;
 
@@ -23,6 +24,11 @@ internal sealed class FakeCdpSocket : ICdpSocket
     public Task SendAsync(ReadOnlyMemory<byte> message, CancellationToken ct)
     {
         _sent.Add(message.ToArray());
+        // Dequeue auto-response if available. This runs inside SendRawAsync,
+        // after the TCS is registered in _pending but before await tcs.Task,
+        // guaranteeing the response is dispatched to the correct pending request.
+        if (_autoResponses.TryDequeue(out var response))
+            Enqueue(response);
         return Task.CompletedTask;
     }
 
@@ -46,10 +52,19 @@ internal sealed class FakeCdpSocket : ICdpSocket
     }
 
     /// <summary>
-    /// Enqueues a JSON string to be received by the transport.
+    /// Enqueues a JSON string to be received by the transport immediately.
     /// </summary>
     internal void Enqueue(string json)
         => _inbox.Writer.TryWrite(Encoding.UTF8.GetBytes(json));
+
+    /// <summary>
+    /// Queues a response to be delivered on the next outbound send.
+    /// This is safe for multi-step CDP sequences because the response is
+    /// enqueued inside <see cref="SendAsync"/>, after the transport registers
+    /// the pending TCS but before it awaits the result.
+    /// </summary>
+    internal void QueueResponse(string json)
+        => _autoResponses.Enqueue(json);
 
     /// <summary>
     /// Simulates a clean WebSocket disconnect.

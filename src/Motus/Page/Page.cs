@@ -1,0 +1,240 @@
+using System.Collections.Concurrent;
+using System.Text.Json;
+using Motus.Abstractions;
+
+namespace Motus;
+
+/// <summary>
+/// Represents a single browser page (tab).
+/// </summary>
+internal sealed partial class Page : IPage
+{
+    private readonly CdpSession _session;
+    private readonly BrowserContext _context;
+    private readonly string _targetId;
+    private readonly CancellationTokenSource _pageCts = new();
+
+    private readonly ConcurrentDictionary<string, Frame> _frames = new();
+    private readonly ConcurrentDictionary<int, string> _executionContextToFrameId = new();
+    private readonly ConcurrentDictionary<string, int> _frameIdToExecutionContext = new();
+    private readonly ConcurrentDictionary<string, Download> _downloads = new();
+    private readonly ConcurrentDictionary<string, Func<object?[], Task<object?>>> _bindings = new();
+    private readonly List<string> _initScripts = [];
+
+    private string? _mainFrameId;
+    private ViewportSize? _viewportSize;
+    private volatile bool _isClosed;
+
+    internal Page(CdpSession session, BrowserContext context, string targetId)
+    {
+        _session = session;
+        _context = context;
+        _targetId = targetId;
+    }
+
+    public IBrowserContext Context => _context;
+
+    public IFrame MainFrame =>
+        _mainFrameId is not null && _frames.TryGetValue(_mainFrameId, out var frame)
+            ? frame
+            : throw new InvalidOperationException("Main frame has not been initialized.");
+
+    public IReadOnlyList<IFrame> Frames => _frames.Values.ToList();
+
+    public string Url => _mainFrameId is not null && _frames.TryGetValue(_mainFrameId, out var f)
+        ? f.Url
+        : string.Empty;
+
+    public bool IsClosed => _isClosed;
+
+    public ViewportSize? ViewportSize => _viewportSize;
+
+    public IVideo? Video => null;
+
+    public IKeyboard Keyboard
+        => throw new NotImplementedException("Keyboard is not yet implemented (Phase 1I).");
+
+    public IMouse Mouse
+        => throw new NotImplementedException("Mouse is not yet implemented (Phase 1I).");
+
+    public ITouchscreen Touchscreen
+        => throw new NotImplementedException("Touchscreen is not yet implemented (Phase 1I).");
+
+    // --- Events ---
+    public event EventHandler? Close;
+    public event EventHandler<ConsoleMessageEventArgs>? Console;
+    public event EventHandler<DialogEventArgs>? Dialog;
+    public event EventHandler<IDownload>? Download;
+    public event EventHandler<IFileChooser>? FileChooser;
+    public event EventHandler<PageErrorEventArgs>? PageError;
+    public event EventHandler<IPage>? Popup;
+    public event EventHandler<RequestEventArgs>? Request;
+    public event EventHandler<RequestEventArgs>? RequestFailed;
+    public event EventHandler<RequestEventArgs>? RequestFinished;
+    public event EventHandler<ResponseEventArgs>? Response;
+
+    internal CdpSession Session => _session;
+
+    internal async Task InitializeAsync(CancellationToken ct)
+    {
+        await _session.SendAsync("Page.enable", CdpJsonContext.Default.PageEnableResult, ct);
+        await _session.SendAsync("Runtime.enable", CdpJsonContext.Default.RuntimeEnableResult, ct);
+
+        // Enable file chooser interception
+        await _session.SendAsync(
+            "Page.setInterceptFileChooserDialog",
+            new PageSetInterceptFileChooserDialogParams(Enabled: true),
+            CdpJsonContext.Default.PageSetInterceptFileChooserDialogParams,
+            ct);
+
+        // Apply any init scripts from the context
+        foreach (var script in _context.InitScripts)
+        {
+            await _session.SendAsync(
+                "Page.addScriptToEvaluateOnNewDocument",
+                new PageAddScriptToEvaluateOnNewDocumentParams(script),
+                CdpJsonContext.Default.PageAddScriptToEvaluateOnNewDocumentParams,
+                CdpJsonContext.Default.PageAddScriptToEvaluateOnNewDocumentResult,
+                ct);
+        }
+
+        // Apply any bindings from the context
+        foreach (var (name, callback) in _context.Bindings)
+        {
+            _bindings[name] = callback;
+            await _session.SendAsync(
+                "Runtime.addBinding",
+                new RuntimeAddBindingParams(name),
+                CdpJsonContext.Default.RuntimeAddBindingParams,
+                CdpJsonContext.Default.RuntimeAddBindingResult,
+                ct);
+        }
+
+        StartEventPump();
+    }
+
+    internal bool TryGetFrame(string frameId, out Frame? frame) =>
+        _frames.TryGetValue(frameId, out frame);
+
+    internal IReadOnlyList<IFrame> GetChildFrames(string parentFrameId) =>
+        _frames.Values.Where(f => f.ParentFrameId == parentFrameId).ToList<IFrame>();
+
+    internal int? GetExecutionContextId(string frameId) =>
+        _frameIdToExecutionContext.TryGetValue(frameId, out var id) ? id : null;
+
+    internal async Task<T> EvaluateInFrameAsync<T>(string frameId, string expression, object? arg = null)
+    {
+        var contextId = GetExecutionContextId(frameId);
+
+        var result = await _session.SendAsync(
+            "Runtime.evaluate",
+            new RuntimeEvaluateParams(
+                Expression: WrapExpression(expression, arg),
+                ReturnByValue: true,
+                AwaitPromise: true,
+                ContextId: contextId),
+            CdpJsonContext.Default.RuntimeEvaluateParams,
+            CdpJsonContext.Default.RuntimeEvaluateResult,
+            CancellationToken.None);
+
+        if (result.ExceptionDetails is not null)
+            throw new InvalidOperationException(
+                $"Evaluation failed: {result.ExceptionDetails.Text}");
+
+        return DeserializeRemoteObject<T>(result.Result);
+    }
+
+    internal async Task<T> WaitForFunctionInFrameAsync<T>(
+        string frameId, string expression, object? arg, double? timeout)
+    {
+        var deadline = TimeSpan.FromMilliseconds(timeout ?? 30_000);
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(_pageCts.Token);
+        cts.CancelAfter(deadline);
+
+        while (!cts.Token.IsCancellationRequested)
+        {
+            try
+            {
+                var result = await EvaluateInFrameAsync<JsonElement>(frameId, expression, arg);
+
+                if (IsTruthy(result))
+                    return result.Deserialize<T>()!;
+            }
+            catch (InvalidOperationException)
+            {
+                // Evaluation failed, will retry
+            }
+
+            await Task.Delay(100, cts.Token);
+        }
+
+        throw new TimeoutException(
+            $"WaitForFunction timed out after {deadline.TotalMilliseconds}ms.");
+    }
+
+    internal async Task AddInitScriptInternalAsync(string script)
+    {
+        _initScripts.Add(script);
+        await _session.SendAsync(
+            "Page.addScriptToEvaluateOnNewDocument",
+            new PageAddScriptToEvaluateOnNewDocumentParams(script),
+            CdpJsonContext.Default.PageAddScriptToEvaluateOnNewDocumentParams,
+            CdpJsonContext.Default.PageAddScriptToEvaluateOnNewDocumentResult,
+            CancellationToken.None);
+    }
+
+    internal async Task ExposeBindingInternalAsync(string name, Func<object?[], Task<object?>> callback)
+    {
+        _bindings[name] = callback;
+        await _session.SendAsync(
+            "Runtime.addBinding",
+            new RuntimeAddBindingParams(name),
+            CdpJsonContext.Default.RuntimeAddBindingParams,
+            CdpJsonContext.Default.RuntimeAddBindingResult,
+            CancellationToken.None);
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        if (_isClosed)
+            return ValueTask.CompletedTask;
+
+        _isClosed = true;
+        _pageCts.Cancel();
+        _pageCts.Dispose();
+        Close?.Invoke(this, EventArgs.Empty);
+        return ValueTask.CompletedTask;
+    }
+
+    private static string WrapExpression(string expression, object? arg)
+    {
+        if (arg is null)
+            return expression;
+
+        var serialized = JsonSerializer.Serialize(arg);
+        return $"(({expression})({serialized}))";
+    }
+
+    private static T DeserializeRemoteObject<T>(RuntimeRemoteObject remoteObject)
+    {
+        if (remoteObject.Value is JsonElement element)
+            return element.Deserialize<T>()
+                   ?? throw new InvalidOperationException("Deserialization returned null.");
+
+        if (remoteObject.Type == "undefined")
+            return default!;
+
+        throw new InvalidOperationException(
+            $"Cannot deserialize remote object of type '{remoteObject.Type}' to {typeof(T).Name}.");
+    }
+
+    private static bool IsTruthy(JsonElement element) =>
+        element.ValueKind switch
+        {
+            JsonValueKind.True => true,
+            JsonValueKind.Number => element.GetDouble() != 0,
+            JsonValueKind.String => element.GetString()?.Length > 0,
+            JsonValueKind.Object or JsonValueKind.Array => true,
+            _ => false
+        };
+}

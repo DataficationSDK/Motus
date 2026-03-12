@@ -15,6 +15,8 @@ internal sealed class Browser : IBrowser
     private readonly bool _handleSigint;
     private readonly bool _handleSigterm;
 
+    private readonly List<BrowserContext> _contexts = [];
+
     private volatile bool _isConnected;
     private ConsoleCancelEventHandler? _cancelHandler;
     private EventHandler? _processExitHandler;
@@ -41,7 +43,14 @@ internal sealed class Browser : IBrowser
 
     public string Version { get; private set; } = string.Empty;
 
-    public IReadOnlyList<IBrowserContext> Contexts => Array.Empty<IBrowserContext>();
+    public IReadOnlyList<IBrowserContext> Contexts
+    {
+        get
+        {
+            lock (_contexts)
+                return _contexts.ToList();
+        }
+    }
 
     public event EventHandler? Disconnected;
 
@@ -62,6 +71,19 @@ internal sealed class Browser : IBrowser
     {
         if (!_isConnected)
             return;
+
+        // Close all contexts first
+        List<BrowserContext> contextsToClose;
+        lock (_contexts)
+            contextsToClose = _contexts.ToList();
+
+        foreach (var context in contextsToClose)
+        {
+            await context.CloseAsync();
+        }
+
+        lock (_contexts)
+            _contexts.Clear();
 
         try
         {
@@ -128,11 +150,34 @@ internal sealed class Browser : IBrowser
         }
     }
 
-    public Task<IBrowserContext> NewContextAsync(ContextOptions? options = null)
-        => throw new NotImplementedException("Browser contexts are not yet implemented (Phase 1H).");
+    public async Task<IBrowserContext> NewContextAsync(ContextOptions? options = null)
+    {
+        var result = await _registry.BrowserSession.SendAsync(
+            "Target.createBrowserContext",
+            new TargetCreateBrowserContextParams(DisposeOnDetach: true),
+            CdpJsonContext.Default.TargetCreateBrowserContextParams,
+            CdpJsonContext.Default.TargetCreateBrowserContextResult,
+            CancellationToken.None);
 
-    public Task<IPage> NewPageAsync(ContextOptions? options = null)
-        => throw new NotImplementedException("Browser contexts are not yet implemented (Phase 1H).");
+        var context = new BrowserContext(this, _registry, result.BrowserContextId);
+
+        lock (_contexts)
+            _contexts.Add(context);
+
+        return context;
+    }
+
+    public async Task<IPage> NewPageAsync(ContextOptions? options = null)
+    {
+        var context = await NewContextAsync(options);
+        return await context.NewPageAsync();
+    }
+
+    internal void RemoveContext(BrowserContext context)
+    {
+        lock (_contexts)
+            _contexts.Remove(context);
+    }
 
     private void OnTransportDisconnected(Exception? ex)
     {
