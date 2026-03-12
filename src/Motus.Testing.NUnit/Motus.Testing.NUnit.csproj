@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <IsPackable>true</IsPackable>
+    <PackageId>Motus.Testing.NUnit</PackageId>
+    <Title>Motus.Testing.NUnit</Title>
+    <Description>NUnit integration for Motus browser automation. Provides a base test class compatible with parallel test execution.</Description>
+    <PackageReadmeFile />
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Motus.Testing\Motus.Testing.csproj" />
+    <ProjectReference Include="..\Motus.Abstractions\Motus.Abstractions.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="NUnit" Version="4.3.2" />
+  </ItemGroup>
+
+</Project>

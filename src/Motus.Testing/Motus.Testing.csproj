@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <IsPackable>true</IsPackable>
+    <PackageId>Motus.Testing</PackageId>
+    <Title>Motus.Testing</Title>
+    <Description>Shared browser fixture for Motus test framework integrations.</Description>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <PackageReadmeFile />
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Motus\Motus.csproj" />
+    <ProjectReference Include="..\Motus.Abstractions\Motus.Abstractions.csproj" />
+  </ItemGroup>
+
+</Project>

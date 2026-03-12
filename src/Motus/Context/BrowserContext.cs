@@ -21,9 +21,9 @@ internal sealed class BrowserContext : IBrowserContext
     private readonly object _contextRouteLock = new();
     private readonly Dictionary<string, string> _extraHeaders = new();
     private readonly ContextOptions? _options;
-    private bool _offline;
-    private bool _closed;
-    private bool _storageStateRestored;
+    private volatile bool _offline;
+    private int _closed;
+    private int _storageStateRestored;
 
     internal BrowserContext(Browser browser, CdpSessionRegistry registry, string browserContextId, ContextOptions? options = null)
     {
@@ -152,9 +152,8 @@ internal sealed class BrowserContext : IBrowserContext
         }
 
         // Restore storage state (one-time per context)
-        if (!_storageStateRestored && _options?.StorageState is not null)
+        if (_options?.StorageState is not null && Interlocked.CompareExchange(ref _storageStateRestored, 1, 0) == 0)
         {
-            _storageStateRestored = true;
             var state = _options.StorageState;
 
             if (state.Cookies.Count > 0)
@@ -211,10 +210,8 @@ internal sealed class BrowserContext : IBrowserContext
 
     public async Task CloseAsync()
     {
-        if (_closed)
+        if (Interlocked.CompareExchange(ref _closed, 1, 0) != 0)
             return;
-
-        _closed = true;
 
         // Unload plugins before closing pages
         if (PluginHost is not null)

@@ -21,6 +21,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Motus.Tests" />
+    <InternalsVisibleTo Include="Motus.Testing" />
   </ItemGroup>
 
   <ItemGroup>

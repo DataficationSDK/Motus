@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <IsPackable>true</IsPackable>
+    <PackageId>Motus.Testing.xUnit</PackageId>
+    <Title>Motus.Testing.xUnit</Title>
+    <Description>xUnit integration for Motus browser automation. Provides collection and class fixtures for parallel test execution.</Description>
+    <PackageReadmeFile />
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Motus.Testing\Motus.Testing.csproj" />
+    <ProjectReference Include="..\Motus.Abstractions\Motus.Abstractions.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit.core" Version="2.9.3" />
+  </ItemGroup>
+
+</Project>
