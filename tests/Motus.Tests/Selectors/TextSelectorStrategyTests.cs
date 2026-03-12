@@ -36,10 +36,11 @@ public class TextSelectorStrategyTests
         _socket.QueueResponse("""{"id": 5, "sessionId": "session-1", "result": {}}""");
         _socket.QueueResponse("""{"id": 6, "sessionId": "session-1", "result": {}}""");
         _socket.QueueResponse("""{"id": 7, "sessionId": "session-1", "result": {}}""");
+        _socket.QueueResponse("""{"id": 8, "sessionId": "session-1", "result": {}}""");
         var page = await _browser.NewPageAsync();
 
-        _socket.QueueResponse("""{"id": 8, "sessionId": "session-1", "result": {"result": {"type": "object", "objectId": "arr-1"}}}""");
-        _socket.QueueResponse("""{"id": 9, "sessionId": "session-1", "result": {"result": []}}""");
+        _socket.QueueResponse("""{"id": 9, "sessionId": "session-1", "result": {"result": {"type": "object", "objectId": "arr-1"}}}""");
+        _socket.QueueResponse("""{"id": 10, "sessionId": "session-1", "result": {"result": []}}""");
 
         var strategy = new TextSelectorStrategy();
         await strategy.ResolveAsync("Hello", ((Motus.Page)page).GetFrameForSelectors());
@@ -61,10 +62,11 @@ public class TextSelectorStrategyTests
         _socket.QueueResponse("""{"id": 5, "sessionId": "session-1", "result": {}}""");
         _socket.QueueResponse("""{"id": 6, "sessionId": "session-1", "result": {}}""");
         _socket.QueueResponse("""{"id": 7, "sessionId": "session-1", "result": {}}""");
+        _socket.QueueResponse("""{"id": 8, "sessionId": "session-1", "result": {}}""");
         var page = await _browser.NewPageAsync();
 
-        _socket.QueueResponse("""{"id": 8, "sessionId": "session-1", "result": {"result": {"type": "object", "objectId": "arr-1"}}}""");
-        _socket.QueueResponse("""{"id": 9, "sessionId": "session-1", "result": {"result": []}}""");
+        _socket.QueueResponse("""{"id": 9, "sessionId": "session-1", "result": {"result": {"type": "object", "objectId": "arr-1"}}}""");
+        _socket.QueueResponse("""{"id": 10, "sessionId": "session-1", "result": {"result": []}}""");
 
         var strategy = new TextSelectorStrategy();
         await strategy.ResolveAsync("\"Exact Text\"", ((Motus.Page)page).GetFrameForSelectors());
@@ -86,10 +88,11 @@ public class TextSelectorStrategyTests
         _socket.QueueResponse("""{"id": 5, "sessionId": "session-1", "result": {}}""");
         _socket.QueueResponse("""{"id": 6, "sessionId": "session-1", "result": {}}""");
         _socket.QueueResponse("""{"id": 7, "sessionId": "session-1", "result": {}}""");
+        _socket.QueueResponse("""{"id": 8, "sessionId": "session-1", "result": {}}""");
         var page = await _browser.NewPageAsync();
 
-        _socket.QueueResponse("""{"id": 8, "sessionId": "session-1", "result": {"result": {"type": "object", "objectId": "arr-1"}}}""");
-        _socket.QueueResponse("""{"id": 9, "sessionId": "session-1", "result": {"result": []}}""");
+        _socket.QueueResponse("""{"id": 9, "sessionId": "session-1", "result": {"result": {"type": "object", "objectId": "arr-1"}}}""");
+        _socket.QueueResponse("""{"id": 10, "sessionId": "session-1", "result": {"result": []}}""");
 
         var strategy = new TextSelectorStrategy();
         await strategy.ResolveAsync("Hello", ((Motus.Page)page).GetFrameForSelectors());
@@ -113,10 +116,11 @@ public class TextSelectorStrategyTests
         _socket.QueueResponse("""{"id": 5, "sessionId": "session-1", "result": {}}""");
         _socket.QueueResponse("""{"id": 6, "sessionId": "session-1", "result": {}}""");
         _socket.QueueResponse("""{"id": 7, "sessionId": "session-1", "result": {}}""");
+        _socket.QueueResponse("""{"id": 8, "sessionId": "session-1", "result": {}}""");
         var page = await _browser.NewPageAsync();
 
-        _socket.QueueResponse("""{"id": 8, "sessionId": "session-1", "result": {"result": {"type": "object", "objectId": "arr-1"}}}""");
-        _socket.QueueResponse("""{"id": 9, "sessionId": "session-1", "result": {"result": []}}""");
+        _socket.QueueResponse("""{"id": 9, "sessionId": "session-1", "result": {"result": {"type": "object", "objectId": "arr-1"}}}""");
+        _socket.QueueResponse("""{"id": 10, "sessionId": "session-1", "result": {"result": []}}""");
 
         var strategy = new TextSelectorStrategy();
         await strategy.ResolveAsync("Hello", ((Motus.Page)page).GetFrameForSelectors(), pierceShadow: false);

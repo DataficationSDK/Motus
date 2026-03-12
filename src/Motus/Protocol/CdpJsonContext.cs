@@ -77,6 +77,34 @@ namespace Motus;
 [JsonSerializable(typeof(NetworkSetCookieParams))]
 [JsonSerializable(typeof(NetworkSetCookieResult))]
 [JsonSerializable(typeof(NetworkClearBrowserCookiesResult))]
+// --- Network domain (monitoring) ---
+[JsonSerializable(typeof(NetworkEnableParams))]
+[JsonSerializable(typeof(NetworkEnableResult))]
+[JsonSerializable(typeof(NetworkGetResponseBodyParams))]
+[JsonSerializable(typeof(NetworkGetResponseBodyResult))]
+[JsonSerializable(typeof(NetworkSetExtraHttpHeadersParams))]
+[JsonSerializable(typeof(NetworkSetExtraHttpHeadersResult))]
+[JsonSerializable(typeof(NetworkEmulateNetworkConditionsParams))]
+[JsonSerializable(typeof(NetworkEmulateNetworkConditionsResult))]
+[JsonSerializable(typeof(NetworkRequestData))]
+[JsonSerializable(typeof(NetworkResponseData))]
+[JsonSerializable(typeof(NetworkRequestWillBeSentEvent))]
+[JsonSerializable(typeof(NetworkResponseReceivedEvent))]
+[JsonSerializable(typeof(NetworkLoadingFinishedEvent))]
+[JsonSerializable(typeof(NetworkLoadingFailedEvent))]
+// --- Fetch domain (interception) ---
+[JsonSerializable(typeof(FetchEnableParams))]
+[JsonSerializable(typeof(FetchEnableResult))]
+[JsonSerializable(typeof(FetchDisableResult))]
+[JsonSerializable(typeof(FetchRequestPattern))]
+[JsonSerializable(typeof(FetchHeaderEntry))]
+[JsonSerializable(typeof(FetchFulfillRequestParams))]
+[JsonSerializable(typeof(FetchFulfillRequestResult))]
+[JsonSerializable(typeof(FetchContinueRequestParams))]
+[JsonSerializable(typeof(FetchContinueRequestResult))]
+[JsonSerializable(typeof(FetchFailRequestParams))]
+[JsonSerializable(typeof(FetchFailRequestResult))]
+[JsonSerializable(typeof(FetchRequestPausedEvent))]
 // --- Browser domain (permissions) ---
 [JsonSerializable(typeof(BrowserGrantPermissionsParams))]
 [JsonSerializable(typeof(BrowserGrantPermissionsResult))]
@@ -596,3 +624,127 @@ internal sealed record AccessibilityAXNodeSimple(
     long? BackendDOMNodeId = null);
 
 internal sealed record AccessibilityQueryAXTreeResult(AccessibilityAXNodeSimple[] Nodes);
+
+// ============================================================================
+// Network domain (monitoring)
+// ============================================================================
+
+internal sealed record NetworkEnableParams(
+    int? MaxTotalBufferSize = null,
+    int? MaxResourceBufferSize = null,
+    int? MaxPostDataSize = null);
+
+internal sealed record NetworkEnableResult();
+
+internal sealed record NetworkGetResponseBodyParams(string RequestId);
+
+internal sealed record NetworkGetResponseBodyResult(string Body, bool Base64Encoded);
+
+internal sealed record NetworkSetExtraHttpHeadersParams(
+    Dictionary<string, string> Headers);
+
+internal sealed record NetworkSetExtraHttpHeadersResult();
+
+internal sealed record NetworkEmulateNetworkConditionsParams(
+    bool Offline,
+    double Latency,
+    double DownloadThroughput,
+    double UploadThroughput);
+
+internal sealed record NetworkEmulateNetworkConditionsResult();
+
+internal sealed record NetworkRequestData(
+    string Url,
+    string Method,
+    Dictionary<string, string>? Headers = null,
+    string? PostData = null);
+
+internal sealed record NetworkResponseData(
+    string Url,
+    int Status,
+    string StatusText,
+    Dictionary<string, string>? Headers = null,
+    string? MimeType = null);
+
+internal sealed record NetworkRequestWillBeSentEvent(
+    string RequestId,
+    string LoaderId,
+    string DocumentUrl,
+    NetworkRequestData Request,
+    double Timestamp,
+    double WallTime,
+    string? FrameId = null,
+    string? Type = null);
+
+internal sealed record NetworkResponseReceivedEvent(
+    string RequestId,
+    string LoaderId,
+    double Timestamp,
+    string? Type = null,
+    NetworkResponseData? Response = null,
+    string? FrameId = null);
+
+internal sealed record NetworkLoadingFinishedEvent(
+    string RequestId,
+    double Timestamp,
+    double EncodedDataLength);
+
+internal sealed record NetworkLoadingFailedEvent(
+    string RequestId,
+    double Timestamp,
+    string Type,
+    string ErrorText,
+    bool? Canceled = null);
+
+// ============================================================================
+// Fetch domain (interception)
+// ============================================================================
+
+internal sealed record FetchRequestPattern(
+    string? UrlPattern = null,
+    string? ResourceType = null,
+    string? RequestStage = null);
+
+internal sealed record FetchEnableParams(
+    FetchRequestPattern[]? Patterns = null,
+    bool? HandleAuthRequests = null);
+
+internal sealed record FetchEnableResult();
+
+internal sealed record FetchDisableResult();
+
+internal sealed record FetchHeaderEntry(string Name, string Value);
+
+internal sealed record FetchFulfillRequestParams(
+    string RequestId,
+    int ResponseCode,
+    FetchHeaderEntry[]? ResponseHeaders = null,
+    string? Body = null,
+    string? ResponsePhrase = null);
+
+internal sealed record FetchFulfillRequestResult();
+
+internal sealed record FetchContinueRequestParams(
+    string RequestId,
+    string? Url = null,
+    string? Method = null,
+    string? PostData = null,
+    FetchHeaderEntry[]? Headers = null);
+
+internal sealed record FetchContinueRequestResult();
+
+internal sealed record FetchFailRequestParams(
+    string RequestId,
+    string ErrorReason);
+
+internal sealed record FetchFailRequestResult();
+
+internal sealed record FetchRequestPausedEvent(
+    string RequestId,
+    NetworkRequestData Request,
+    string FrameId,
+    string ResourceType,
+    int? ResponseStatusCode = null,
+    string? ResponseStatusText = null,
+    FetchHeaderEntry[]? ResponseHeaders = null,
+    string? NetworkId = null);

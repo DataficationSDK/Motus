@@ -42,6 +42,7 @@ public class PageNavigationTests
         _socket.QueueResponse("""{"id": 5, "sessionId": "session-1", "result": {}}""");
         _socket.QueueResponse("""{"id": 6, "sessionId": "session-1", "result": {}}""");
         _socket.QueueResponse("""{"id": 7, "sessionId": "session-1", "result": {}}""");
+        _socket.QueueResponse("""{"id": 8, "sessionId": "session-1", "result": {}}""");
         var page = await _browser.NewPageAsync();
 
         // Inject initial frame
@@ -75,7 +76,7 @@ public class PageNavigationTests
         // Page.navigate response
         _socket.Enqueue("""
             {
-                "id": 8,
+                "id": 9,
                 "sessionId": "session-1",
                 "result": { "frameId": "frame-main" }
             }
@@ -115,7 +116,7 @@ public class PageNavigationTests
 
         _socket.Enqueue("""
             {
-                "id": 8,
+                "id": 9,
                 "sessionId": "session-1",
                 "result": { "frameId": "frame-main", "errorText": "net::ERR_NAME_NOT_RESOLVED" }
             }
@@ -134,7 +135,7 @@ public class PageNavigationTests
 
         _socket.Enqueue("""
             {
-                "id": 8,
+                "id": 9,
                 "sessionId": "session-1",
                 "result": { "frameId": "frame-main" }
             }
@@ -160,7 +161,7 @@ public class PageNavigationTests
 
         _socket.Enqueue("""
             {
-                "id": 8,
+                "id": 9,
                 "sessionId": "session-1",
                 "result": {}
             }
@@ -190,11 +191,12 @@ public class PageNavigationTests
     }
 
     [TestMethod]
-    public async Task WaitForLoadStateAsync_ThrowsOnNetworkIdle()
+    public async Task WaitForLoadStateAsync_NetworkIdle_CompletesWhenNoActiveRequests()
     {
         var page = await CreatePageWithFrameAsync();
 
-        await Assert.ThrowsExceptionAsync<NotSupportedException>(
-            () => page.WaitForLoadStateAsync(LoadState.NetworkIdle));
+        // No active requests, so NetworkIdle should complete quickly
+        var task = page.WaitForLoadStateAsync(LoadState.NetworkIdle, timeout: 5000);
+        await task;
     }
 }

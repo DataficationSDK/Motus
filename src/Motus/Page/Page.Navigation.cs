@@ -30,7 +30,7 @@ internal sealed partial class Page
 
         await waiter;
 
-        IResponse? response = null; // IResponse requires network interception (Phase 1J)
+        IResponse? response = _networkManager?.GetLastNavigationResponse();
         await _context.LifecycleHooks.FireAfterNavigationAsync(this, response);
         return response;
     }
@@ -62,7 +62,7 @@ internal sealed partial class Page
 
         await waiter;
 
-        IResponse? response = null;
+        IResponse? response = _networkManager?.GetLastNavigationResponse();
         await _context.LifecycleHooks.FireAfterNavigationAsync(this, response);
         return response;
     }
@@ -94,7 +94,7 @@ internal sealed partial class Page
 
         await waiter;
 
-        IResponse? response = null;
+        IResponse? response = _networkManager?.GetLastNavigationResponse();
         await _context.LifecycleHooks.FireAfterNavigationAsync(this, response);
         return response;
     }
@@ -115,7 +115,7 @@ internal sealed partial class Page
 
         await waiter;
 
-        IResponse? response = null;
+        IResponse? response = _networkManager?.GetLastNavigationResponse();
         await _context.LifecycleHooks.FireAfterNavigationAsync(this, response);
         return response;
     }
@@ -126,7 +126,13 @@ internal sealed partial class Page
         var timeoutMs = timeout ?? 30_000;
 
         if (loadState == LoadState.NetworkIdle)
-            throw new NotSupportedException("NetworkIdle requires network tracking (Phase 1J).");
+        {
+            if (_networkManager is null)
+                throw new InvalidOperationException("NetworkManager is not initialized.");
+            await _networkManager.WaitForNetworkIdleAsync(
+                TimeSpan.FromMilliseconds(500), TimeSpan.FromMilliseconds(timeoutMs));
+            return;
+        }
 
         var waitUntil = loadState == LoadState.DOMContentLoaded
             ? WaitUntil.DOMContentLoaded
@@ -159,7 +165,12 @@ internal sealed partial class Page
     private Task CreateLifecycleWaiter(WaitUntil waitUntil, TimeSpan timeout)
     {
         if (waitUntil == WaitUntil.NetworkIdle)
-            throw new NotSupportedException("NetworkIdle requires network tracking (Phase 1J).");
+        {
+            if (_networkManager is null)
+                throw new InvalidOperationException("NetworkManager is not initialized.");
+            return _networkManager.WaitForNetworkIdleAsync(
+                TimeSpan.FromMilliseconds(500), timeout);
+        }
 
         var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var cts = new CancellationTokenSource(timeout);
@@ -192,6 +203,9 @@ internal sealed partial class Page
 
         return tcs.Task;
     }
+
+    internal static bool UrlMatchesStatic(string url, string pattern) =>
+        UrlMatches(url, pattern);
 
     private static bool UrlMatches(string url, string pattern)
     {

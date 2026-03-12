@@ -36,10 +36,11 @@ public class TestIdSelectorStrategyTests
         _socket.QueueResponse("""{"id": 5, "sessionId": "session-1", "result": {}}""");
         _socket.QueueResponse("""{"id": 6, "sessionId": "session-1", "result": {}}""");
         _socket.QueueResponse("""{"id": 7, "sessionId": "session-1", "result": {}}""");
+        _socket.QueueResponse("""{"id": 8, "sessionId": "session-1", "result": {}}""");
         var page = await _browser.NewPageAsync();
 
-        _socket.QueueResponse("""{"id": 8, "sessionId": "session-1", "result": {"result": {"type": "object", "objectId": "arr-1"}}}""");
-        _socket.QueueResponse("""{"id": 9, "sessionId": "session-1", "result": {"result": []}}""");
+        _socket.QueueResponse("""{"id": 9, "sessionId": "session-1", "result": {"result": {"type": "object", "objectId": "arr-1"}}}""");
+        _socket.QueueResponse("""{"id": 10, "sessionId": "session-1", "result": {"result": []}}""");
 
         var strategy = new TestIdSelectorStrategy();
         var handles = await strategy.ResolveAsync("login-btn", ((Motus.Page)page).GetFrameForSelectors());
@@ -63,10 +64,11 @@ public class TestIdSelectorStrategyTests
         _socket.QueueResponse("""{"id": 5, "sessionId": "session-1", "result": {}}""");
         _socket.QueueResponse("""{"id": 6, "sessionId": "session-1", "result": {}}""");
         _socket.QueueResponse("""{"id": 7, "sessionId": "session-1", "result": {}}""");
+        _socket.QueueResponse("""{"id": 8, "sessionId": "session-1", "result": {}}""");
         var page = await _browser.NewPageAsync();
 
-        _socket.QueueResponse("""{"id": 8, "sessionId": "session-1", "result": {"result": {"type": "object", "objectId": "arr-1"}}}""");
-        _socket.QueueResponse("""{"id": 9, "sessionId": "session-1", "result": {"result": []}}""");
+        _socket.QueueResponse("""{"id": 9, "sessionId": "session-1", "result": {"result": {"type": "object", "objectId": "arr-1"}}}""");
+        _socket.QueueResponse("""{"id": 10, "sessionId": "session-1", "result": {"result": []}}""");
 
         var strategy = new TestIdSelectorStrategy("data-cy");
         Assert.AreEqual("data-cy", strategy.StrategyName);
@@ -90,10 +92,11 @@ public class TestIdSelectorStrategyTests
         _socket.QueueResponse("""{"id": 5, "sessionId": "session-1", "result": {}}""");
         _socket.QueueResponse("""{"id": 6, "sessionId": "session-1", "result": {}}""");
         _socket.QueueResponse("""{"id": 7, "sessionId": "session-1", "result": {}}""");
+        _socket.QueueResponse("""{"id": 8, "sessionId": "session-1", "result": {}}""");
         var page = await _browser.NewPageAsync();
 
-        _socket.QueueResponse("""{"id": 8, "sessionId": "session-1", "result": {"result": {"type": "object", "objectId": "arr-1"}}}""");
-        _socket.QueueResponse("""{"id": 9, "sessionId": "session-1", "result": {"result": []}}""");
+        _socket.QueueResponse("""{"id": 9, "sessionId": "session-1", "result": {"result": {"type": "object", "objectId": "arr-1"}}}""");
+        _socket.QueueResponse("""{"id": 10, "sessionId": "session-1", "result": {"result": []}}""");
 
         var strategy = new TestIdSelectorStrategy();
         await strategy.ResolveAsync("login-btn", ((Motus.Page)page).GetFrameForSelectors());
@@ -115,10 +118,11 @@ public class TestIdSelectorStrategyTests
         _socket.QueueResponse("""{"id": 5, "sessionId": "session-1", "result": {}}""");
         _socket.QueueResponse("""{"id": 6, "sessionId": "session-1", "result": {}}""");
         _socket.QueueResponse("""{"id": 7, "sessionId": "session-1", "result": {}}""");
+        _socket.QueueResponse("""{"id": 8, "sessionId": "session-1", "result": {}}""");
         var page = await _browser.NewPageAsync();
 
-        _socket.QueueResponse("""{"id": 8, "sessionId": "session-1", "result": {"result": {"type": "object", "objectId": "arr-1"}}}""");
-        _socket.QueueResponse("""{"id": 9, "sessionId": "session-1", "result": {"result": []}}""");
+        _socket.QueueResponse("""{"id": 9, "sessionId": "session-1", "result": {"result": {"type": "object", "objectId": "arr-1"}}}""");
+        _socket.QueueResponse("""{"id": 10, "sessionId": "session-1", "result": {"result": []}}""");
 
         var strategy = new TestIdSelectorStrategy();
         await strategy.ResolveAsync("login-btn", ((Motus.Page)page).GetFrameForSelectors(), pierceShadow: false);

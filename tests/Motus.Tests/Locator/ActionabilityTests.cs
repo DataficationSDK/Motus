@@ -36,6 +36,7 @@ public class ActionabilityTests
         _socket.QueueResponse("""{"id": 5, "sessionId": "session-1", "result": {}}""");
         _socket.QueueResponse("""{"id": 6, "sessionId": "session-1", "result": {}}""");
         _socket.QueueResponse("""{"id": 7, "sessionId": "session-1", "result": {}}""");
+        _socket.QueueResponse("""{"id": 8, "sessionId": "session-1", "result": {}}""");
         return await _browser.NewPageAsync();
     }
 
@@ -56,7 +57,7 @@ public class ActionabilityTests
         var page = await CreatePageAsync();
         var locator = page.Locator("#btn");
 
-        var id = 8;
+        var id = 9;
         // resolve (strategy: 2 calls)
         QueueStrategyResolve(ref id, "btn-1");
         // visible check -> true
@@ -89,7 +90,7 @@ public class ActionabilityTests
         var page = await CreatePageAsync();
         var locator = page.Locator("input#name");
 
-        var id = 8;
+        var id = 9;
         // resolve (strategy: 2 calls)
         QueueStrategyResolve(ref id, "input-1");
         // visible check -> true
@@ -113,8 +114,8 @@ public class ActionabilityTests
         // Strategy resolve returns empty arrays repeatedly
         for (int i = 0; i < 40; i += 2)
         {
-            _socket.QueueResponse($@"{{""id"": {8 + i}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""object"", ""objectId"": ""arr-empty-{i}""}}}}}}");
-            _socket.QueueResponse($@"{{""id"": {9 + i}, ""sessionId"": ""session-1"", ""result"": {{""result"": []}}}}");
+            _socket.QueueResponse($@"{{""id"": {9 + i}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""object"", ""objectId"": ""arr-empty-{i}""}}}}}}");
+            _socket.QueueResponse($@"{{""id"": {10 + i}, ""sessionId"": ""session-1"", ""result"": {{""result"": []}}}}");
         }
 
         await Assert.ThrowsExceptionAsync<TimeoutException>(
@@ -127,7 +128,7 @@ public class ActionabilityTests
         var page = await CreatePageAsync();
         var locator = page.Locator("#anim");
 
-        var id = 8;
+        var id = 9;
         QueueStrategyResolve(ref id, "anim-1");
         // visible -> true
         _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""boolean"", ""value"": true}}}}}}");
@@ -166,7 +167,7 @@ public class ActionabilityTests
         var page = await CreatePageAsync();
         var locator = page.Locator("#overlay-target");
 
-        var id = 8;
+        var id = 9;
         QueueStrategyResolve(ref id, "ot-1");
         // visible -> true
         _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""boolean"", ""value"": true}}}}}}");
@@ -207,7 +208,7 @@ public class ActionabilityTests
         var page = await CreatePageAsync();
         var locator = page.Locator("#hoverable");
 
-        var id = 8;
+        var id = 9;
         QueueStrategyResolve(ref id, "hov-1");
         // visible -> true
         _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""boolean"", ""value"": true}}}}}}");
@@ -241,7 +242,7 @@ public class ActionabilityTests
         var page = await CreatePageAsync();
         var locator = page.Locator("#focusable");
 
-        var id = 8;
+        var id = 9;
         // resolve (strategy: 2 calls)
         QueueStrategyResolve(ref id, "f-1");
         // focus eval

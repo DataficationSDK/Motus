@@ -36,6 +36,7 @@ public class LocatorTests
         _socket.QueueResponse("""{"id": 5, "sessionId": "session-1", "result": {}}""");
         _socket.QueueResponse("""{"id": 6, "sessionId": "session-1", "result": {}}""");
         _socket.QueueResponse("""{"id": 7, "sessionId": "session-1", "result": {}}""");
+        _socket.QueueResponse("""{"id": 8, "sessionId": "session-1", "result": {}}""");
         return await _browser.NewPageAsync();
     }
 
@@ -99,7 +100,7 @@ public class LocatorTests
         var page = await CreatePageAsync();
         var locator = page.Locator("#title");
 
-        QueueResolveAndEval(8, "elem-1", """{"type": "string", "value": "Hello"}""");
+        QueueResolveAndEval(9, "elem-1", """{"type": "string", "value": "Hello"}""");
 
         var result = await locator.TextContentAsync();
         Assert.AreEqual("Hello", result);
@@ -111,15 +112,15 @@ public class LocatorTests
         var page = await CreatePageAsync();
         var locator = page.Locator("button.submit");
 
-        QueueClickActionabilityResponses(8);
+        QueueClickActionabilityResponses(9);
 
         // getBoundingClientRect for the click action itself
-        _socket.QueueResponse("""{"id": 17, "sessionId": "session-1", "result": {"result": {"type": "object", "value": {"x": 100, "y": 200, "width": 80, "height": 30}}}}""");
+        _socket.QueueResponse("""{"id": 18, "sessionId": "session-1", "result": {"result": {"type": "object", "value": {"x": 100, "y": 200, "width": 80, "height": 30}}}}""");
 
         // Mouse: mouseMoved, mousePressed, mouseReleased
-        _socket.QueueResponse("""{"id": 18, "sessionId": "session-1", "result": {}}""");
         _socket.QueueResponse("""{"id": 19, "sessionId": "session-1", "result": {}}""");
         _socket.QueueResponse("""{"id": 20, "sessionId": "session-1", "result": {}}""");
+        _socket.QueueResponse("""{"id": 21, "sessionId": "session-1", "result": {}}""");
 
         await locator.ClickAsync();
 
@@ -139,10 +140,10 @@ public class LocatorTests
         var locator = page.Locator("li.item");
 
         // Strategy resolve: evaluate returns array, getProperties returns 5 elements
-        _socket.QueueResponse("""{"id": 8, "sessionId": "session-1", "result": {"result": {"type": "object", "objectId": "arr-1"}}}""");
+        _socket.QueueResponse("""{"id": 9, "sessionId": "session-1", "result": {"result": {"type": "object", "objectId": "arr-1"}}}""");
         _socket.QueueResponse("""
             {
-                "id": 9,
+                "id": 10,
                 "sessionId": "session-1",
                 "result": {
                     "result": [
@@ -231,8 +232,8 @@ public class LocatorTests
         var page = await CreatePageAsync();
         var locator = page.Locator("css=div.test");
 
-        _socket.QueueResponse("""{"id": 8, "sessionId": "session-1", "result": {"result": {"type": "object", "objectId": "arr-1"}}}""");
-        _socket.QueueResponse("""{"id": 9, "sessionId": "session-1", "result": {"result": [{"name": "0", "value": {"type": "object", "objectId": "elem-1"}}, {"name": "length", "value": {"type": "number", "value": 1}}]}}""");
+        _socket.QueueResponse("""{"id": 9, "sessionId": "session-1", "result": {"result": {"type": "object", "objectId": "arr-1"}}}""");
+        _socket.QueueResponse("""{"id": 10, "sessionId": "session-1", "result": {"result": [{"name": "0", "value": {"type": "object", "objectId": "elem-1"}}, {"name": "length", "value": {"type": "number", "value": 1}}]}}""");
 
         var handles = await locator.ElementHandlesAsync();
         Assert.AreEqual(1, handles.Count);
@@ -250,8 +251,8 @@ public class LocatorTests
         var page = await CreatePageAsync();
         var locator = page.Locator("xpath=//button");
 
-        _socket.QueueResponse("""{"id": 8, "sessionId": "session-1", "result": {"result": {"type": "object", "objectId": "arr-1"}}}""");
-        _socket.QueueResponse("""{"id": 9, "sessionId": "session-1", "result": {"result": []}}""");
+        _socket.QueueResponse("""{"id": 9, "sessionId": "session-1", "result": {"result": {"type": "object", "objectId": "arr-1"}}}""");
+        _socket.QueueResponse("""{"id": 10, "sessionId": "session-1", "result": {"result": []}}""");
 
         var handles = await locator.ElementHandlesAsync();
         Assert.AreEqual(0, handles.Count);
@@ -269,8 +270,8 @@ public class LocatorTests
         var page = await CreatePageAsync();
         var locator = page.Locator("text=Click me");
 
-        _socket.QueueResponse("""{"id": 8, "sessionId": "session-1", "result": {"result": {"type": "object", "objectId": "arr-1"}}}""");
-        _socket.QueueResponse("""{"id": 9, "sessionId": "session-1", "result": {"result": []}}""");
+        _socket.QueueResponse("""{"id": 9, "sessionId": "session-1", "result": {"result": {"type": "object", "objectId": "arr-1"}}}""");
+        _socket.QueueResponse("""{"id": 10, "sessionId": "session-1", "result": {"result": []}}""");
 
         var handles = await locator.ElementHandlesAsync();
         Assert.AreEqual(0, handles.Count);
@@ -289,8 +290,8 @@ public class LocatorTests
         var page = await CreatePageAsync();
         var locator = page.Locator("data-testid=submit-btn");
 
-        _socket.QueueResponse("""{"id": 8, "sessionId": "session-1", "result": {"result": {"type": "object", "objectId": "arr-1"}}}""");
-        _socket.QueueResponse("""{"id": 9, "sessionId": "session-1", "result": {"result": []}}""");
+        _socket.QueueResponse("""{"id": 9, "sessionId": "session-1", "result": {"result": {"type": "object", "objectId": "arr-1"}}}""");
+        _socket.QueueResponse("""{"id": 10, "sessionId": "session-1", "result": {"result": []}}""");
 
         var handles = await locator.ElementHandlesAsync();
         Assert.AreEqual(0, handles.Count);
@@ -308,8 +309,8 @@ public class LocatorTests
         var page = await CreatePageAsync();
         var locator = page.Locator("div.container");
 
-        _socket.QueueResponse("""{"id": 8, "sessionId": "session-1", "result": {"result": {"type": "object", "objectId": "arr-1"}}}""");
-        _socket.QueueResponse("""{"id": 9, "sessionId": "session-1", "result": {"result": []}}""");
+        _socket.QueueResponse("""{"id": 9, "sessionId": "session-1", "result": {"result": {"type": "object", "objectId": "arr-1"}}}""");
+        _socket.QueueResponse("""{"id": 10, "sessionId": "session-1", "result": {"result": []}}""");
 
         var handles = await locator.ElementHandlesAsync();
 
@@ -326,8 +327,8 @@ public class LocatorTests
         var page = await CreatePageAsync();
         var locator = page.Locator("css=div.shadow");
 
-        _socket.QueueResponse("""{"id": 8, "sessionId": "session-1", "result": {"result": {"type": "object", "objectId": "arr-1"}}}""");
-        _socket.QueueResponse("""{"id": 9, "sessionId": "session-1", "result": {"result": []}}""");
+        _socket.QueueResponse("""{"id": 9, "sessionId": "session-1", "result": {"result": {"type": "object", "objectId": "arr-1"}}}""");
+        _socket.QueueResponse("""{"id": 10, "sessionId": "session-1", "result": {"result": []}}""");
 
         await locator.ElementHandlesAsync();
 
@@ -345,8 +346,8 @@ public class LocatorTests
         var page = await CreatePageAsync();
         var locator = page.Locator("css=div.shadow", new LocatorOptions { PierceShadow = false });
 
-        _socket.QueueResponse("""{"id": 8, "sessionId": "session-1", "result": {"result": {"type": "object", "objectId": "arr-1"}}}""");
-        _socket.QueueResponse("""{"id": 9, "sessionId": "session-1", "result": {"result": []}}""");
+        _socket.QueueResponse("""{"id": 9, "sessionId": "session-1", "result": {"result": {"type": "object", "objectId": "arr-1"}}}""");
+        _socket.QueueResponse("""{"id": 10, "sessionId": "session-1", "result": {"result": []}}""");
 
         await locator.ElementHandlesAsync();
 
@@ -367,10 +368,10 @@ public class LocatorTests
         var parent = page.Locator("div.container", new LocatorOptions { PierceShadow = false });
         var child = parent.First;
 
-        _socket.QueueResponse("""{"id": 8, "sessionId": "session-1", "result": {"result": {"type": "object", "objectId": "arr-1"}}}""");
-        _socket.QueueResponse("""{"id": 9, "sessionId": "session-1", "result": {"result": [{"name": "0", "value": {"type": "object", "objectId": "elem-1"}}, {"name": "length", "value": {"type": "number", "value": 1}}]}}""");
+        _socket.QueueResponse("""{"id": 9, "sessionId": "session-1", "result": {"result": {"type": "object", "objectId": "arr-1"}}}""");
+        _socket.QueueResponse("""{"id": 10, "sessionId": "session-1", "result": {"result": [{"name": "0", "value": {"type": "object", "objectId": "elem-1"}}, {"name": "length", "value": {"type": "number", "value": 1}}]}}""");
         // callFunctionOn for textContent
-        _socket.QueueResponse("""{"id": 10, "sessionId": "session-1", "result": {"result": {"type": "string", "value": "test"}}}""");
+        _socket.QueueResponse("""{"id": 11, "sessionId": "session-1", "result": {"result": {"type": "string", "value": "test"}}}""");
 
         await child.TextContentAsync();
 
@@ -389,8 +390,8 @@ public class LocatorTests
         var locator = page.Locator("#nonexistent");
 
         // Strategy resolve: evaluate returns array objectId, getProperties returns empty
-        _socket.QueueResponse("""{"id": 8, "sessionId": "session-1", "result": {"result": {"type": "object", "objectId": "arr-empty"}}}""");
-        _socket.QueueResponse("""{"id": 9, "sessionId": "session-1", "result": {"result": []}}""");
+        _socket.QueueResponse("""{"id": 9, "sessionId": "session-1", "result": {"result": {"type": "object", "objectId": "arr-empty"}}}""");
+        _socket.QueueResponse("""{"id": 10, "sessionId": "session-1", "result": {"result": []}}""");
 
         await Assert.ThrowsExceptionAsync<InvalidOperationException>(
             () => locator.TextContentAsync());

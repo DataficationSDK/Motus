@@ -41,6 +41,7 @@ public class PageEvaluationTests
         _socket.QueueResponse("""{"id": 5, "sessionId": "session-1", "result": {}}""");
         _socket.QueueResponse("""{"id": 6, "sessionId": "session-1", "result": {}}""");
         _socket.QueueResponse("""{"id": 7, "sessionId": "session-1", "result": {}}""");
+        _socket.QueueResponse("""{"id": 8, "sessionId": "session-1", "result": {}}""");
         var page = await _browser.NewPageAsync();
 
         // Inject frame navigated + execution context
@@ -88,7 +89,7 @@ public class PageEvaluationTests
 
         _socket.Enqueue("""
             {
-                "id": 8,
+                "id": 9,
                 "sessionId": "session-1",
                 "result": {
                     "result": { "type": "string", "value": "Test Page" }
@@ -109,7 +110,7 @@ public class PageEvaluationTests
 
         _socket.Enqueue("""
             {
-                "id": 8,
+                "id": 9,
                 "sessionId": "session-1",
                 "result": {
                     "result": { "type": "number", "value": 2 }
@@ -130,7 +131,7 @@ public class PageEvaluationTests
 
         _socket.Enqueue("""
             {
-                "id": 8,
+                "id": 9,
                 "sessionId": "session-1",
                 "result": {
                     "result": { "type": "undefined" },
@@ -156,7 +157,7 @@ public class PageEvaluationTests
 
         _socket.Enqueue("""
             {
-                "id": 8,
+                "id": 9,
                 "sessionId": "session-1",
                 "result": {
                     "result": { "type": "object", "objectId": "obj-123" }

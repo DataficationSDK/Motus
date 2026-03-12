@@ -147,6 +147,7 @@ public class LifecycleHookTests
         _socket.QueueResponse($@"{{""id"": {id++}, ""result"": {{""sessionId"": ""{sessionId}""}}}}");
         _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""{sessionId}"", ""result"": {{}}}}");
         _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""{sessionId}"", ""result"": {{}}}}");
+        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""{sessionId}"", ""result"": {{}}}}");
         _socket.QueueResponse($@"{{""id"": {id}, ""sessionId"": ""{sessionId}"", ""result"": {{}}}}");
     }
 
@@ -170,7 +171,7 @@ public class LifecycleHookTests
         QueuePageOnContextResponses("target-1", "session-1", 3);
         await context.NewPageAsync();
 
-        _socket.QueueResponse("""{"id": 8, "result": {}}""");
+        _socket.QueueResponse("""{"id": 9, "result": {}}""");
         await context.CloseAsync();
 
         Assert.IsTrue(hook.Calls.Contains("OnPageClosed"),
@@ -187,7 +188,7 @@ public class LifecycleHookTests
         var locator = page.Locator("#btn");
 
         // Queue full actionability + click responses
-        QueueClickActionabilityAndMouseResponses(8);
+        QueueClickActionabilityAndMouseResponses(9);
 
         await locator.ClickAsync();
 
@@ -214,8 +215,8 @@ public class LifecycleHookTests
         // Queue empty strategy resolve responses (evaluate + getProperties) for retries until timeout
         for (int i = 0; i < 40; i += 2)
         {
-            _socket.QueueResponse($@"{{""id"": {8 + i}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""object"", ""objectId"": ""arr-empty-{i}""}}}}}}");
-            _socket.QueueResponse($@"{{""id"": {9 + i}, ""sessionId"": ""session-1"", ""result"": {{""result"": []}}}}");
+            _socket.QueueResponse($@"{{""id"": {9 + i}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""object"", ""objectId"": ""arr-empty-{i}""}}}}}}");
+            _socket.QueueResponse($@"{{""id"": {10 + i}, ""sessionId"": ""session-1"", ""result"": {{""result"": []}}}}");
         }
 
         try

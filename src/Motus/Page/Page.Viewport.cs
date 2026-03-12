@@ -48,18 +48,6 @@ internal sealed partial class Page
     public ILocator GetByAltText(string text, bool? exact = null)
         => new Locator(this, $"[alt=\"{text}\"]");
 
-    public Task RouteAsync(string urlPattern, Func<IRoute, Task> handler)
-        => throw new NotImplementedException("Routing is not yet implemented (Phase 1J).");
-
-    public Task UnrouteAsync(string urlPattern, Func<IRoute, Task>? handler = null)
-        => throw new NotImplementedException("Routing is not yet implemented (Phase 1J).");
-
-    public Task<IRequest> WaitForRequestAsync(string urlPattern, double? timeout = null)
-        => throw new NotImplementedException("Request interception is not yet implemented (Phase 1J).");
-
-    public Task<IResponse> WaitForResponseAsync(string urlPattern, double? timeout = null)
-        => throw new NotImplementedException("Response interception is not yet implemented (Phase 1J).");
-
     public async Task<IElementHandle> AddScriptTagAsync(string? url = null, string? content = null)
     {
         string js;

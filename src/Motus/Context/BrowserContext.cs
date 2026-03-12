@@ -17,6 +17,10 @@ internal sealed class BrowserContext : IBrowserContext
     private readonly LifecycleHookCollection _lifecycleHooks = new();
     private readonly Dictionary<string, Abstractions.IWaitCondition> _waitConditions = new();
     private readonly SelectorStrategyRegistry _selectorStrategies = new();
+    private readonly List<(string Pattern, Func<IRoute, Task> Handler)> _contextRoutes = [];
+    private readonly object _contextRouteLock = new();
+    private readonly Dictionary<string, string> _extraHeaders = new();
+    private bool _offline;
     private bool _closed;
 
     internal BrowserContext(Browser browser, CdpSessionRegistry registry, string browserContextId)
@@ -102,6 +106,33 @@ internal sealed class BrowserContext : IBrowserContext
         var session = _registry.CreateSession(attachResult.SessionId);
         var page = new Page(session, this, createResult.TargetId);
         await page.InitializeAsync(CancellationToken.None);
+
+        // Propagate context-level extra headers to the new page
+        Dictionary<string, string> extraHeaders;
+        lock (_extraHeaders)
+            extraHeaders = new Dictionary<string, string>(_extraHeaders);
+        if (extraHeaders.Count > 0)
+        {
+            await page.Session.SendAsync(
+                "Network.setExtraHTTPHeaders",
+                new NetworkSetExtraHttpHeadersParams(extraHeaders),
+                CdpJsonContext.Default.NetworkSetExtraHttpHeadersParams,
+                CdpJsonContext.Default.NetworkSetExtraHttpHeadersResult,
+                CancellationToken.None);
+        }
+
+        // Propagate context-level offline state to the new page
+        if (_offline)
+        {
+            await page.Session.SendAsync(
+                "Network.emulateNetworkConditions",
+                new NetworkEmulateNetworkConditionsParams(
+                    Offline: true, Latency: 0,
+                    DownloadThroughput: -1, UploadThroughput: -1),
+                CdpJsonContext.Default.NetworkEmulateNetworkConditionsParams,
+                CdpJsonContext.Default.NetworkEmulateNetworkConditionsResult,
+                CancellationToken.None);
+        }
 
         lock (_pages)
             _pages.Add(page);
@@ -292,19 +323,103 @@ internal sealed class BrowserContext : IBrowserContext
         }
     }
 
-    // --- Stubbed methods ---
+    // --- Network routing ---
 
-    public Task RouteAsync(string urlPattern, Func<IRoute, Task> handler)
-        => throw new NotImplementedException("Routing is not yet implemented (Phase 1J).");
+    public async Task RouteAsync(string urlPattern, Func<IRoute, Task> handler)
+    {
+        lock (_contextRouteLock)
+            _contextRoutes.Add((urlPattern, handler));
 
-    public Task UnrouteAsync(string urlPattern, Func<IRoute, Task>? handler = null)
-        => throw new NotImplementedException("Routing is not yet implemented (Phase 1J).");
+        List<Page> currentPages;
+        lock (_pages)
+            currentPages = _pages.ToList();
 
-    public Task SetOfflineAsync(bool offline)
-        => throw new NotImplementedException("SetOffline is not yet implemented (Phase 1J).");
+        foreach (var page in currentPages)
+            await page.RouteAsync(urlPattern, handler);
+    }
 
-    public Task SetExtraHTTPHeadersAsync(IDictionary<string, string> headers)
-        => throw new NotImplementedException("SetExtraHTTPHeaders is not yet implemented (Phase 1J).");
+    public async Task UnrouteAsync(string urlPattern, Func<IRoute, Task>? handler = null)
+    {
+        lock (_contextRouteLock)
+        {
+            if (handler is null)
+                _contextRoutes.RemoveAll(r => r.Pattern == urlPattern);
+            else
+                _contextRoutes.RemoveAll(r => r.Pattern == urlPattern && r.Handler == handler);
+        }
+
+        List<Page> currentPages;
+        lock (_pages)
+            currentPages = _pages.ToList();
+
+        foreach (var page in currentPages)
+            await page.UnrouteAsync(urlPattern, handler);
+    }
+
+    public async Task SetOfflineAsync(bool offline)
+    {
+        _offline = offline;
+
+        List<Page> currentPages;
+        lock (_pages)
+            currentPages = _pages.ToList();
+
+        foreach (var page in currentPages)
+        {
+            await page.Session.SendAsync(
+                "Network.emulateNetworkConditions",
+                new NetworkEmulateNetworkConditionsParams(
+                    Offline: offline, Latency: 0,
+                    DownloadThroughput: -1, UploadThroughput: -1),
+                CdpJsonContext.Default.NetworkEmulateNetworkConditionsParams,
+                CdpJsonContext.Default.NetworkEmulateNetworkConditionsResult,
+                CancellationToken.None);
+        }
+    }
+
+    public async Task SetExtraHTTPHeadersAsync(IDictionary<string, string> headers)
+    {
+        lock (_extraHeaders)
+        {
+            _extraHeaders.Clear();
+            foreach (var kv in headers)
+                _extraHeaders[kv.Key] = kv.Value;
+        }
+
+        List<Page> currentPages;
+        lock (_pages)
+            currentPages = _pages.ToList();
+
+        foreach (var page in currentPages)
+        {
+            await page.Session.SendAsync(
+                "Network.setExtraHTTPHeaders",
+                new NetworkSetExtraHttpHeadersParams(new Dictionary<string, string>(headers)),
+                CdpJsonContext.Default.NetworkSetExtraHttpHeadersParams,
+                CdpJsonContext.Default.NetworkSetExtraHttpHeadersResult,
+                CancellationToken.None);
+        }
+    }
+
+    internal (string? Pattern, Func<IRoute, Task>? Handler) FindRouteHandler(string url)
+    {
+        lock (_contextRouteLock)
+        {
+            for (int i = _contextRoutes.Count - 1; i >= 0; i--)
+            {
+                var (p, h) = _contextRoutes[i];
+                if (Motus.Page.UrlMatchesStatic(url, p))
+                    return (p, h);
+            }
+        }
+        return (null, null);
+    }
+
+    internal bool HasAnyRoutes()
+    {
+        lock (_contextRouteLock)
+            return _contextRoutes.Count > 0;
+    }
 
     public Task<StorageState> StorageStateAsync(string? path = null)
         => throw new NotImplementedException("StorageState is not yet implemented.");

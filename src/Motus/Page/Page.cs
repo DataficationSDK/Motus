@@ -124,6 +124,9 @@ internal sealed partial class Page : IPage
                 ct);
         }
 
+        // Initialize network monitoring and interception
+        await InitializeNetworkAsync(ct);
+
         StartEventPump();
     }
 

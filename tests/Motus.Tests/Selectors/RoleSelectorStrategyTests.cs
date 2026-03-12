@@ -68,12 +68,13 @@ public class RoleSelectorStrategyTests
         _socket.QueueResponse("""{"id": 5, "sessionId": "session-1", "result": {}}""");
         _socket.QueueResponse("""{"id": 6, "sessionId": "session-1", "result": {}}""");
         _socket.QueueResponse("""{"id": 7, "sessionId": "session-1", "result": {}}""");
+        _socket.QueueResponse("""{"id": 8, "sessionId": "session-1", "result": {}}""");
         var page = await _browser.NewPageAsync();
 
         // Accessibility.enable
-        _socket.QueueResponse("""{"id": 8, "sessionId": "session-1", "result": {}}""");
+        _socket.QueueResponse("""{"id": 9, "sessionId": "session-1", "result": {}}""");
         // Accessibility.queryAXTree
-        _socket.QueueResponse("""{"id": 9, "sessionId": "session-1", "result": {"nodes": []}}""");
+        _socket.QueueResponse("""{"id": 10, "sessionId": "session-1", "result": {"nodes": []}}""");
 
         var strategy = new RoleSelectorStrategy();
         var handles = await strategy.ResolveAsync("""button[name="Submit"]""", ((Motus.Page)page).GetFrameForSelectors());
