@@ -285,7 +285,7 @@ public class LifecycleHookTests
         public string StrategyName { get; }
         public int Priority => 50;
         public Task<IReadOnlyList<IElementHandle>> ResolveAsync(
-            string selector, IFrame frame, CancellationToken ct = default)
+            string selector, IFrame frame, bool pierceShadow = true, CancellationToken ct = default)
             => Task.FromResult<IReadOnlyList<IElementHandle>>([]);
         public Task<string?> GenerateSelector(IElementHandle element, CancellationToken ct = default)
             => Task.FromResult<string?>(null);

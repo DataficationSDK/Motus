@@ -21,9 +21,10 @@ public interface ISelectorStrategy
     /// </summary>
     /// <param name="selector">The selector expression to resolve.</param>
     /// <param name="frame">The frame to search within.</param>
+    /// <param name="pierceShadow">Whether to descend into open shadow roots when resolving.</param>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>A list of matching elements.</returns>
-    Task<IReadOnlyList<IElementHandle>> ResolveAsync(string selector, IFrame frame, CancellationToken ct = default);
+    Task<IReadOnlyList<IElementHandle>> ResolveAsync(string selector, IFrame frame, bool pierceShadow = true, CancellationToken ct = default);
 
     /// <summary>
     /// Given an element handle, generates the best selector for it using this strategy.

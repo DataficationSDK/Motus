@@ -16,8 +16,9 @@ internal sealed class RoleSelectorStrategy : ISelectorStrategy
 
     public int Priority => 30;
 
+    // CDP Accessibility.queryAXTree already traverses shadow boundaries natively
     public async Task<IReadOnlyList<IElementHandle>> ResolveAsync(
-        string selector, IFrame frame, CancellationToken ct = default)
+        string selector, IFrame frame, bool pierceShadow = true, CancellationToken ct = default)
     {
         var page = SelectorStrategyHelpers.GetPage(frame);
 

@@ -12,6 +12,7 @@ internal sealed class Locator : ILocator
     private readonly ILocator? _has;
     private readonly ILocator? _hasNot;
     private readonly double? _defaultTimeout;
+    private readonly bool _pierceShadow;
 
     internal Locator(Page page, string selector, LocatorOptions? options = null)
     {
@@ -21,10 +22,11 @@ internal sealed class Locator : ILocator
         _has = options?.Has;
         _hasNot = options?.HasNot;
         _defaultTimeout = options?.Timeout;
+        _pierceShadow = options?.PierceShadow ?? true;
     }
 
     private Locator(Page page, string selector, int? nthIndex, string? hasText,
-        ILocator? has, ILocator? hasNot, double? defaultTimeout = null)
+        ILocator? has, ILocator? hasNot, double? defaultTimeout = null, bool pierceShadow = true)
     {
         _page = page;
         _selector = selector;
@@ -33,6 +35,7 @@ internal sealed class Locator : ILocator
         _has = has;
         _hasNot = hasNot;
         _defaultTimeout = defaultTimeout;
+        _pierceShadow = pierceShadow;
     }
 
     // --- Timeout Helper ---
@@ -77,7 +80,7 @@ internal sealed class Locator : ILocator
         if (!registry.TryGetStrategy(prefix, out var strategy))
             throw new InvalidOperationException($"No selector strategy registered for prefix: {prefix}");
 
-        var handles = await strategy!.ResolveAsync(expression, _page.GetFrameForSelectors(), ct);
+        var handles = await strategy!.ResolveAsync(expression, _page.GetFrameForSelectors(), _pierceShadow, ct);
 
         // Apply hasText filter
         if (_hasText is not null)
@@ -225,21 +228,24 @@ internal sealed class Locator : ILocator
 
     // --- Chaining Properties ---
 
-    public ILocator First => new Locator(_page, _selector, 0, _hasText, _has, _hasNot, _defaultTimeout);
+    public ILocator First => new Locator(_page, _selector, 0, _hasText, _has, _hasNot, _defaultTimeout, _pierceShadow);
 
-    public ILocator Last => new Locator(_page, _selector, -1, _hasText, _has, _hasNot, _defaultTimeout);
+    public ILocator Last => new Locator(_page, _selector, -1, _hasText, _has, _hasNot, _defaultTimeout, _pierceShadow);
 
-    public ILocator Nth(int index) => new Locator(_page, _selector, index, _hasText, _has, _hasNot, _defaultTimeout);
+    public ILocator Nth(int index) => new Locator(_page, _selector, index, _hasText, _has, _hasNot, _defaultTimeout, _pierceShadow);
 
     public ILocator Filter(LocatorOptions? options = null) =>
         new Locator(_page, _selector, _nthIndex,
             options?.HasText ?? _hasText,
             options?.Has ?? _has,
             options?.HasNot ?? _hasNot,
-            _defaultTimeout);
+            _defaultTimeout,
+            options?.PierceShadow ?? _pierceShadow);
 
     ILocator ILocator.Locator(string selector, LocatorOptions? options = null) =>
-        new Locator(_page, _selector + " " + selector, options);
+        new Locator(_page, _selector + " " + selector, options is null
+            ? new LocatorOptions { PierceShadow = _pierceShadow }
+            : options with { PierceShadow = options.PierceShadow ?? _pierceShadow });
 
     // --- Action Methods ---
 
@@ -835,6 +841,6 @@ internal sealed class Locator : ILocator
         if (!registry.TryGetStrategy(prefix, out var strategy))
             throw new InvalidOperationException($"No selector strategy registered for prefix: {prefix}");
 
-        return await strategy!.ResolveAsync(expression, _page.GetFrameForSelectors(), ct);
+        return await strategy!.ResolveAsync(expression, _page.GetFrameForSelectors(), _pierceShadow, ct);
     }
 }

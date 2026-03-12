@@ -76,4 +76,58 @@ public class TextSelectorStrategyTests
         Assert.IsTrue(allSent.Any(s => s.Contains("textContent") && s.Contains("trim()===")),
             "Exact match should use textContent.trim()===");
     }
+
+    [TestMethod]
+    public async Task ResolveAsync_DefaultPierceShadow_UsesRecursiveWalk()
+    {
+        _socket.QueueResponse("""{"id": 2, "result": {"browserContextId": "ctx-1"}}""");
+        _socket.QueueResponse("""{"id": 3, "result": {"targetId": "target-1"}}""");
+        _socket.QueueResponse("""{"id": 4, "result": {"sessionId": "session-1"}}""");
+        _socket.QueueResponse("""{"id": 5, "sessionId": "session-1", "result": {}}""");
+        _socket.QueueResponse("""{"id": 6, "sessionId": "session-1", "result": {}}""");
+        _socket.QueueResponse("""{"id": 7, "sessionId": "session-1", "result": {}}""");
+        var page = await _browser.NewPageAsync();
+
+        _socket.QueueResponse("""{"id": 8, "sessionId": "session-1", "result": {"result": {"type": "object", "objectId": "arr-1"}}}""");
+        _socket.QueueResponse("""{"id": 9, "sessionId": "session-1", "result": {"result": []}}""");
+
+        var strategy = new TextSelectorStrategy();
+        await strategy.ResolveAsync("Hello", ((Motus.Page)page).GetFrameForSelectors());
+
+        var allSent = Enumerable.Range(0, _socket.SentMessages.Count)
+            .Select(i => _socket.GetSentJson(i))
+            .ToList();
+
+        Assert.IsTrue(allSent.Any(s => s.Contains("walkShadow")),
+            "Default pierceShadow=true should use walkShadow function");
+        Assert.IsFalse(allSent.Any(s => s.Contains("createTreeWalker")),
+            "Default pierceShadow=true should NOT use createTreeWalker");
+    }
+
+    [TestMethod]
+    public async Task ResolveAsync_PierceShadowFalse_UsesTreeWalker()
+    {
+        _socket.QueueResponse("""{"id": 2, "result": {"browserContextId": "ctx-1"}}""");
+        _socket.QueueResponse("""{"id": 3, "result": {"targetId": "target-1"}}""");
+        _socket.QueueResponse("""{"id": 4, "result": {"sessionId": "session-1"}}""");
+        _socket.QueueResponse("""{"id": 5, "sessionId": "session-1", "result": {}}""");
+        _socket.QueueResponse("""{"id": 6, "sessionId": "session-1", "result": {}}""");
+        _socket.QueueResponse("""{"id": 7, "sessionId": "session-1", "result": {}}""");
+        var page = await _browser.NewPageAsync();
+
+        _socket.QueueResponse("""{"id": 8, "sessionId": "session-1", "result": {"result": {"type": "object", "objectId": "arr-1"}}}""");
+        _socket.QueueResponse("""{"id": 9, "sessionId": "session-1", "result": {"result": []}}""");
+
+        var strategy = new TextSelectorStrategy();
+        await strategy.ResolveAsync("Hello", ((Motus.Page)page).GetFrameForSelectors(), pierceShadow: false);
+
+        var allSent = Enumerable.Range(0, _socket.SentMessages.Count)
+            .Select(i => _socket.GetSentJson(i))
+            .ToList();
+
+        Assert.IsTrue(allSent.Any(s => s.Contains("createTreeWalker")),
+            "pierceShadow=false should use createTreeWalker");
+        Assert.IsFalse(allSent.Any(s => s.Contains("walkShadow")),
+            "pierceShadow=false should NOT use walkShadow");
+    }
 }

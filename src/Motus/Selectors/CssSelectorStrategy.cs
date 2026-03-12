@@ -8,23 +8,33 @@ namespace Motus;
 /// </summary>
 internal sealed class CssSelectorStrategy : ISelectorStrategy
 {
-    private readonly bool _pierceShadow;
-
-    internal CssSelectorStrategy(bool pierceShadow = false)
-    {
-        _pierceShadow = pierceShadow;
-    }
-
     public string StrategyName => "css";
 
     public int Priority => 10;
 
     public async Task<IReadOnlyList<IElementHandle>> ResolveAsync(
-        string selector, IFrame frame, CancellationToken ct = default)
+        string selector, IFrame frame, bool pierceShadow = true, CancellationToken ct = default)
     {
         var page = SelectorStrategyHelpers.GetPage(frame);
         var escaped = JsonEncodedText.Encode(selector).ToString();
-        var js = $"""Array.from(document.querySelectorAll("{escaped}"))""";
+
+        var js = pierceShadow
+            ? $$"""
+                (()=>{
+                    function queryShadow(root,sel){
+                        var results=Array.from(root.querySelectorAll(sel));
+                        var all=root.querySelectorAll('*');
+                        for(var i=0;i<all.length;i++){
+                            var sr=all[i].shadowRoot;
+                            if(sr) results=results.concat(queryShadow(sr,sel));
+                        }
+                        return results;
+                    }
+                    return queryShadow(document,"{{escaped}}");
+                })()
+                """
+            : $"""Array.from(document.querySelectorAll("{escaped}"))""";
+
         return await SelectorStrategyHelpers.EvalToHandlesAsync(page, js, ct);
     }
 

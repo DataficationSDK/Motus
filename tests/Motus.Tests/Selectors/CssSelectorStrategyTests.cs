@@ -56,4 +56,56 @@ public class CssSelectorStrategyTests
         Assert.IsTrue(allSent.Any(s => s.Contains("querySelectorAll") && s.Contains("div.test")),
             "Should send querySelectorAll with the CSS selector");
     }
+
+    [TestMethod]
+    public async Task ResolveAsync_DefaultPierceShadow_SendsShadowTraversalJS()
+    {
+        _socket.QueueResponse("""{"id": 2, "result": {"browserContextId": "ctx-1"}}""");
+        _socket.QueueResponse("""{"id": 3, "result": {"targetId": "target-1"}}""");
+        _socket.QueueResponse("""{"id": 4, "result": {"sessionId": "session-1"}}""");
+        _socket.QueueResponse("""{"id": 5, "sessionId": "session-1", "result": {}}""");
+        _socket.QueueResponse("""{"id": 6, "sessionId": "session-1", "result": {}}""");
+        _socket.QueueResponse("""{"id": 7, "sessionId": "session-1", "result": {}}""");
+        var page = await _browser.NewPageAsync();
+
+        _socket.QueueResponse("""{"id": 8, "sessionId": "session-1", "result": {"result": {"type": "object", "objectId": "arr-1"}}}""");
+        _socket.QueueResponse("""{"id": 9, "sessionId": "session-1", "result": {"result": []}}""");
+
+        var strategy = new CssSelectorStrategy();
+        await strategy.ResolveAsync("div.test", ((Motus.Page)page).GetFrameForSelectors());
+
+        var allSent = Enumerable.Range(0, _socket.SentMessages.Count)
+            .Select(i => _socket.GetSentJson(i))
+            .ToList();
+
+        Assert.IsTrue(allSent.Any(s => s.Contains("queryShadow")),
+            "Default pierceShadow=true should use queryShadow function");
+    }
+
+    [TestMethod]
+    public async Task ResolveAsync_PierceShadowFalse_SendsPlainQuerySelectorAll()
+    {
+        _socket.QueueResponse("""{"id": 2, "result": {"browserContextId": "ctx-1"}}""");
+        _socket.QueueResponse("""{"id": 3, "result": {"targetId": "target-1"}}""");
+        _socket.QueueResponse("""{"id": 4, "result": {"sessionId": "session-1"}}""");
+        _socket.QueueResponse("""{"id": 5, "sessionId": "session-1", "result": {}}""");
+        _socket.QueueResponse("""{"id": 6, "sessionId": "session-1", "result": {}}""");
+        _socket.QueueResponse("""{"id": 7, "sessionId": "session-1", "result": {}}""");
+        var page = await _browser.NewPageAsync();
+
+        _socket.QueueResponse("""{"id": 8, "sessionId": "session-1", "result": {"result": {"type": "object", "objectId": "arr-1"}}}""");
+        _socket.QueueResponse("""{"id": 9, "sessionId": "session-1", "result": {"result": []}}""");
+
+        var strategy = new CssSelectorStrategy();
+        await strategy.ResolveAsync("div.test", ((Motus.Page)page).GetFrameForSelectors(), pierceShadow: false);
+
+        var allSent = Enumerable.Range(0, _socket.SentMessages.Count)
+            .Select(i => _socket.GetSentJson(i))
+            .ToList();
+
+        Assert.IsTrue(allSent.Any(s => s.Contains("querySelectorAll") && s.Contains("div.test")),
+            "pierceShadow=false should use plain querySelectorAll");
+        Assert.IsFalse(allSent.Any(s => s.Contains("queryShadow")),
+            "pierceShadow=false should NOT use queryShadow function");
+    }
 }

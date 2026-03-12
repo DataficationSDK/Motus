@@ -12,8 +12,9 @@ internal sealed class XPathSelectorStrategy : ISelectorStrategy
 
     public int Priority => 10;
 
+    // XPath cannot traverse shadow DOM boundaries (language limitation)
     public async Task<IReadOnlyList<IElementHandle>> ResolveAsync(
-        string selector, IFrame frame, CancellationToken ct = default)
+        string selector, IFrame frame, bool pierceShadow = true, CancellationToken ct = default)
     {
         var page = SelectorStrategyHelpers.GetPage(frame);
         var escaped = JsonEncodedText.Encode(selector).ToString();

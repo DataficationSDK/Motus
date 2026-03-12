@@ -9,19 +9,12 @@ namespace Motus;
 /// </summary>
 internal sealed class TextSelectorStrategy : ISelectorStrategy
 {
-    private readonly bool _pierceShadow;
-
-    internal TextSelectorStrategy(bool pierceShadow = false)
-    {
-        _pierceShadow = pierceShadow;
-    }
-
     public string StrategyName => "text";
 
     public int Priority => 20;
 
     public async Task<IReadOnlyList<IElementHandle>> ResolveAsync(
-        string selector, IFrame frame, CancellationToken ct = default)
+        string selector, IFrame frame, bool pierceShadow = true, CancellationToken ct = default)
     {
         var page = SelectorStrategyHelpers.GetPage(frame);
 
@@ -32,17 +25,34 @@ internal sealed class TextSelectorStrategy : ISelectorStrategy
             ? $"""el.textContent&&el.textContent.trim()==="{escaped}" """
             : $"""el.textContent&&el.textContent.includes("{escaped}")""";
 
-        var js = $$"""
-            (()=>{
-                var results=[];
-                var walker=document.createTreeWalker(document.body,NodeFilter.SHOW_ELEMENT);
-                var el;
-                while(el=walker.nextNode()){
-                    if({{matchExpr}}) results.push(el);
-                }
-                return results;
-            })()
-            """;
+        var js = pierceShadow
+            ? $$"""
+                (()=>{
+                    function walkShadow(root){
+                        var results=[];
+                        var all=root.querySelectorAll('*');
+                        for(var i=0;i<all.length;i++){
+                            var el=all[i];
+                            if({{matchExpr}}) results.push(el);
+                            var sr=el.shadowRoot;
+                            if(sr) results=results.concat(walkShadow(sr));
+                        }
+                        return results;
+                    }
+                    return walkShadow(document);
+                })()
+                """
+            : $$"""
+                (()=>{
+                    var results=[];
+                    var walker=document.createTreeWalker(document.body,NodeFilter.SHOW_ELEMENT);
+                    var el;
+                    while(el=walker.nextNode()){
+                        if({{matchExpr}}) results.push(el);
+                    }
+                    return results;
+                })()
+                """;
 
         return await SelectorStrategyHelpers.EvalToHandlesAsync(page, js, ct);
     }

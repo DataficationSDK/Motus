@@ -279,7 +279,8 @@ public class LocatorTests
             .Select(i => _socket.GetSentJson(i))
             .ToList();
 
-        Assert.IsTrue(allSent.Any(s => s.Contains("createTreeWalker") && s.Contains("Click me")));
+        Assert.IsTrue(allSent.Any(s => s.Contains("walkShadow") && s.Contains("Click me")),
+            "Default pierceShadow=true should use shadow-piercing walkShadow JS");
     }
 
     [TestMethod]
@@ -317,6 +318,68 @@ public class LocatorTests
             .ToList();
 
         Assert.IsTrue(allSent.Any(s => s.Contains("querySelectorAll") && s.Contains("div.container")));
+    }
+
+    [TestMethod]
+    public async Task PierceShadow_DefaultsToTrue()
+    {
+        var page = await CreatePageAsync();
+        var locator = page.Locator("css=div.shadow");
+
+        _socket.QueueResponse("""{"id": 8, "sessionId": "session-1", "result": {"result": {"type": "object", "objectId": "arr-1"}}}""");
+        _socket.QueueResponse("""{"id": 9, "sessionId": "session-1", "result": {"result": []}}""");
+
+        await locator.ElementHandlesAsync();
+
+        var allSent = Enumerable.Range(0, _socket.SentMessages.Count)
+            .Select(i => _socket.GetSentJson(i))
+            .ToList();
+
+        Assert.IsTrue(allSent.Any(s => s.Contains("queryShadow")),
+            "Default locator should use shadow-piercing JS");
+    }
+
+    [TestMethod]
+    public async Task PierceShadow_False_BypassesShadowTraversal()
+    {
+        var page = await CreatePageAsync();
+        var locator = page.Locator("css=div.shadow", new LocatorOptions { PierceShadow = false });
+
+        _socket.QueueResponse("""{"id": 8, "sessionId": "session-1", "result": {"result": {"type": "object", "objectId": "arr-1"}}}""");
+        _socket.QueueResponse("""{"id": 9, "sessionId": "session-1", "result": {"result": []}}""");
+
+        await locator.ElementHandlesAsync();
+
+        var allSent = Enumerable.Range(0, _socket.SentMessages.Count)
+            .Select(i => _socket.GetSentJson(i))
+            .ToList();
+
+        Assert.IsFalse(allSent.Any(s => s.Contains("queryShadow")),
+            "PierceShadow=false should NOT use shadow-piercing JS");
+        Assert.IsTrue(allSent.Any(s => s.Contains("querySelectorAll")),
+            "PierceShadow=false should use plain querySelectorAll");
+    }
+
+    [TestMethod]
+    public async Task PierceShadow_InheritedByChildLocator()
+    {
+        var page = await CreatePageAsync();
+        var parent = page.Locator("div.container", new LocatorOptions { PierceShadow = false });
+        var child = parent.First;
+
+        _socket.QueueResponse("""{"id": 8, "sessionId": "session-1", "result": {"result": {"type": "object", "objectId": "arr-1"}}}""");
+        _socket.QueueResponse("""{"id": 9, "sessionId": "session-1", "result": {"result": [{"name": "0", "value": {"type": "object", "objectId": "elem-1"}}, {"name": "length", "value": {"type": "number", "value": 1}}]}}""");
+        // callFunctionOn for textContent
+        _socket.QueueResponse("""{"id": 10, "sessionId": "session-1", "result": {"result": {"type": "string", "value": "test"}}}""");
+
+        await child.TextContentAsync();
+
+        var allSent = Enumerable.Range(0, _socket.SentMessages.Count)
+            .Select(i => _socket.GetSentJson(i))
+            .ToList();
+
+        Assert.IsFalse(allSent.Any(s => s.Contains("queryShadow")),
+            "Child locator should inherit parent's PierceShadow=false");
     }
 
     [TestMethod]
