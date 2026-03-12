@@ -22,6 +22,9 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Motus\Motus.csproj" />
     <ProjectReference Include="..\..\src\Motus.Abstractions\Motus.Abstractions.csproj" />
+    <ProjectReference Include="..\..\src\Motus.Codegen\Motus.Codegen.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false" />
   </ItemGroup>
 
 </Project>

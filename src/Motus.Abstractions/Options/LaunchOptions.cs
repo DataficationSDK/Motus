@@ -37,4 +37,7 @@ public sealed record LaunchOptions
 
     /// <summary>Path to a folder for browser downloads.</summary>
     public string? DownloadsPath { get; init; }
+
+    /// <summary>Manually registered plugins to load into each browser context.</summary>
+    public IReadOnlyList<IPlugin>? Plugins { get; init; }
 }

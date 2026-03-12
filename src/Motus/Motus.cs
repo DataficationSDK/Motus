@@ -53,7 +53,8 @@ public static class MotusLauncher
             var browser = new Browser(
                 transport, registry, process,
                 ownsTempDir ? userDataDir : null,
-                options.HandleSIGINT, options.HandleSIGTERM);
+                options.HandleSIGINT, options.HandleSIGTERM,
+                options);
 
             await browser.InitializeAsync(ct);
             return browser;

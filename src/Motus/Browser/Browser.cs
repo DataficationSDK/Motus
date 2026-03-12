@@ -14,6 +14,7 @@ internal sealed class Browser : IBrowser
     private readonly string? _tempUserDataDir;
     private readonly bool _handleSigint;
     private readonly bool _handleSigterm;
+    private readonly LaunchOptions _launchOptions;
 
     private readonly List<BrowserContext> _contexts = [];
 
@@ -27,7 +28,8 @@ internal sealed class Browser : IBrowser
         Process? process,
         string? tempUserDataDir,
         bool handleSigint,
-        bool handleSigterm)
+        bool handleSigterm,
+        LaunchOptions? launchOptions = null)
     {
         _transport = transport;
         _registry = registry;
@@ -35,6 +37,7 @@ internal sealed class Browser : IBrowser
         _tempUserDataDir = tempUserDataDir;
         _handleSigint = handleSigint;
         _handleSigterm = handleSigterm;
+        _launchOptions = launchOptions ?? new LaunchOptions();
 
         _transport.Disconnected += OnTransportDisconnected;
     }
@@ -162,6 +165,10 @@ internal sealed class Browser : IBrowser
             CancellationToken.None);
 
         var context = new BrowserContext(this, _registry, result.BrowserContextId, options);
+
+        var host = new PluginHost();
+        await host.LoadAsync(_launchOptions, context);
+        context.PluginHost = host;
 
         lock (_contexts)
             _contexts.Add(context);

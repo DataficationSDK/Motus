@@ -80,6 +80,8 @@ internal sealed class BrowserContext : IBrowserContext
             return _waitConditions.TryGetValue(name, out var c) ? c : null;
     }
 
+    internal PluginHost? PluginHost { get; set; }
+
     internal Abstractions.IPluginContext GetPluginContext() => new PluginContext(this);
 
     internal IReadOnlyDictionary<string, Func<object?[], Task<object?>>> Bindings => _bindings;
@@ -213,6 +215,10 @@ internal sealed class BrowserContext : IBrowserContext
             return;
 
         _closed = true;
+
+        // Unload plugins before closing pages
+        if (PluginHost is not null)
+            await PluginHost.UnloadAsync();
 
         // Close all pages
         List<Page> pagesToClose;

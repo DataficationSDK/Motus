@@ -22,6 +22,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Motus.Codegen\Motus.Codegen.csproj" />
+    <ProjectReference Include="..\..\src\Motus.Abstractions\Motus.Abstractions.csproj" />
   </ItemGroup>
 
   <ItemGroup>
