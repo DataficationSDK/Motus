@@ -14,6 +14,9 @@ internal sealed class BrowserContext : IBrowserContext
     private readonly List<Page> _pages = [];
     private readonly ConcurrentDictionary<string, Func<object?[], Task<object?>>> _bindings = new();
     private readonly List<string> _initScripts = [];
+    private readonly LifecycleHookCollection _lifecycleHooks = new();
+    private readonly Dictionary<string, Abstractions.IWaitCondition> _waitConditions = new();
+    private readonly SelectorStrategyRegistry _selectorStrategies = new();
     private bool _closed;
 
     internal BrowserContext(Browser browser, CdpSessionRegistry registry, string browserContextId)
@@ -21,6 +24,12 @@ internal sealed class BrowserContext : IBrowserContext
         _browser = browser;
         _registry = registry;
         _browserContextId = browserContextId;
+
+        _selectorStrategies.Register(new CssSelectorStrategy());
+        _selectorStrategies.Register(new XPathSelectorStrategy());
+        _selectorStrategies.Register(new TextSelectorStrategy());
+        _selectorStrategies.Register(new RoleSelectorStrategy());
+        _selectorStrategies.Register(new TestIdSelectorStrategy());
     }
 
     public IBrowser Browser => _browser;
@@ -38,6 +47,24 @@ internal sealed class BrowserContext : IBrowserContext
         => throw new NotImplementedException("Tracing is not yet implemented.");
 
     internal string BrowserContextId => _browserContextId;
+
+    internal LifecycleHookCollection LifecycleHooks => _lifecycleHooks;
+
+    internal SelectorStrategyRegistry SelectorStrategies => _selectorStrategies;
+
+    internal void RegisterWaitCondition(string name, Abstractions.IWaitCondition condition)
+    {
+        lock (_waitConditions)
+            _waitConditions[name] = condition;
+    }
+
+    internal Abstractions.IWaitCondition? GetWaitCondition(string name)
+    {
+        lock (_waitConditions)
+            return _waitConditions.TryGetValue(name, out var c) ? c : null;
+    }
+
+    internal Abstractions.IPluginContext GetPluginContext() => new PluginContext(this);
 
     internal IReadOnlyDictionary<string, Func<object?[], Task<object?>>> Bindings => _bindings;
 
@@ -79,6 +106,7 @@ internal sealed class BrowserContext : IBrowserContext
         lock (_pages)
             _pages.Add(page);
 
+        await _lifecycleHooks.FireOnPageCreatedAsync(page);
         Page?.Invoke(this, page);
 
         return page;
@@ -118,6 +146,7 @@ internal sealed class BrowserContext : IBrowserContext
 
         foreach (var page in pagesToClose)
         {
+            await _lifecycleHooks.FireOnPageClosedAsync(page);
             await page.DisposeAsync();
         }
 

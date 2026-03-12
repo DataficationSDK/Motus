@@ -163,7 +163,9 @@ internal sealed partial class Page
     {
         var text = string.Join(" ", evt.Args.Select(a =>
             a.Value?.ToString() ?? a.Description ?? a.Type));
-        Console?.Invoke(this, new ConsoleMessageEventArgs(evt.Type, text));
+        var args = new ConsoleMessageEventArgs(evt.Type, text);
+        Console?.Invoke(this, args);
+        _ = _context.LifecycleHooks.FireOnConsoleMessageAsync(this, args);
     }
 
     private void OnExceptionThrown(RuntimeExceptionThrownEvent evt)
@@ -171,7 +173,9 @@ internal sealed partial class Page
         var details = evt.ExceptionDetails;
         var message = details.Exception?.Description ?? details.Text;
         var stack = details.Exception?.Description;
-        PageError?.Invoke(this, new PageErrorEventArgs(message, stack));
+        var args = new PageErrorEventArgs(message, stack);
+        PageError?.Invoke(this, args);
+        _ = _context.LifecycleHooks.FireOnPageErrorAsync(this, args);
     }
 
     private void OnDialogOpening(PageJavascriptDialogOpeningEvent evt)

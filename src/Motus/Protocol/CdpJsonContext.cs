@@ -105,9 +105,17 @@ namespace Motus;
 [JsonSerializable(typeof(DomScrollIntoViewIfNeededResult))]
 [JsonSerializable(typeof(DomFocusParams))]
 [JsonSerializable(typeof(DomFocusResult))]
+[JsonSerializable(typeof(DomGetNodeForLocationParams))]
+[JsonSerializable(typeof(DomGetNodeForLocationResult))]
+[JsonSerializable(typeof(DomResolveNodeParams))]
+[JsonSerializable(typeof(DomResolveNodeResult))]
 // --- Page domain (clip) ---
 [JsonSerializable(typeof(PageCaptureScreenshotWithClipParams))]
 [JsonSerializable(typeof(PageClipRect))]
+// --- Accessibility domain ---
+[JsonSerializable(typeof(AccessibilityEnableResult))]
+[JsonSerializable(typeof(AccessibilityQueryAXTreeParams))]
+[JsonSerializable(typeof(AccessibilityQueryAXTreeResult))]
 // --- Abstractions type registration ---
 [JsonSerializable(typeof(Motus.Abstractions.BoundingBox))]
 [JsonSourceGenerationOptions(
@@ -518,6 +526,23 @@ internal sealed record DomFocusParams(string? ObjectId = null);
 
 internal sealed record DomFocusResult();
 
+internal sealed record DomGetNodeForLocationParams(
+    int X,
+    int Y,
+    bool? IncludeUserAgentShadowDOM = null,
+    bool? IgnorePointerEventsNone = null);
+
+internal sealed record DomGetNodeForLocationResult(
+    int BackendNodeId,
+    int? NodeId = null,
+    string? FrameId = null);
+
+internal sealed record DomResolveNodeParams(
+    int? BackendNodeId = null,
+    string? ObjectGroup = null);
+
+internal sealed record DomResolveNodeResult(RuntimeRemoteObject Object);
+
 // ============================================================================
 // Page domain (screenshot with clip)
 // ============================================================================
@@ -547,3 +572,27 @@ internal sealed record EmulationSetEmulatedMediaParams(
 internal sealed record EmulationMediaFeature(string Name, string Value);
 
 internal sealed record EmulationSetEmulatedMediaResult();
+
+// ============================================================================
+// Accessibility domain
+// ============================================================================
+
+internal sealed record AccessibilityEnableResult();
+
+internal sealed record AccessibilityQueryAXTreeParams(
+    string? ObjectId = null,
+    string? AccessibleName = null,
+    string? Role = null);
+
+internal sealed record AccessibilityAXValueSimple(
+    string Type,
+    JsonElement? Value = null);
+
+internal sealed record AccessibilityAXNodeSimple(
+    string NodeId,
+    bool Ignored,
+    AccessibilityAXValueSimple? Role = null,
+    AccessibilityAXValueSimple? Name = null,
+    long? BackendDOMNodeId = null);
+
+internal sealed record AccessibilityQueryAXTreeResult(AccessibilityAXNodeSimple[] Nodes);

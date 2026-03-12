@@ -11,6 +11,8 @@ internal sealed partial class Page
 
     public async Task<IResponse?> GotoAsync(string url, NavigationOptions? options = null)
     {
+        await _context.LifecycleHooks.FireBeforeNavigationAsync(this, url);
+
         var waitUntil = options?.WaitUntil ?? WaitUntil.Load;
         var timeout = TimeSpan.FromMilliseconds(options?.Timeout ?? 30_000);
 
@@ -28,7 +30,9 @@ internal sealed partial class Page
 
         await waiter;
 
-        return null; // IResponse requires network interception (Phase 1J)
+        IResponse? response = null; // IResponse requires network interception (Phase 1J)
+        await _context.LifecycleHooks.FireAfterNavigationAsync(this, response);
+        return response;
     }
 
     public async Task<IResponse?> GoBackAsync(NavigationOptions? options = null)
@@ -42,6 +46,8 @@ internal sealed partial class Page
             return null;
 
         var entry = history.Entries[history.CurrentIndex - 1];
+        await _context.LifecycleHooks.FireBeforeNavigationAsync(this, entry.Url);
+
         var waitUntil = options?.WaitUntil ?? WaitUntil.Load;
         var timeout = TimeSpan.FromMilliseconds(options?.Timeout ?? 30_000);
 
@@ -56,7 +62,9 @@ internal sealed partial class Page
 
         await waiter;
 
-        return null;
+        IResponse? response = null;
+        await _context.LifecycleHooks.FireAfterNavigationAsync(this, response);
+        return response;
     }
 
     public async Task<IResponse?> GoForwardAsync(NavigationOptions? options = null)
@@ -70,6 +78,8 @@ internal sealed partial class Page
             return null;
 
         var entry = history.Entries[history.CurrentIndex + 1];
+        await _context.LifecycleHooks.FireBeforeNavigationAsync(this, entry.Url);
+
         var waitUntil = options?.WaitUntil ?? WaitUntil.Load;
         var timeout = TimeSpan.FromMilliseconds(options?.Timeout ?? 30_000);
 
@@ -84,11 +94,15 @@ internal sealed partial class Page
 
         await waiter;
 
-        return null;
+        IResponse? response = null;
+        await _context.LifecycleHooks.FireAfterNavigationAsync(this, response);
+        return response;
     }
 
     public async Task<IResponse?> ReloadAsync(NavigationOptions? options = null)
     {
+        await _context.LifecycleHooks.FireBeforeNavigationAsync(this, Url);
+
         var waitUntil = options?.WaitUntil ?? WaitUntil.Load;
         var timeout = TimeSpan.FromMilliseconds(options?.Timeout ?? 30_000);
 
@@ -101,7 +115,9 @@ internal sealed partial class Page
 
         await waiter;
 
-        return null;
+        IResponse? response = null;
+        await _context.LifecycleHooks.FireAfterNavigationAsync(this, response);
+        return response;
     }
 
     public async Task WaitForLoadStateAsync(LoadState? state = null, double? timeout = null)

@@ -39,70 +39,87 @@ public class LocatorTests
         return await _browser.NewPageAsync();
     }
 
+    /// <summary>
+    /// Queues 2 CDP responses for strategy-based single element resolution:
+    /// 1. Runtime.evaluate (querySelectorAll returning array objectId)
+    /// 2. Runtime.getProperties (returning element descriptors)
+    /// </summary>
+    private void QueueStrategyResolve(ref int id, string objectId = "btn-1")
+    {
+        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""object"", ""objectId"": ""arr-{objectId}""}}}}}}");
+        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": [{{""name"": ""0"", ""value"": {{""type"": ""object"", ""objectId"": ""{objectId}""}}}}, {{""name"": ""length"", ""value"": {{""type"": ""number"", ""value"": 1}}}}]}}}}");
+    }
+
+    /// <summary>
+    /// Queues the CDP responses needed for actionability checks on a click action:
+    /// 1-2. resolve (strategy: Runtime.evaluate + Runtime.getProperties)
+    /// 3. visible check (Runtime.callFunctionOn)
+    /// 4. enabled check (Runtime.callFunctionOn)
+    /// 5. stable check (Runtime.callFunctionOn)
+    /// 6. receives-events: bounding box (Runtime.callFunctionOn)
+    /// 7. receives-events: DOM.getNodeForLocation
+    /// 8. receives-events: DOM.resolveNode
+    /// 9. receives-events: identity check (Runtime.callFunctionOn)
+    /// Then the action-specific calls follow.
+    /// </summary>
+    private void QueueClickActionabilityResponses(int startId, string objectId = "btn-1")
+    {
+        var id = startId;
+        // Strategy resolve: evaluate + getProperties
+        QueueStrategyResolve(ref id, objectId);
+        // visible
+        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""boolean"", ""value"": true}}}}}}");
+        // enabled
+        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""boolean"", ""value"": true}}}}}}");
+        // stable
+        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""boolean"", ""value"": true}}}}}}");
+        // receives-events: bounding box
+        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""object"", ""value"": {{""x"": 100, ""y"": 200, ""width"": 80, ""height"": 30}}}}}}}}");
+        // DOM.getNodeForLocation
+        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""backendNodeId"": 42}}}}");
+        // DOM.resolveNode
+        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""object"": {{""type"": ""object"", ""objectId"": ""resolved-1""}}}}}}");
+        // identity check
+        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""boolean"", ""value"": true}}}}}}");
+    }
+
+    /// <summary>
+    /// Queues strategy resolve (2 calls) + callFunctionOn eval response.
+    /// </summary>
+    private void QueueResolveAndEval(int startId, string objectId, string valueJson)
+    {
+        var id = startId;
+        QueueStrategyResolve(ref id, objectId);
+        _socket.QueueResponse($@"{{""id"": {id}, ""sessionId"": ""session-1"", ""result"": {{""result"": {valueJson}}}}}");
+    }
+
     [TestMethod]
     public async Task TextContentAsync_ResolvesThenEvaluates()
     {
         var page = await CreatePageAsync();
         var locator = page.Locator("#title");
 
-        // resolve: Runtime.evaluate for querySelector
-        _socket.QueueResponse("""
-            {
-                "id": 8,
-                "sessionId": "session-1",
-                "result": {
-                    "result": { "type": "object", "objectId": "elem-1" }
-                }
-            }
-            """);
-
-        // callFunctionOn for textContent
-        _socket.QueueResponse("""
-            {
-                "id": 9,
-                "sessionId": "session-1",
-                "result": {
-                    "result": { "type": "string", "value": "Hello" }
-                }
-            }
-            """);
+        QueueResolveAndEval(8, "elem-1", """{"type": "string", "value": "Hello"}""");
 
         var result = await locator.TextContentAsync();
         Assert.AreEqual("Hello", result);
     }
 
     [TestMethod]
-    public async Task ClickAsync_DispatchesMouseEvents()
+    public async Task ClickAsync_RunsActionabilityChecksThenDispatchesMouse()
     {
         var page = await CreatePageAsync();
         var locator = page.Locator("button.submit");
 
-        // resolve: querySelector
-        _socket.QueueResponse("""
-            {
-                "id": 8,
-                "sessionId": "session-1",
-                "result": {
-                    "result": { "type": "object", "objectId": "btn-1" }
-                }
-            }
-            """);
+        QueueClickActionabilityResponses(8);
 
-        // getBoundingClientRect via callFunctionOn
-        _socket.QueueResponse("""
-            {
-                "id": 9,
-                "sessionId": "session-1",
-                "result": {
-                    "result": { "type": "object", "value": { "x": 100, "y": 200, "width": 80, "height": 30 } }
-                }
-            }
-            """);
+        // getBoundingClientRect for the click action itself
+        _socket.QueueResponse("""{"id": 17, "sessionId": "session-1", "result": {"result": {"type": "object", "value": {"x": 100, "y": 200, "width": 80, "height": 30}}}}""");
 
         // Mouse: mouseMoved, mousePressed, mouseReleased
-        _socket.QueueResponse("""{"id": 10, "sessionId": "session-1", "result": {}}""");
-        _socket.QueueResponse("""{"id": 11, "sessionId": "session-1", "result": {}}""");
-        _socket.QueueResponse("""{"id": 12, "sessionId": "session-1", "result": {}}""");
+        _socket.QueueResponse("""{"id": 18, "sessionId": "session-1", "result": {}}""");
+        _socket.QueueResponse("""{"id": 19, "sessionId": "session-1", "result": {}}""");
+        _socket.QueueResponse("""{"id": 20, "sessionId": "session-1", "result": {}}""");
 
         await locator.ClickAsync();
 
@@ -116,17 +133,26 @@ public class LocatorTests
     }
 
     [TestMethod]
-    public async Task CountAsync_EvaluatesLength()
+    public async Task CountAsync_ReturnsElementCount()
     {
         var page = await CreatePageAsync();
         var locator = page.Locator("li.item");
 
+        // Strategy resolve: evaluate returns array, getProperties returns 5 elements
+        _socket.QueueResponse("""{"id": 8, "sessionId": "session-1", "result": {"result": {"type": "object", "objectId": "arr-1"}}}""");
         _socket.QueueResponse("""
             {
-                "id": 8,
+                "id": 9,
                 "sessionId": "session-1",
                 "result": {
-                    "result": { "type": "number", "value": 5 }
+                    "result": [
+                        {"name": "0", "value": {"type": "object", "objectId": "e-0"}},
+                        {"name": "1", "value": {"type": "object", "objectId": "e-1"}},
+                        {"name": "2", "value": {"type": "object", "objectId": "e-2"}},
+                        {"name": "3", "value": {"type": "object", "objectId": "e-3"}},
+                        {"name": "4", "value": {"type": "object", "objectId": "e-4"}},
+                        {"name": "length", "value": {"type": "number", "value": 5}}
+                    ]
                 }
             }
             """);
@@ -200,21 +226,108 @@ public class LocatorTests
     }
 
     [TestMethod]
+    public async Task CssPrefix_DispatchesToCssStrategy()
+    {
+        var page = await CreatePageAsync();
+        var locator = page.Locator("css=div.test");
+
+        _socket.QueueResponse("""{"id": 8, "sessionId": "session-1", "result": {"result": {"type": "object", "objectId": "arr-1"}}}""");
+        _socket.QueueResponse("""{"id": 9, "sessionId": "session-1", "result": {"result": [{"name": "0", "value": {"type": "object", "objectId": "elem-1"}}, {"name": "length", "value": {"type": "number", "value": 1}}]}}""");
+
+        var handles = await locator.ElementHandlesAsync();
+        Assert.AreEqual(1, handles.Count);
+
+        var allSent = Enumerable.Range(0, _socket.SentMessages.Count)
+            .Select(i => _socket.GetSentJson(i))
+            .ToList();
+
+        Assert.IsTrue(allSent.Any(s => s.Contains("querySelectorAll") && s.Contains("div.test")));
+    }
+
+    [TestMethod]
+    public async Task XPathPrefix_DispatchesToXPathStrategy()
+    {
+        var page = await CreatePageAsync();
+        var locator = page.Locator("xpath=//button");
+
+        _socket.QueueResponse("""{"id": 8, "sessionId": "session-1", "result": {"result": {"type": "object", "objectId": "arr-1"}}}""");
+        _socket.QueueResponse("""{"id": 9, "sessionId": "session-1", "result": {"result": []}}""");
+
+        var handles = await locator.ElementHandlesAsync();
+        Assert.AreEqual(0, handles.Count);
+
+        var allSent = Enumerable.Range(0, _socket.SentMessages.Count)
+            .Select(i => _socket.GetSentJson(i))
+            .ToList();
+
+        Assert.IsTrue(allSent.Any(s => s.Contains("document.evaluate")));
+    }
+
+    [TestMethod]
+    public async Task TextPrefix_DispatchesToTextStrategy()
+    {
+        var page = await CreatePageAsync();
+        var locator = page.Locator("text=Click me");
+
+        _socket.QueueResponse("""{"id": 8, "sessionId": "session-1", "result": {"result": {"type": "object", "objectId": "arr-1"}}}""");
+        _socket.QueueResponse("""{"id": 9, "sessionId": "session-1", "result": {"result": []}}""");
+
+        var handles = await locator.ElementHandlesAsync();
+        Assert.AreEqual(0, handles.Count);
+
+        var allSent = Enumerable.Range(0, _socket.SentMessages.Count)
+            .Select(i => _socket.GetSentJson(i))
+            .ToList();
+
+        Assert.IsTrue(allSent.Any(s => s.Contains("createTreeWalker") && s.Contains("Click me")));
+    }
+
+    [TestMethod]
+    public async Task DataTestIdPrefix_DispatchesToTestIdStrategy()
+    {
+        var page = await CreatePageAsync();
+        var locator = page.Locator("data-testid=submit-btn");
+
+        _socket.QueueResponse("""{"id": 8, "sessionId": "session-1", "result": {"result": {"type": "object", "objectId": "arr-1"}}}""");
+        _socket.QueueResponse("""{"id": 9, "sessionId": "session-1", "result": {"result": []}}""");
+
+        var handles = await locator.ElementHandlesAsync();
+        Assert.AreEqual(0, handles.Count);
+
+        var allSent = Enumerable.Range(0, _socket.SentMessages.Count)
+            .Select(i => _socket.GetSentJson(i))
+            .ToList();
+
+        Assert.IsTrue(allSent.Any(s => s.Contains("data-testid") && s.Contains("submit-btn")));
+    }
+
+    [TestMethod]
+    public async Task UnprefixedSelector_RoutesToCssStrategy()
+    {
+        var page = await CreatePageAsync();
+        var locator = page.Locator("div.container");
+
+        _socket.QueueResponse("""{"id": 8, "sessionId": "session-1", "result": {"result": {"type": "object", "objectId": "arr-1"}}}""");
+        _socket.QueueResponse("""{"id": 9, "sessionId": "session-1", "result": {"result": []}}""");
+
+        var handles = await locator.ElementHandlesAsync();
+
+        var allSent = Enumerable.Range(0, _socket.SentMessages.Count)
+            .Select(i => _socket.GetSentJson(i))
+            .ToList();
+
+        Assert.IsTrue(allSent.Any(s => s.Contains("querySelectorAll") && s.Contains("div.container")));
+    }
+
+    [TestMethod]
     public async Task ResolveThrows_WhenNoElementFound()
     {
         var page = await CreatePageAsync();
         var locator = page.Locator("#nonexistent");
 
-        // Return null object
-        _socket.QueueResponse("""
-            {
-                "id": 8,
-                "sessionId": "session-1",
-                "result": {
-                    "result": { "type": "object", "subtype": "null" }
-                }
-            }
-            """);
+        // Strategy resolve: evaluate returns array objectId, getProperties returns empty
+        _socket.QueueResponse("""{"id": 8, "sessionId": "session-1", "result": {"result": {"type": "object", "objectId": "arr-empty"}}}""");
+        _socket.QueueResponse("""{"id": 9, "sessionId": "session-1", "result": {"result": []}}""");
 
         await Assert.ThrowsExceptionAsync<InvalidOperationException>(
             () => locator.TextContentAsync());

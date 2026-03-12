@@ -79,6 +79,10 @@ internal sealed partial class Page : IPage
 
     internal CdpSession Session => _session;
 
+    internal CancellationToken PageLifetimeToken => _pageCts.Token;
+
+    internal BrowserContext ContextInternal => _context;
+
     internal Keyboard KeyboardInternal => _keyboard;
 
     internal Mouse MouseInternal => _mouse;
@@ -122,6 +126,16 @@ internal sealed partial class Page : IPage
 
         StartEventPump();
     }
+
+    /// <summary>
+    /// Returns the main frame if available, or a lightweight synthetic frame
+    /// for selector strategy dispatch. The synthetic frame is not stored in
+    /// the page's frame collection so it doesn't affect frame enumeration.
+    /// </summary>
+    internal IFrame GetFrameForSelectors() =>
+        _mainFrameId is not null && _frames.TryGetValue(_mainFrameId, out var frame)
+            ? frame
+            : new Frame(this, "__selector__", parentFrameId: null);
 
     internal bool TryGetFrame(string frameId, out Frame? frame) =>
         _frames.TryGetValue(frameId, out frame);
