@@ -64,6 +64,25 @@ internal sealed class NetworkManager
         StartFetchEventPump();
     }
 
+    internal async Task EnableFetchWithAuthAsync(CancellationToken ct)
+    {
+        if (_fetchEnabled)
+            return;
+
+        _fetchEnabled = true;
+
+        await _session.SendAsync(
+            "Fetch.enable",
+            new FetchEnableParams(
+                Patterns: [new FetchRequestPattern(UrlPattern: "*", RequestStage: "Request")],
+                HandleAuthRequests: true),
+            CdpJsonContext.Default.FetchEnableParams,
+            CdpJsonContext.Default.FetchEnableResult,
+            ct);
+
+        StartFetchEventPump();
+    }
+
     internal async Task DisableFetchAsync(CancellationToken ct)
     {
         if (!_fetchEnabled)

@@ -89,6 +89,15 @@ internal sealed partial class Page
             "Target.attachedToTarget",
             CdpJsonContext.Default.TargetAttachedToTargetEvent,
             OnTargetAttached, ct);
+
+        // Fetch auth required (HTTP credentials)
+        if (_context.Options?.HttpCredentials is not null)
+        {
+            _ = PumpEventsAsync(
+                "Fetch.authRequired",
+                CdpJsonContext.Default.FetchAuthRequiredEvent,
+                OnFetchAuthRequired, ct);
+        }
     }
 
     private async Task PumpEventsAsync<T>(
@@ -239,5 +248,34 @@ internal sealed partial class Page
     private void OnTargetAttached(TargetAttachedToTargetEvent evt)
     {
         // Track workers internally; no public API yet
+    }
+
+    private void OnFetchAuthRequired(FetchAuthRequiredEvent evt)
+    {
+        var creds = _context.Options?.HttpCredentials;
+        if (creds is null)
+            return;
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await _session.SendAsync(
+                    "Fetch.continueWithAuth",
+                    new FetchContinueWithAuthParams(
+                        evt.RequestId,
+                        new FetchAuthChallengeResponse(
+                            Response: "ProvideCredentials",
+                            Username: creds.Username,
+                            Password: creds.Password)),
+                    CdpJsonContext.Default.FetchContinueWithAuthParams,
+                    CdpJsonContext.Default.FetchContinueWithAuthResult,
+                    CancellationToken.None);
+            }
+            catch
+            {
+                // Session may be gone
+            }
+        });
     }
 }

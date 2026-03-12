@@ -11,6 +11,9 @@ internal sealed partial class Page
 
     public async Task<IResponse?> GotoAsync(string url, NavigationOptions? options = null)
     {
+        if (_context.BaseURL is not null && !Uri.IsWellFormedUriString(url, UriKind.Absolute))
+            url = new Uri(new Uri(_context.BaseURL), url).ToString();
+
         await _context.LifecycleHooks.FireBeforeNavigationAsync(this, url);
 
         var waitUntil = options?.WaitUntil ?? WaitUntil.Load;

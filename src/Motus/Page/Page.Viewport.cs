@@ -4,6 +4,8 @@ namespace Motus;
 
 internal sealed partial class Page
 {
+    internal void SetViewportInternal(ViewportSize vp) => _viewportSize = vp;
+
     public async Task SetViewportSizeAsync(ViewportSize viewportSize)
     {
         _viewportSize = viewportSize;

@@ -20,14 +20,23 @@ internal sealed class BrowserContext : IBrowserContext
     private readonly List<(string Pattern, Func<IRoute, Task> Handler)> _contextRoutes = [];
     private readonly object _contextRouteLock = new();
     private readonly Dictionary<string, string> _extraHeaders = new();
+    private readonly ContextOptions? _options;
     private bool _offline;
     private bool _closed;
+    private bool _storageStateRestored;
 
-    internal BrowserContext(Browser browser, CdpSessionRegistry registry, string browserContextId)
+    internal BrowserContext(Browser browser, CdpSessionRegistry registry, string browserContextId, ContextOptions? options = null)
     {
         _browser = browser;
         _registry = registry;
         _browserContextId = browserContextId;
+        _options = options;
+
+        if (_options?.ExtraHttpHeaders is not null)
+        {
+            foreach (var kv in _options.ExtraHttpHeaders)
+                _extraHeaders[kv.Key] = kv.Value;
+        }
 
         _selectorStrategies.Register(new CssSelectorStrategy());
         _selectorStrategies.Register(new XPathSelectorStrategy());
@@ -47,10 +56,13 @@ internal sealed class BrowserContext : IBrowserContext
         }
     }
 
-    public ITracing Tracing
-        => throw new NotImplementedException("Tracing is not yet implemented.");
+    public ITracing Tracing => NullTracing.Instance;
 
     internal string BrowserContextId => _browserContextId;
+
+    internal ContextOptions? Options => _options;
+
+    internal string? BaseURL => _options?.BaseURL;
 
     internal LifecycleHookCollection LifecycleHooks => _lifecycleHooks;
 
@@ -107,6 +119,9 @@ internal sealed class BrowserContext : IBrowserContext
         var page = new Page(session, this, createResult.TargetId);
         await page.InitializeAsync(CancellationToken.None);
 
+        // Apply context options (viewport, locale, timezone, etc.)
+        await ApplyContextOptionsToPageAsync(page);
+
         // Propagate context-level extra headers to the new page
         Dictionary<string, string> extraHeaders;
         lock (_extraHeaders)
@@ -132,6 +147,35 @@ internal sealed class BrowserContext : IBrowserContext
                 CdpJsonContext.Default.NetworkEmulateNetworkConditionsParams,
                 CdpJsonContext.Default.NetworkEmulateNetworkConditionsResult,
                 CancellationToken.None);
+        }
+
+        // Restore storage state (one-time per context)
+        if (!_storageStateRestored && _options?.StorageState is not null)
+        {
+            _storageStateRestored = true;
+            var state = _options.StorageState;
+
+            if (state.Cookies.Count > 0)
+                await AddCookiesInternalAsync(page, state.Cookies);
+
+            if (state.Origins.Count > 0)
+            {
+                foreach (var origin in state.Origins)
+                {
+                    if (origin.LocalStorage.Count == 0)
+                        continue;
+
+                    var script = string.Join("\n", origin.LocalStorage.Select(kv =>
+                        $"localStorage.setItem({System.Text.Json.JsonSerializer.Serialize(kv.Key)}, {System.Text.Json.JsonSerializer.Serialize(kv.Value)});"));
+
+                    await page.Session.SendAsync(
+                        "Runtime.evaluate",
+                        new RuntimeEvaluateParams(Expression: script, ReturnByValue: true),
+                        CdpJsonContext.Default.RuntimeEvaluateParams,
+                        CdpJsonContext.Default.RuntimeEvaluateResult,
+                        CancellationToken.None);
+                }
+            }
         }
 
         lock (_pages)
@@ -421,10 +465,190 @@ internal sealed class BrowserContext : IBrowserContext
             return _contextRoutes.Count > 0;
     }
 
-    public Task<StorageState> StorageStateAsync(string? path = null)
-        => throw new NotImplementedException("StorageState is not yet implemented.");
+    public async Task<StorageState> StorageStateAsync(string? path = null)
+    {
+        IReadOnlyList<Cookie> cookies;
+        List<Page> currentPages;
+        lock (_pages)
+            currentPages = _pages.ToList();
+
+        if (currentPages.Count > 0)
+        {
+            cookies = await CookiesAsync();
+        }
+        else
+        {
+            cookies = [];
+        }
+
+        var origins = new List<OriginStorage>();
+        foreach (var page in currentPages)
+        {
+            var url = page.Url;
+            if (string.IsNullOrEmpty(url) || url == "about:blank")
+                continue;
+
+            try
+            {
+                var origin = new Uri(url).GetLeftPart(UriPartial.Authority);
+                var result = await page.Session.SendAsync(
+                    "Runtime.evaluate",
+                    new RuntimeEvaluateParams(
+                        Expression: "JSON.stringify(Object.fromEntries(Object.entries(localStorage)))",
+                        ReturnByValue: true),
+                    CdpJsonContext.Default.RuntimeEvaluateParams,
+                    CdpJsonContext.Default.RuntimeEvaluateResult,
+                    CancellationToken.None);
+
+                if (result.Result.Value is System.Text.Json.JsonElement el
+                    && el.ValueKind == System.Text.Json.JsonValueKind.String)
+                {
+                    var json = el.GetString();
+                    if (!string.IsNullOrEmpty(json))
+                    {
+                        var dict = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(json);
+                        if (dict is { Count: > 0 })
+                        {
+                            origins.Add(new OriginStorage(origin, dict.ToList()));
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                // Skip pages where localStorage is inaccessible
+            }
+        }
+
+        var state = new StorageState(cookies, origins);
+
+        if (path is not null)
+        {
+            var json = System.Text.Json.JsonSerializer.Serialize(state);
+            await File.WriteAllTextAsync(path, json);
+        }
+
+        return state;
+    }
 
     // --- Helpers ---
+
+    private async Task ApplyContextOptionsToPageAsync(Page page)
+    {
+        if (_options is null)
+            return;
+
+        if (_options.Viewport is { } viewport)
+        {
+            page.SetViewportInternal(viewport);
+            await page.Session.SendAsync(
+                "Emulation.setDeviceMetricsOverride",
+                new EmulationSetDeviceMetricsOverrideParams(
+                    Width: viewport.Width,
+                    Height: viewport.Height,
+                    DeviceScaleFactor: 1,
+                    Mobile: false),
+                CdpJsonContext.Default.EmulationSetDeviceMetricsOverrideParams,
+                CdpJsonContext.Default.EmulationSetDeviceMetricsOverrideResult,
+                CancellationToken.None);
+        }
+
+        if (_options.Locale is not null)
+        {
+            await page.Session.SendAsync(
+                "Emulation.setLocaleOverride",
+                new EmulationSetLocaleOverrideParams(_options.Locale),
+                CdpJsonContext.Default.EmulationSetLocaleOverrideParams,
+                CdpJsonContext.Default.EmulationSetLocaleOverrideResult,
+                CancellationToken.None);
+        }
+
+        if (_options.TimezoneId is not null)
+        {
+            await page.Session.SendAsync(
+                "Emulation.setTimezoneOverride",
+                new EmulationSetTimezoneOverrideParams(_options.TimezoneId),
+                CdpJsonContext.Default.EmulationSetTimezoneOverrideParams,
+                CdpJsonContext.Default.EmulationSetTimezoneOverrideResult,
+                CancellationToken.None);
+        }
+
+        if (_options.ColorScheme is not null)
+        {
+            await page.Session.SendAsync(
+                "Emulation.setEmulatedMedia",
+                new EmulationSetEmulatedMediaParams(
+                    Features: [new EmulationMediaFeature(
+                        "prefers-color-scheme",
+                        _options.ColorScheme.Value.ToString().ToLowerInvariant())]),
+                CdpJsonContext.Default.EmulationSetEmulatedMediaParams,
+                CdpJsonContext.Default.EmulationSetEmulatedMediaResult,
+                CancellationToken.None);
+        }
+
+        if (_options.UserAgent is not null)
+        {
+            await page.Session.SendAsync(
+                "Emulation.setUserAgentOverride",
+                new EmulationSetUserAgentOverrideParams(_options.UserAgent),
+                CdpJsonContext.Default.EmulationSetUserAgentOverrideParams,
+                CdpJsonContext.Default.EmulationSetUserAgentOverrideResult,
+                CancellationToken.None);
+        }
+
+        if (_options.IgnoreHTTPSErrors)
+        {
+            await page.Session.SendAsync(
+                "Security.enable",
+                CdpJsonContext.Default.SecurityEnableResult,
+                CancellationToken.None);
+
+            await page.Session.SendAsync(
+                "Security.setIgnoreCertificateErrors",
+                new SecuritySetIgnoreCertificateErrorsParams(Ignore: true),
+                CdpJsonContext.Default.SecuritySetIgnoreCertificateErrorsParams,
+                CdpJsonContext.Default.SecuritySetIgnoreCertificateErrorsResult,
+                CancellationToken.None);
+        }
+
+        if (_options.Geolocation is not null)
+        {
+            await page.Session.SendAsync(
+                "Emulation.setGeolocationOverride",
+                new EmulationSetGeolocationOverrideParams(
+                    _options.Geolocation.Latitude,
+                    _options.Geolocation.Longitude,
+                    _options.Geolocation.Accuracy),
+                CdpJsonContext.Default.EmulationSetGeolocationOverrideParams,
+                CdpJsonContext.Default.EmulationSetGeolocationOverrideResult,
+                CancellationToken.None);
+        }
+
+        if (_options.HttpCredentials is not null)
+        {
+            await page.EnableAuthHandlingAsync();
+        }
+    }
+
+    private async Task AddCookiesInternalAsync(Page page, IReadOnlyList<Cookie> cookies)
+    {
+        foreach (var cookie in cookies)
+        {
+            await page.Session.SendAsync(
+                "Network.setCookie",
+                new NetworkSetCookieParams(
+                    cookie.Name, cookie.Value,
+                    Domain: cookie.Domain,
+                    Path: cookie.Path,
+                    Secure: cookie.Secure,
+                    HttpOnly: cookie.HttpOnly,
+                    SameSite: cookie.SameSite.ToString(),
+                    Expires: cookie.Expires > 0 ? cookie.Expires : null),
+                CdpJsonContext.Default.NetworkSetCookieParams,
+                CdpJsonContext.Default.NetworkSetCookieResult,
+                CancellationToken.None);
+        }
+    }
 
     private Page GetFirstPageOrThrow()
     {

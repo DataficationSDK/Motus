@@ -16,6 +16,12 @@ internal sealed partial class Page
         await _networkManager.InitializeAsync(hasFetchRoutes, ct);
     }
 
+    internal async Task EnableAuthHandlingAsync()
+    {
+        if (_networkManager is not null)
+            await _networkManager.EnableFetchWithAuthAsync(_pageCts.Token);
+    }
+
     private bool HasAnyRoutes()
     {
         lock (_routeLock)

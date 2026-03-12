@@ -105,6 +105,16 @@ namespace Motus;
 [JsonSerializable(typeof(FetchFailRequestParams))]
 [JsonSerializable(typeof(FetchFailRequestResult))]
 [JsonSerializable(typeof(FetchRequestPausedEvent))]
+// --- Fetch domain (auth) ---
+[JsonSerializable(typeof(FetchAuthChallenge))]
+[JsonSerializable(typeof(FetchAuthChallengeResponse))]
+[JsonSerializable(typeof(FetchContinueWithAuthParams))]
+[JsonSerializable(typeof(FetchContinueWithAuthResult))]
+[JsonSerializable(typeof(FetchAuthRequiredEvent))]
+// --- Security domain ---
+[JsonSerializable(typeof(SecurityEnableResult))]
+[JsonSerializable(typeof(SecuritySetIgnoreCertificateErrorsParams))]
+[JsonSerializable(typeof(SecuritySetIgnoreCertificateErrorsResult))]
 // --- Browser domain (permissions) ---
 [JsonSerializable(typeof(BrowserGrantPermissionsParams))]
 [JsonSerializable(typeof(BrowserGrantPermissionsResult))]
@@ -112,6 +122,13 @@ namespace Motus;
 // --- Emulation domain (geolocation) ---
 [JsonSerializable(typeof(EmulationSetGeolocationOverrideParams))]
 [JsonSerializable(typeof(EmulationSetGeolocationOverrideResult))]
+// --- Emulation domain (locale, timezone, user agent) ---
+[JsonSerializable(typeof(EmulationSetLocaleOverrideParams))]
+[JsonSerializable(typeof(EmulationSetLocaleOverrideResult))]
+[JsonSerializable(typeof(EmulationSetTimezoneOverrideParams))]
+[JsonSerializable(typeof(EmulationSetTimezoneOverrideResult))]
+[JsonSerializable(typeof(EmulationSetUserAgentOverrideParams))]
+[JsonSerializable(typeof(EmulationSetUserAgentOverrideResult))]
 // --- Emulation domain (media) ---
 [JsonSerializable(typeof(EmulationSetEmulatedMediaParams))]
 [JsonSerializable(typeof(EmulationMediaFeature))]
@@ -602,6 +619,35 @@ internal sealed record EmulationMediaFeature(string Name, string Value);
 internal sealed record EmulationSetEmulatedMediaResult();
 
 // ============================================================================
+// Emulation domain (locale, timezone, user agent)
+// ============================================================================
+
+internal sealed record EmulationSetLocaleOverrideParams(string? Locale);
+
+internal sealed record EmulationSetLocaleOverrideResult();
+
+internal sealed record EmulationSetTimezoneOverrideParams(string TimezoneId);
+
+internal sealed record EmulationSetTimezoneOverrideResult();
+
+internal sealed record EmulationSetUserAgentOverrideParams(
+    string UserAgent,
+    string? AcceptLanguage = null,
+    string? Platform = null);
+
+internal sealed record EmulationSetUserAgentOverrideResult();
+
+// ============================================================================
+// Security domain
+// ============================================================================
+
+internal sealed record SecurityEnableResult();
+
+internal sealed record SecuritySetIgnoreCertificateErrorsParams(bool Ignore);
+
+internal sealed record SecuritySetIgnoreCertificateErrorsResult();
+
+// ============================================================================
 // Accessibility domain
 // ============================================================================
 
@@ -748,3 +794,31 @@ internal sealed record FetchRequestPausedEvent(
     string? ResponseStatusText = null,
     FetchHeaderEntry[]? ResponseHeaders = null,
     string? NetworkId = null);
+
+// ============================================================================
+// Fetch domain (auth)
+// ============================================================================
+
+internal sealed record FetchAuthChallenge(
+    string Source,
+    string Origin,
+    string Scheme,
+    string Realm);
+
+internal sealed record FetchAuthChallengeResponse(
+    string Response,
+    string? Username = null,
+    string? Password = null);
+
+internal sealed record FetchContinueWithAuthParams(
+    string RequestId,
+    FetchAuthChallengeResponse AuthChallengeResponse);
+
+internal sealed record FetchContinueWithAuthResult();
+
+internal sealed record FetchAuthRequiredEvent(
+    string RequestId,
+    string FrameId,
+    string ResourceType,
+    string? NetworkId,
+    FetchAuthChallenge AuthChallenge);

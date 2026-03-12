@@ -154,15 +154,20 @@ internal sealed class Browser : IBrowser
     {
         var result = await _registry.BrowserSession.SendAsync(
             "Target.createBrowserContext",
-            new TargetCreateBrowserContextParams(DisposeOnDetach: true),
+            new TargetCreateBrowserContextParams(
+                DisposeOnDetach: true,
+                ProxyServer: options?.Proxy?.Server),
             CdpJsonContext.Default.TargetCreateBrowserContextParams,
             CdpJsonContext.Default.TargetCreateBrowserContextResult,
             CancellationToken.None);
 
-        var context = new BrowserContext(this, _registry, result.BrowserContextId);
+        var context = new BrowserContext(this, _registry, result.BrowserContextId, options);
 
         lock (_contexts)
             _contexts.Add(context);
+
+        if (options?.Permissions is { Count: > 0 })
+            await context.GrantPermissionsAsync(options.Permissions);
 
         return context;
     }
