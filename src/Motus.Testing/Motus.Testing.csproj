@@ -10,9 +10,7 @@
     <PackageId>Motus.Testing</PackageId>
     <Title>Motus.Testing</Title>
     <Description>Shared browser fixture for Motus test framework integrations.</Description>
-  </PropertyGroup>
-
-  <PropertyGroup>
+    <IsTestProject>false</IsTestProject>
     <PackageReadmeFile />
   </PropertyGroup>
 

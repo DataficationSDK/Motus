@@ -10,6 +10,7 @@
     <PackageId>Motus.Testing.MSTest</PackageId>
     <Title>Motus.Testing.MSTest</Title>
     <Description>MSTest integration for Motus browser automation. Provides a base test class with per-test browser context isolation.</Description>
+    <IsTestProject>false</IsTestProject>
     <PackageReadmeFile />
   </PropertyGroup>
 

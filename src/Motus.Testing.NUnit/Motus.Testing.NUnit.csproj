@@ -10,6 +10,7 @@
     <PackageId>Motus.Testing.NUnit</PackageId>
     <Title>Motus.Testing.NUnit</Title>
     <Description>NUnit integration for Motus browser automation. Provides a base test class compatible with parallel test execution.</Description>
+    <IsTestProject>false</IsTestProject>
     <PackageReadmeFile />
   </PropertyGroup>
 

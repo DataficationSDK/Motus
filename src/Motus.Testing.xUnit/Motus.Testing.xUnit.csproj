@@ -10,6 +10,7 @@
     <PackageId>Motus.Testing.xUnit</PackageId>
     <Title>Motus.Testing.xUnit</Title>
     <Description>xUnit integration for Motus browser automation. Provides collection and class fixtures for parallel test execution.</Description>
+    <IsTestProject>false</IsTestProject>
     <PackageReadmeFile />
   </PropertyGroup>
 
