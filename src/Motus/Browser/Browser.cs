@@ -155,6 +155,8 @@ internal sealed class Browser : IBrowser
 
     public async Task<IBrowserContext> NewContextAsync(ContextOptions? options = null)
     {
+        options = ConfigMerge.ApplyConfig(options ?? new ContextOptions());
+
         var result = await _registry.BrowserSession.SendAsync(
             "Target.createBrowserContext",
             new TargetCreateBrowserContextParams(

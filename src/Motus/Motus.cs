@@ -15,7 +15,7 @@ public static class MotusLauncher
     /// </summary>
     public static async Task<IBrowser> LaunchAsync(LaunchOptions? options = null, CancellationToken ct = default)
     {
-        options ??= new LaunchOptions();
+        options = ConfigMerge.ApplyConfig(options ?? new LaunchOptions());
 
         var executablePath = BrowserFinder.Resolve(options.Channel, options.ExecutablePath);
         var port = AllocateFreePort();

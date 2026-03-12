@@ -7,14 +7,14 @@ internal static class FailureCapture
     internal static async Task AttachScreenshotAsync(MotusException ex, Page page)
     {
         var failure = MotusConfigLoader.Config.Failure;
-        if (failure is null || !failure.Screenshot)
+        if (failure is null || failure.Screenshot is not true)
             return;
 
         try
         {
             var bytes = await page.ScreenshotAsync();
             ex.Screenshot = bytes;
-            await SaveToDiskAsync(bytes, failure.ScreenshotPath);
+            await SaveToDiskAsync(bytes, failure.ScreenshotPath ?? "test-results/failures");
         }
         catch
         {

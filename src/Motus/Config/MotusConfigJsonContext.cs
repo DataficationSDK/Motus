@@ -5,6 +5,12 @@ namespace Motus;
 [JsonSerializable(typeof(MotusRootConfig))]
 [JsonSerializable(typeof(MotusFailureConfig))]
 [JsonSerializable(typeof(MotusAssertionsConfig))]
+[JsonSerializable(typeof(MotusLaunchConfig))]
+[JsonSerializable(typeof(MotusContextConfig))]
+[JsonSerializable(typeof(MotusViewportConfig))]
+[JsonSerializable(typeof(MotusLocatorConfig))]
+[JsonSerializable(typeof(MotusReporterConfig))]
+[JsonSerializable(typeof(MotusRecorderConfig))]
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
