@@ -1,0 +1,165 @@
+name: Motus CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "Motus.sln"
+      - ".github/workflows/motus-ci.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "Motus.sln"
+      - ".github/workflows/motus-ci.yml"
+
+defaults:
+  run:
+    working-directory: tools/Motus
+
+jobs:
+  dotnet:
+    name: .NET (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore Motus.sln
+
+      - name: Build
+        run: dotnet build Motus.sln --configuration Release --no-restore
+
+      - name: Test (unit)
+        run: >-
+          dotnet test Motus.sln
+          --configuration Release
+          --no-build
+          --filter "TestCategory!=Integration"
+          --logger "trx;LogFileName=results.trx"
+          --collect:"XPlat Code Coverage"
+          --results-directory TestResults
+          -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=cobertura
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.os }}
+          path: tools/Motus/TestResults/**/*.trx
+
+      - name: Install ReportGenerator
+        if: matrix.os == 'ubuntu-latest'
+        run: dotnet tool install --global dotnet-reportgenerator-globaltool
+
+      - name: Generate coverage report
+        if: matrix.os == 'ubuntu-latest'
+        run: >-
+          reportgenerator
+          -reports:"TestResults/**/coverage.cobertura.xml"
+          -targetdir:"TestResults/CoverageReport"
+          -reporttypes:"Html;Cobertura;MarkdownSummaryGithub"
+
+      - name: Upload coverage report
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: tools/Motus/TestResults/CoverageReport
+
+      - name: Post coverage summary
+        if: matrix.os == 'ubuntu-latest' && github.event_name == 'pull_request'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          path: tools/Motus/TestResults/CoverageReport/SummaryGithub.md
+
+  integration:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: dotnet
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Install Chrome
+        uses: browser-actions/setup-chrome@v1
+        with:
+          chrome-version: stable
+
+      - name: Build
+        run: dotnet build Motus.sln --configuration Release
+        working-directory: tools/Motus
+
+      - name: Test (integration)
+        run: >-
+          dotnet test Motus.sln
+          --configuration Release
+          --no-build
+          --filter "TestCategory=Integration"
+          --logger "trx;LogFileName=integration-results.trx"
+          --results-directory TestResults
+        working-directory: tools/Motus
+
+      - name: Upload integration test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-test-results
+          path: tools/Motus/TestResults/**/*.trx
+
+  # nuget-validate:
+  #   name: NuGet Validation
+  #   runs-on: ubuntu-latest
+  #   needs: dotnet
+  #
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #
+  #     - name: Setup .NET
+  #       uses: actions/setup-dotnet@v4
+  #       with:
+  #         dotnet-version: 10.0.x
+  #
+  #     - name: Build
+  #       run: dotnet build Motus.sln -c Release
+  #       working-directory: tools/Motus
+  #
+  #     - name: Pack NuGet packages
+  #       working-directory: tools/Motus
+  #       run: |
+  #         dotnet pack src/Motus.Abstractions/Motus.Abstractions.csproj -c Release --no-build -o packages
+  #         dotnet pack src/Motus/Motus.csproj -c Release --no-build -o packages
+  #
+  #     - name: Validate packages
+  #       working-directory: tools/Motus
+  #       run: |
+  #         for pkg in packages/*.nupkg; do
+  #           echo "Validating $pkg..."
+  #           dotnet nuget verify "$pkg" --all 2>/dev/null || echo "  (signature verification skipped — package is unsigned)"
+  #           unzip -t "$pkg" > /dev/null
+  #           echo "  OK"
+  #         done
+  #
+  #     - name: Upload NuGet packages
+  #       uses: actions/upload-artifact@v4
+  #       with:
+  #         name: nuget-packages
+  #         path: tools/Motus/packages/*.nupkg
