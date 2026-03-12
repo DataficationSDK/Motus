@@ -6,7 +6,7 @@ namespace Motus;
 /// <summary>
 /// Represents a handle to a JavaScript object in the browser.
 /// </summary>
-internal sealed class JsHandle : IJSHandle
+internal class JsHandle : IJSHandle
 {
     private readonly CdpSession _session;
     private readonly string _objectId;
@@ -19,6 +19,8 @@ internal sealed class JsHandle : IJSHandle
     }
 
     internal string ObjectId => _objectId;
+
+    internal CdpSession SessionInternal => _session;
 
     public async Task<T> EvaluateAsync<T>(string expression, object? arg = null)
     {
@@ -116,7 +118,7 @@ internal sealed class JsHandle : IJSHandle
         }
     }
 
-    private static T DeserializeValue<T>(RuntimeRemoteObject remoteObject)
+    protected static T DeserializeValue<T>(RuntimeRemoteObject remoteObject)
     {
         if (remoteObject.Value is JsonElement element)
             return element.Deserialize<T>()

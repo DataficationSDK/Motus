@@ -84,6 +84,32 @@ namespace Motus;
 // --- Emulation domain (geolocation) ---
 [JsonSerializable(typeof(EmulationSetGeolocationOverrideParams))]
 [JsonSerializable(typeof(EmulationSetGeolocationOverrideResult))]
+// --- Emulation domain (media) ---
+[JsonSerializable(typeof(EmulationSetEmulatedMediaParams))]
+[JsonSerializable(typeof(EmulationMediaFeature))]
+[JsonSerializable(typeof(EmulationSetEmulatedMediaResult))]
+// --- Input domain ---
+[JsonSerializable(typeof(InputDispatchKeyEventParams))]
+[JsonSerializable(typeof(InputDispatchKeyEventResult))]
+[JsonSerializable(typeof(InputDispatchMouseEventParams))]
+[JsonSerializable(typeof(InputDispatchMouseEventResult))]
+[JsonSerializable(typeof(InputDispatchTouchEventParams))]
+[JsonSerializable(typeof(InputDispatchTouchEventResult))]
+[JsonSerializable(typeof(InputInsertTextParams))]
+[JsonSerializable(typeof(InputInsertTextResult))]
+// --- DOM domain ---
+[JsonSerializable(typeof(DomEnableResult))]
+[JsonSerializable(typeof(DomSetFileInputFilesParams))]
+[JsonSerializable(typeof(DomSetFileInputFilesResult))]
+[JsonSerializable(typeof(DomScrollIntoViewIfNeededParams))]
+[JsonSerializable(typeof(DomScrollIntoViewIfNeededResult))]
+[JsonSerializable(typeof(DomFocusParams))]
+[JsonSerializable(typeof(DomFocusResult))]
+// --- Page domain (clip) ---
+[JsonSerializable(typeof(PageCaptureScreenshotWithClipParams))]
+[JsonSerializable(typeof(PageClipRect))]
+// --- Abstractions type registration ---
+[JsonSerializable(typeof(Motus.Abstractions.BoundingBox))]
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
@@ -418,3 +444,106 @@ internal sealed record NetworkSetCookieParams(
 internal sealed record NetworkSetCookieResult(bool Success);
 
 internal sealed record NetworkClearBrowserCookiesResult();
+
+// ============================================================================
+// Input domain
+// ============================================================================
+
+internal sealed record InputDispatchKeyEventParams(
+    string Type,
+    int? Modifiers = null,
+    string? Text = null,
+    string? UnmodifiedText = null,
+    string? Code = null,
+    string? Key = null,
+    int? WindowsVirtualKeyCode = null,
+    int? NativeVirtualKeyCode = null,
+    bool? AutoRepeat = null,
+    bool? IsKeypad = null,
+    bool? IsSystemKey = null,
+    int? Location = null);
+
+internal sealed record InputDispatchKeyEventResult();
+
+internal sealed record InputDispatchMouseEventParams(
+    string Type,
+    double X,
+    double Y,
+    int? Modifiers = null,
+    string? Button = null,
+    int? Buttons = null,
+    int? ClickCount = null,
+    double? DeltaX = null,
+    double? DeltaY = null,
+    string? PointerType = null);
+
+internal sealed record InputDispatchMouseEventResult();
+
+internal sealed record InputDispatchTouchEventParams(
+    string Type,
+    InputTouchPoint[] TouchPoints,
+    int? Modifiers = null);
+
+internal sealed record InputDispatchTouchEventResult();
+
+internal sealed record InputTouchPoint(
+    double X,
+    double Y,
+    double? RadiusX = null,
+    double? RadiusY = null,
+    double? Force = null,
+    int? Id = null);
+
+internal sealed record InputInsertTextParams(string Text);
+
+internal sealed record InputInsertTextResult();
+
+// ============================================================================
+// DOM domain
+// ============================================================================
+
+internal sealed record DomEnableResult();
+
+internal sealed record DomSetFileInputFilesParams(
+    string[] Files,
+    string? ObjectId = null);
+
+internal sealed record DomSetFileInputFilesResult();
+
+internal sealed record DomScrollIntoViewIfNeededParams(string? ObjectId = null);
+
+internal sealed record DomScrollIntoViewIfNeededResult();
+
+internal sealed record DomFocusParams(string? ObjectId = null);
+
+internal sealed record DomFocusResult();
+
+// ============================================================================
+// Page domain (screenshot with clip)
+// ============================================================================
+
+internal sealed record PageClipRect(
+    double X,
+    double Y,
+    double Width,
+    double Height,
+    double Scale = 1);
+
+internal sealed record PageCaptureScreenshotWithClipParams(
+    PageClipRect Clip,
+    string? Format = null,
+    int? Quality = null,
+    bool? FromSurface = null,
+    bool? CaptureBeyondViewport = null);
+
+// ============================================================================
+// Emulation domain (media)
+// ============================================================================
+
+internal sealed record EmulationSetEmulatedMediaParams(
+    string? Media = null,
+    EmulationMediaFeature[]? Features = null);
+
+internal sealed record EmulationMediaFeature(string Name, string Value);
+
+internal sealed record EmulationSetEmulatedMediaResult();

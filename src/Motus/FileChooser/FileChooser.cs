@@ -17,12 +17,38 @@ internal sealed class FileChooser : IFileChooser
     public IPage Page { get; }
 
     public ILocator Element
-        => throw new NotImplementedException("FileChooser.Element requires Locator support (Phase 1I).");
+        => throw new NotImplementedException("FileChooser.Element requires DOM.resolveNode support.");
 
     public bool IsMultiple { get; }
 
     internal int BackendNodeId { get; }
 
-    public Task SetFilesAsync(IEnumerable<FilePayload> files, CancellationToken ct = default)
-        => throw new NotImplementedException("FileChooser.SetFilesAsync requires DOM.setFileInputFiles (Phase 1I).");
+    public async Task SetFilesAsync(IEnumerable<FilePayload> files, CancellationToken ct = default)
+    {
+        var tempFiles = new List<string>();
+        try
+        {
+            foreach (var file in files)
+            {
+                var tempPath = Path.Combine(Path.GetTempPath(), file.Name);
+                await File.WriteAllBytesAsync(tempPath, file.Buffer, ct);
+                tempFiles.Add(tempPath);
+            }
+
+            var page = (Page)Page;
+            await page.Session.SendAsync(
+                "DOM.setFileInputFiles",
+                new DomSetFileInputFilesParams(Files: tempFiles.ToArray()),
+                CdpJsonContext.Default.DomSetFileInputFilesParams,
+                CdpJsonContext.Default.DomSetFileInputFilesResult,
+                ct);
+        }
+        finally
+        {
+            foreach (var tempFile in tempFiles)
+            {
+                try { File.Delete(tempFile); } catch { /* best effort */ }
+            }
+        }
+    }
 }

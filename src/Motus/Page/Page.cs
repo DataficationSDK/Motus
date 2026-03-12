@@ -21,6 +21,10 @@ internal sealed partial class Page : IPage
     private readonly ConcurrentDictionary<string, Func<object?[], Task<object?>>> _bindings = new();
     private readonly List<string> _initScripts = [];
 
+    private readonly Keyboard _keyboard;
+    private readonly Mouse _mouse;
+    private readonly Touchscreen _touchscreen;
+
     private string? _mainFrameId;
     private ViewportSize? _viewportSize;
     private volatile bool _isClosed;
@@ -30,6 +34,9 @@ internal sealed partial class Page : IPage
         _session = session;
         _context = context;
         _targetId = targetId;
+        _keyboard = new Keyboard(session, _pageCts.Token);
+        _mouse = new Mouse(session, _pageCts.Token);
+        _touchscreen = new Touchscreen(session, _pageCts.Token);
     }
 
     public IBrowserContext Context => _context;
@@ -51,14 +58,11 @@ internal sealed partial class Page : IPage
 
     public IVideo? Video => null;
 
-    public IKeyboard Keyboard
-        => throw new NotImplementedException("Keyboard is not yet implemented (Phase 1I).");
+    public IKeyboard Keyboard => _keyboard;
 
-    public IMouse Mouse
-        => throw new NotImplementedException("Mouse is not yet implemented (Phase 1I).");
+    public IMouse Mouse => _mouse;
 
-    public ITouchscreen Touchscreen
-        => throw new NotImplementedException("Touchscreen is not yet implemented (Phase 1I).");
+    public ITouchscreen Touchscreen => _touchscreen;
 
     // --- Events ---
     public event EventHandler? Close;
@@ -74,6 +78,12 @@ internal sealed partial class Page : IPage
     public event EventHandler<ResponseEventArgs>? Response;
 
     internal CdpSession Session => _session;
+
+    internal Keyboard KeyboardInternal => _keyboard;
+
+    internal Mouse MouseInternal => _mouse;
+
+    internal Touchscreen TouchscreenInternal => _touchscreen;
 
     internal async Task InitializeAsync(CancellationToken ct)
     {

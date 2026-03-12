@@ -59,35 +59,37 @@ internal sealed class Frame : IFrame
     public Task WaitForURLAsync(string urlPattern, NavigationOptions? options = null) =>
         _page.WaitForURLAsync(urlPattern, options);
 
-    // --- Stubbed: Phase 1I ---
+    // --- Locator methods ---
 
     public ILocator Locator(string selector, LocatorOptions? options = null)
-        => throw new NotImplementedException("Locators are not yet implemented (Phase 1I).");
+        => new Locator(_page, selector, options);
 
     public ILocator GetByRole(string role, string? name = null)
-        => throw new NotImplementedException("Locators are not yet implemented (Phase 1I).");
+        => name is not null
+            ? new Locator(_page, $"[role=\"{role}\"][aria-label=\"{name}\"]")
+            : new Locator(_page, $"[role=\"{role}\"]");
 
     public ILocator GetByText(string text, bool? exact = null)
-        => throw new NotImplementedException("Locators are not yet implemented (Phase 1I).");
+        => new Locator(_page, "*", new LocatorOptions { HasText = text });
 
     public ILocator GetByLabel(string text, bool? exact = null)
-        => throw new NotImplementedException("Locators are not yet implemented (Phase 1I).");
+        => new Locator(_page, $"[aria-label=\"{text}\"]");
 
     public ILocator GetByPlaceholder(string text, bool? exact = null)
-        => throw new NotImplementedException("Locators are not yet implemented (Phase 1I).");
+        => new Locator(_page, $"[placeholder=\"{text}\"]");
 
     public ILocator GetByTestId(string testId)
-        => throw new NotImplementedException("Locators are not yet implemented (Phase 1I).");
+        => new Locator(_page, $"[data-testid=\"{testId}\"]");
 
     public ILocator GetByTitle(string text, bool? exact = null)
-        => throw new NotImplementedException("Locators are not yet implemented (Phase 1I).");
+        => new Locator(_page, $"[title=\"{text}\"]");
 
     public ILocator GetByAltText(string text, bool? exact = null)
-        => throw new NotImplementedException("Locators are not yet implemented (Phase 1I).");
+        => new Locator(_page, $"[alt=\"{text}\"]");
 
     public Task<IElementHandle> AddScriptTagAsync(string? url = null, string? content = null)
-        => throw new NotImplementedException("AddScriptTag is not yet implemented (Phase 1I).");
+        => _page.AddScriptTagAsync(url, content);
 
     public Task<IElementHandle> AddStyleTagAsync(string? url = null, string? content = null)
-        => throw new NotImplementedException("AddStyleTag is not yet implemented (Phase 1I).");
+        => _page.AddStyleTagAsync(url, content);
 }
