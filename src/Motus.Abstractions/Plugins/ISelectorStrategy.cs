@@ -1,32 +1,36 @@
 namespace Motus.Abstractions;
 
 /// <summary>
-/// Defines a custom strategy for resolving and generating element selectors.
+/// Defines a custom element-targeting strategy beyond the built-in CSS, XPath, and text selectors.
 /// </summary>
 public interface ISelectorStrategy
 {
     /// <summary>
-    /// Gets the name of this selector strategy (e.g. "data-qa", "aria").
+    /// Gets the prefix used in selector strings (e.g. "data-test" for data-test=login-btn).
     /// </summary>
     string StrategyName { get; }
 
     /// <summary>
-    /// Gets the priority of this strategy. Lower values are tried first.
+    /// Gets the precedence when multiple strategies can resolve the same selector.
+    /// Higher priority wins. Used by the recorder's selector inference to rank candidates.
     /// </summary>
     int Priority { get; }
 
     /// <summary>
-    /// Resolves a selector string to matching elements on the page.
+    /// Resolves the selector expression to a list of matching elements within the given frame.
     /// </summary>
-    /// <param name="page">The page to search.</param>
-    /// <param name="selector">The selector string to resolve.</param>
-    /// <returns>Element handles matching the selector.</returns>
-    Task<IReadOnlyList<IElementHandle>> ResolveAsync(IPage page, string selector);
+    /// <param name="selector">The selector expression to resolve.</param>
+    /// <param name="frame">The frame to search within.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A list of matching elements.</returns>
+    Task<IReadOnlyList<IElementHandle>> ResolveAsync(string selector, IFrame frame, CancellationToken ct = default);
 
     /// <summary>
-    /// Generates a selector string for the given element.
+    /// Given an element handle, generates the best selector for it using this strategy.
+    /// Returns null if this strategy cannot produce a selector for the element.
     /// </summary>
     /// <param name="element">The element to generate a selector for.</param>
-    /// <returns>A selector string, or null if this strategy cannot generate one for the element.</returns>
-    Task<string?> GenerateSelector(IElementHandle element);
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The generated selector, or null.</returns>
+    Task<string?> GenerateSelector(IElementHandle element, CancellationToken ct = default);
 }
