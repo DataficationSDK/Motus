@@ -16,10 +16,6 @@ on:
       - "Motus.sln"
       - ".github/workflows/motus-ci.yml"
 
-defaults:
-  run:
-    working-directory: tools/Motus
-
 jobs:
   dotnet:
     name: .NET (${{ matrix.os }})
@@ -59,7 +55,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: test-results-${{ matrix.os }}
-          path: tools/Motus/TestResults/**/*.trx
+          path: TestResults/**/*.trx
 
       - name: Install ReportGenerator
         if: matrix.os == 'ubuntu-latest'
@@ -78,13 +74,13 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
-          path: tools/Motus/TestResults/CoverageReport
+          path: TestResults/CoverageReport
 
       - name: Post coverage summary
         if: matrix.os == 'ubuntu-latest' && github.event_name == 'pull_request'
         uses: marocchino/sticky-pull-request-comment@v2
         with:
-          path: tools/Motus/TestResults/CoverageReport/SummaryGithub.md
+          path: TestResults/CoverageReport/SummaryGithub.md
 
   integration:
     name: Integration Tests
@@ -106,7 +102,6 @@ jobs:
 
       - name: Build
         run: dotnet build Motus.sln --configuration Release
-        working-directory: tools/Motus
 
       - name: Test (integration)
         run: >-
@@ -116,14 +111,13 @@ jobs:
           --filter "TestCategory=Integration"
           --logger "trx;LogFileName=integration-results.trx"
           --results-directory TestResults
-        working-directory: tools/Motus
 
       - name: Upload integration test results
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: integration-test-results
-          path: tools/Motus/TestResults/**/*.trx
+          path: TestResults/**/*.trx
 
   # nuget-validate:
   #   name: NuGet Validation
@@ -140,16 +134,13 @@ jobs:
   #
   #     - name: Build
   #       run: dotnet build Motus.sln -c Release
-  #       working-directory: tools/Motus
   #
   #     - name: Pack NuGet packages
-  #       working-directory: tools/Motus
   #       run: |
   #         dotnet pack src/Motus.Abstractions/Motus.Abstractions.csproj -c Release --no-build -o packages
   #         dotnet pack src/Motus/Motus.csproj -c Release --no-build -o packages
   #
   #     - name: Validate packages
-  #       working-directory: tools/Motus
   #       run: |
   #         for pkg in packages/*.nupkg; do
   #           echo "Validating $pkg..."
@@ -162,4 +153,4 @@ jobs:
   #       uses: actions/upload-artifact@v4
   #       with:
   #         name: nuget-packages
-  #         path: tools/Motus/packages/*.nupkg
+  #         path: packages/*.nupkg
