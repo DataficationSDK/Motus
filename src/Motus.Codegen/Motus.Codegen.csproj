@@ -20,7 +20,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Motus.Codegen.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.12.0" />
+    <PackageReference Include="System.Text.Json" Version="9.0.0" PrivateAssets="all" />
   </ItemGroup>
 
 </Project>

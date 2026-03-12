@@ -1,0 +1,86 @@
+{
+    "version": { "major": "1", "minor": "3" },
+    "domains": [
+        {
+            "domain": "TestDomain",
+            "experimental": false,
+            "types": [
+                {
+                    "id": "RequestId",
+                    "type": "string"
+                },
+                {
+                    "id": "Timestamp",
+                    "type": "number"
+                },
+                {
+                    "id": "ResourceType",
+                    "type": "string",
+                    "enum": ["document", "stylesheet", "image", "script"]
+                },
+                {
+                    "id": "FrameInfo",
+                    "type": "object",
+                    "properties": [
+                        { "name": "id", "type": "string" },
+                        { "name": "parentId", "type": "string", "optional": true },
+                        { "name": "url", "type": "string" },
+                        { "name": "loaderId", "type": "string", "optional": true }
+                    ]
+                },
+                {
+                    "id": "NodeList",
+                    "type": "array",
+                    "items": { "type": "integer" }
+                }
+            ],
+            "commands": [
+                {
+                    "name": "navigate",
+                    "parameters": [
+                        { "name": "url", "type": "string" },
+                        { "name": "referrer", "type": "string", "optional": true },
+                        { "name": "transitionType", "$ref": "ResourceType", "optional": true }
+                    ],
+                    "returns": [
+                        { "name": "frameId", "type": "string" },
+                        { "name": "errorText", "type": "string", "optional": true }
+                    ]
+                },
+                {
+                    "name": "disable"
+                }
+            ],
+            "events": [
+                {
+                    "name": "frameNavigated",
+                    "parameters": [
+                        { "name": "frame", "$ref": "FrameInfo" },
+                        { "name": "type", "$ref": "ResourceType" }
+                    ]
+                },
+                {
+                    "name": "loadEventFired",
+                    "parameters": [
+                        { "name": "timestamp", "type": "number" }
+                    ]
+                }
+            ]
+        },
+        {
+            "domain": "CrossRef",
+            "types": [
+                {
+                    "id": "ExternalFrame",
+                    "type": "object",
+                    "properties": [
+                        { "name": "info", "$ref": "TestDomain.FrameInfo" },
+                        { "name": "ids", "type": "array", "items": { "$ref": "TestDomain.RequestId" } }
+                    ]
+                }
+            ],
+            "commands": [],
+            "events": []
+        }
+    ]
+}

@@ -24,4 +24,8 @@
     <ProjectReference Include="..\..\src\Motus.Codegen\Motus.Codegen.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="Fixtures\**\*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

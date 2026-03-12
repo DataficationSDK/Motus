@@ -24,6 +24,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <AdditionalFiles Include="..\Motus.Codegen\Protocol\browser_protocol.json" />
+    <AdditionalFiles Include="..\Motus.Codegen\Protocol\js_protocol.json" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Motus.Abstractions\Motus.Abstractions.csproj" />
     <ProjectReference Include="..\Motus.Codegen\Motus.Codegen.csproj"
                       OutputItemType="Analyzer"
