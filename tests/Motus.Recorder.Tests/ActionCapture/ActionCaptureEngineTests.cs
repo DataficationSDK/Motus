@@ -136,27 +136,41 @@ public class ActionCaptureEngineTests
     public async Task MultipleInputPayloads_DebounceIntoSingleFillAction()
     {
         // Use a long debounce window so the timer never fires mid-test.
-        // StopAsync() calls Flush() which emits the pending fill.
-        var options = new ActionCaptureOptions { FillDebounceMs = 2000 };
+        var options = new ActionCaptureOptions { FillDebounceMs = 5000 };
         await using var engine = new ActionCaptureEngine(options);
         await CreatePageAndStartEngineAsync(engine);
 
+        // Enqueue 3 inputs followed by a blur to force immediate flush.
+        // The blur eliminates any timer dependency for the assertion.
         _socket.Enqueue(BuildBindingCallEvent("__motus_recorder__",
             """{"type":"input","timestamp":1710000000000,"x":10,"y":20,"value":"h","pageUrl":"https://example.com"}"""));
         _socket.Enqueue(BuildBindingCallEvent("__motus_recorder__",
             """{"type":"input","timestamp":1710000000020,"x":10,"y":20,"value":"he","pageUrl":"https://example.com"}"""));
         _socket.Enqueue(BuildBindingCallEvent("__motus_recorder__",
             """{"type":"input","timestamp":1710000000040,"x":10,"y":20,"value":"hel","pageUrl":"https://example.com"}"""));
+        _socket.Enqueue(BuildBindingCallEvent("__motus_recorder__",
+            """{"type":"blur","timestamp":1710000000060,"pageUrl":"https://example.com"}"""));
 
-        // Wait for all binding callbacks to be dispatched and processed
-        await Task.Delay(500);
+        // Poll until the blur-triggered flush produces the FillAction.
+        // This avoids fixed delays that are fragile across CI environments.
+        var deadline = DateTime.UtcNow.AddSeconds(5);
+        FillAction? fill = null;
+        while (DateTime.UtcNow < deadline)
+        {
+            fill = engine.CapturedActions.OfType<FillAction>().FirstOrDefault();
+            if (fill is not null)
+                break;
+            await Task.Delay(50);
+        }
 
-        // StopAsync flushes the pending fill (timer hasn't fired due to 2s window)
         await engine.StopAsync();
 
+        Assert.IsNotNull(fill, "Should have captured a FillAction");
+        Assert.AreEqual("hel", fill.Value);
+
+        // Verify exactly one fill (all inputs collapsed, no timer-based splits)
         var fillActions = engine.CapturedActions.OfType<FillAction>().ToList();
         Assert.AreEqual(1, fillActions.Count, "Should have a single debounced FillAction");
-        Assert.AreEqual("hel", fillActions[0].Value);
     }
 
     [TestMethod]
