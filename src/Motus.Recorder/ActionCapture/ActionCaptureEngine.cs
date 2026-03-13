@@ -3,21 +3,26 @@ using System.Text.Json;
 using System.Threading.Channels;
 using Motus.Abstractions;
 using Motus.Recorder.Records;
+using Motus.Recorder.SelectorInference;
 
 namespace Motus.Recorder.ActionCapture;
 
 /// <summary>
 /// Orchestrates the action capture pipeline: JS injection, CDP event subscriptions,
-/// and the <see cref="InputStateMachine"/> for debouncing/grouping.
+/// the <see cref="InputStateMachine"/> for debouncing/grouping, and selector inference.
 /// </summary>
 public sealed class ActionCaptureEngine : IActionCaptureEngine
 {
     private readonly ActionCaptureOptions _options;
-    private readonly Channel<ActionRecord> _channel;
-    private readonly List<ActionRecord> _captured = [];
+    private readonly SelectorInferenceOptions? _inferenceOptions;
+    private readonly Channel<ActionRecord> _rawChannel;
+    private readonly Channel<ResolvedAction> _resolvedChannel;
+    private readonly List<ResolvedAction> _captured = [];
     private readonly object _capturedLock = new();
 
     private InputStateMachine? _stateMachine;
+    private SelectorInferenceEngine? _inferenceEngine;
+    private Task? _inferencePump;
     private CancellationTokenSource? _recordingCts;
     private Page? _page;
     private bool _disposed;
@@ -26,18 +31,23 @@ public sealed class ActionCaptureEngine : IActionCaptureEngine
     private string? _pendingDialogType;
     private string? _pendingDialogUrl;
 
-    public ActionCaptureEngine(ActionCaptureOptions? options = null)
+    public ActionCaptureEngine(
+        ActionCaptureOptions? options = null,
+        SelectorInferenceOptions? inferenceOptions = null)
     {
         _options = options ?? new ActionCaptureOptions();
-        _channel = Channel.CreateUnbounded<ActionRecord>(
+        _inferenceOptions = inferenceOptions;
+        _rawChannel = Channel.CreateUnbounded<ActionRecord>(
+            new UnboundedChannelOptions { SingleReader = true, SingleWriter = false });
+        _resolvedChannel = Channel.CreateUnbounded<ResolvedAction>(
             new UnboundedChannelOptions { SingleReader = false, SingleWriter = false });
     }
 
     public bool IsRecording => _recordingCts is not null && !_recordingCts.IsCancellationRequested;
 
-    public IAsyncEnumerable<ActionRecord> Actions => ReadActionsAsync();
+    public IAsyncEnumerable<ResolvedAction> Actions => ReadResolvedActionsAsync();
 
-    public IReadOnlyList<ActionRecord> CapturedActions
+    public IReadOnlyList<ResolvedAction> CapturedActions
     {
         get
         {
@@ -54,8 +64,15 @@ public sealed class ActionCaptureEngine : IActionCaptureEngine
         _page = (Page)page;
         _recordingCts = new CancellationTokenSource();
 
-        var capturingWriter = new CapturingChannelWriter(_channel.Writer, _captured, _capturedLock);
-        _stateMachine = new InputStateMachine(capturingWriter, _options);
+        var rawWriter = new CapturingRawChannelWriter(_rawChannel.Writer);
+        _stateMachine = new InputStateMachine(rawWriter, _options);
+
+        // Build inference engine from registered strategies
+        var strategies = _page.ContextInternal.SelectorStrategies.GetAllByPriority();
+        _inferenceEngine = new SelectorInferenceEngine(strategies, _page, _inferenceOptions);
+
+        // Start inference pump
+        _inferencePump = PumpInferenceAsync(_recordingCts.Token);
 
         // Register binding for DOM events
         await _page.ExposeBindingInternalAsync(_options.BindingName, OnBindingCalledAsync);
@@ -103,13 +120,20 @@ public sealed class ActionCaptureEngine : IActionCaptureEngine
         // Flush pending debounced actions
         _stateMachine?.Flush();
 
+        // Complete the raw channel so the inference pump drains and finishes
+        _rawChannel.Writer.TryComplete();
+
+        // Wait for inference pump to finish processing all raw actions
+        if (_inferencePump is not null)
+            await _inferencePump;
+
         // Cancel CDP event pumps
         await _recordingCts.CancelAsync();
         _recordingCts.Dispose();
         _recordingCts = null;
 
-        // Complete the channel
-        _channel.Writer.TryComplete();
+        // Complete the resolved channel
+        _resolvedChannel.Writer.TryComplete();
 
         // Unhook page events
         if (_page is not null)
@@ -131,7 +155,10 @@ public sealed class ActionCaptureEngine : IActionCaptureEngine
         if (_recordingCts is not null)
             await StopAsync();
         else
-            _channel.Writer.TryComplete();
+        {
+            _rawChannel.Writer.TryComplete();
+            _resolvedChannel.Writer.TryComplete();
+        }
     }
 
     /// <summary>
@@ -150,6 +177,63 @@ public sealed class ActionCaptureEngine : IActionCaptureEngine
         {
             // Malformed payload; skip
         }
+    }
+
+    private static bool NeedsSelector(ActionRecord action)
+        => action is ClickAction or FillAction or SelectAction or CheckAction or FileUploadAction;
+
+    private async Task PumpInferenceAsync(CancellationToken ct)
+    {
+        try
+        {
+            await foreach (var action in _rawChannel.Reader.ReadAllAsync(ct))
+            {
+                string? selector = null;
+
+                if (NeedsSelector(action) && action.X is not null && action.Y is not null)
+                {
+                    try
+                    {
+                        selector = await _inferenceEngine!.InferAsync(
+                            action.X.Value, action.Y.Value, ct);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        break;
+                    }
+                    catch
+                    {
+                        // Inference failed; selector stays null
+                    }
+                }
+
+                var resolved = new ResolvedAction(action, selector);
+                WriteResolved(resolved);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected on stop
+        }
+
+        // Drain any remaining items after channel completion (without CT)
+        while (_rawChannel.Reader.TryRead(out var remaining))
+        {
+            WriteResolved(new ResolvedAction(remaining, Selector: null));
+        }
+    }
+
+    private void WriteResolved(ResolvedAction resolved)
+    {
+        lock (_capturedLock)
+            _captured.Add(resolved);
+        _resolvedChannel.Writer.TryWrite(resolved);
+    }
+
+    private void WriteDirectResolved(ActionRecord action)
+    {
+        var resolved = new ResolvedAction(action, Selector: null);
+        WriteResolved(resolved);
     }
 
     private Task<object?> OnBindingCalledAsync(object?[] args)
@@ -182,13 +266,6 @@ public sealed class ActionCaptureEngine : IActionCaptureEngine
         return Task.FromResult<object?>(null);
     }
 
-    private void WriteAction(ActionRecord action)
-    {
-        lock (_capturedLock)
-            _captured.Add(action);
-        _channel.Writer.TryWrite(action);
-    }
-
     private void OnFrameNavigated(string url)
     {
         var action = new NavigationAction(
@@ -200,7 +277,7 @@ public sealed class ActionCaptureEngine : IActionCaptureEngine
             Url: url
         );
 
-        WriteAction(action);
+        WriteDirectResolved(action);
     }
 
     private void OnDialogEvent(object? sender, DialogEventArgs e)
@@ -222,7 +299,7 @@ public sealed class ActionCaptureEngine : IActionCaptureEngine
             PromptText: evt.UserInput
         );
 
-        WriteAction(action);
+        WriteDirectResolved(action);
         _pendingDialogType = null;
         _pendingDialogUrl = null;
     }
@@ -238,7 +315,7 @@ public sealed class ActionCaptureEngine : IActionCaptureEngine
             FileNames: []
         );
 
-        WriteAction(action);
+        WriteDirectResolved(action);
     }
 
     private void OnPageClose(object? sender, EventArgs e)
@@ -273,31 +350,24 @@ public sealed class ActionCaptureEngine : IActionCaptureEngine
         }
     }
 
-    private async IAsyncEnumerable<ActionRecord> ReadActionsAsync(
+    private async IAsyncEnumerable<ResolvedAction> ReadResolvedActionsAsync(
         [EnumeratorCancellation] CancellationToken ct = default)
     {
-        await foreach (var action in _channel.Reader.ReadAllAsync(ct))
+        await foreach (var action in _resolvedChannel.Reader.ReadAllAsync(ct))
         {
             yield return action;
         }
     }
 
     /// <summary>
-    /// A ChannelWriter wrapper that captures every written action to the captured list
-    /// before delegating to the underlying writer. This ensures InputStateMachine writes
-    /// are visible in CapturedActions without a separate forwarding task.
+    /// A ChannelWriter wrapper for the raw channel. Does not capture to list (capture
+    /// happens at the resolved channel level after inference).
     /// </summary>
-    private sealed class CapturingChannelWriter(
-        ChannelWriter<ActionRecord> inner,
-        List<ActionRecord> captured,
-        object capturedLock) : ChannelWriter<ActionRecord>
+    private sealed class CapturingRawChannelWriter(
+        ChannelWriter<ActionRecord> inner) : ChannelWriter<ActionRecord>
     {
         public override bool TryWrite(ActionRecord item)
-        {
-            lock (capturedLock)
-                captured.Add(item);
-            return inner.TryWrite(item);
-        }
+            => inner.TryWrite(item);
 
         public override ValueTask<bool> WaitToWriteAsync(CancellationToken cancellationToken = default)
             => inner.WaitToWriteAsync(cancellationToken);

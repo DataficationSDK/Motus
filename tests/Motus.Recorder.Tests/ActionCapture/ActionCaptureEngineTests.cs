@@ -114,7 +114,10 @@ public class ActionCaptureEngineTests
 
         await engine.StopAsync();
 
-        var click = engine.CapturedActions.OfType<ClickAction>().FirstOrDefault();
+        var click = engine.CapturedActions
+            .Select(r => r.Source)
+            .OfType<ClickAction>()
+            .FirstOrDefault();
         Assert.IsNotNull(click, "Should have captured a ClickAction");
         Assert.AreEqual("left", click.Button);
         Assert.AreEqual(1, click.ClickCount);
@@ -139,7 +142,10 @@ public class ActionCaptureEngineTests
         // StopAsync flushes the pending fill (timer hasn't fired due to 5s window)
         await engine.StopAsync();
 
-        var fills = engine.CapturedActions.OfType<FillAction>().ToList();
+        var fills = engine.CapturedActions
+            .Select(r => r.Source)
+            .OfType<FillAction>()
+            .ToList();
         Assert.AreEqual(1, fills.Count, "Should have a single debounced FillAction");
         Assert.AreEqual("hel", fills[0].Value);
     }
@@ -156,12 +162,16 @@ public class ActionCaptureEngineTests
         engine.ProcessDomEvent(
             """{"type":"blur","timestamp":1710000000100,"pageUrl":"https://example.com"}""");
 
-        // Blur flushes immediately; no need to wait or stop
-        var fill = engine.CapturedActions.OfType<FillAction>().FirstOrDefault();
+        // Blur flushes immediately, but inference pump needs time to process through
+        // the raw channel and CDP call (which fails/times out on fake transport)
+        await engine.StopAsync();
+
+        var fill = engine.CapturedActions
+            .Select(r => r.Source)
+            .OfType<FillAction>()
+            .FirstOrDefault();
         Assert.IsNotNull(fill, "Blur should have flushed the pending fill");
         Assert.AreEqual("hello", fill.Value);
-
-        await engine.StopAsync();
     }
 
     // ---- CDP event tests (synchronous event dispatch path, no Task.Run) ----
@@ -194,7 +204,10 @@ public class ActionCaptureEngineTests
         var captured = engine.CapturedActions;
         await engine.StopAsync();
 
-        var nav = captured.OfType<NavigationAction>().FirstOrDefault();
+        var nav = captured
+            .Select(r => r.Source)
+            .OfType<NavigationAction>()
+            .FirstOrDefault();
         Assert.IsNotNull(nav, "Should have captured a NavigationAction");
         Assert.AreEqual("https://example.com/page2", nav.Url);
     }
@@ -229,5 +242,26 @@ public class ActionCaptureEngineTests
 
         Assert.IsTrue(captured.Count > 0,
             "CapturedActions should contain the navigation action");
+    }
+
+    // ---- ResolvedAction shape tests ----
+
+    [TestMethod]
+    public async Task CapturedActions_ReturnsResolvedActions_WithNullSelectorForFakeTransport()
+    {
+        await using var engine = new ActionCaptureEngine();
+        await CreatePageAndStartEngineAsync(engine);
+
+        engine.ProcessDomEvent(
+            """{"type":"mousedown","timestamp":1710000000000,"x":100,"y":200,"button":"left","clickCount":1,"modifiers":0,"pageUrl":"https://example.com"}""");
+        engine.ProcessDomEvent(
+            """{"type":"mouseup","timestamp":1710000000050,"x":101,"y":201,"button":"left","modifiers":0,"pageUrl":"https://example.com"}""");
+
+        await engine.StopAsync();
+
+        var resolved = engine.CapturedActions.FirstOrDefault(r => r.Source is ClickAction);
+        Assert.IsNotNull(resolved, "Should have a ResolvedAction wrapping a ClickAction");
+        // Selector is null because fake transport cannot resolve DOM nodes
+        Assert.IsNull(resolved.Selector);
     }
 }

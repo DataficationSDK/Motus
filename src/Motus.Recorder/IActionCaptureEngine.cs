@@ -4,7 +4,7 @@ using Motus.Recorder.Records;
 namespace Motus.Recorder;
 
 /// <summary>
-/// Captures browser interactions and produces a stream of <see cref="ActionRecord"/> objects.
+/// Captures browser interactions and produces a stream of <see cref="ResolvedAction"/> objects.
 /// </summary>
 public interface IActionCaptureEngine : IAsyncDisposable
 {
@@ -24,12 +24,12 @@ public interface IActionCaptureEngine : IAsyncDisposable
     bool IsRecording { get; }
 
     /// <summary>
-    /// Async stream of captured actions. Completes when recording stops.
+    /// Async stream of resolved actions. Completes when recording stops.
     /// </summary>
-    IAsyncEnumerable<ActionRecord> Actions { get; }
+    IAsyncEnumerable<ResolvedAction> Actions { get; }
 
     /// <summary>
-    /// Snapshot of all actions captured so far.
+    /// Snapshot of all resolved actions captured so far.
     /// </summary>
-    IReadOnlyList<ActionRecord> CapturedActions { get; }
+    IReadOnlyList<ResolvedAction> CapturedActions { get; }
 }
