@@ -135,23 +135,23 @@ public class ActionCaptureEngineTests
     [TestMethod]
     public async Task MultipleInputPayloads_DebounceIntoSingleFillAction()
     {
-        await using var engine = new ActionCaptureEngine();
+        // Use a long debounce window so the timer never fires mid-test.
+        // StopAsync() calls Flush() which emits the pending fill.
+        var options = new ActionCaptureOptions { FillDebounceMs = 2000 };
+        await using var engine = new ActionCaptureEngine(options);
         await CreatePageAndStartEngineAsync(engine);
 
         _socket.Enqueue(BuildBindingCallEvent("__motus_recorder__",
             """{"type":"input","timestamp":1710000000000,"x":10,"y":20,"value":"h","pageUrl":"https://example.com"}"""));
-        await Task.Delay(30);
-
         _socket.Enqueue(BuildBindingCallEvent("__motus_recorder__",
             """{"type":"input","timestamp":1710000000020,"x":10,"y":20,"value":"he","pageUrl":"https://example.com"}"""));
-        await Task.Delay(30);
-
         _socket.Enqueue(BuildBindingCallEvent("__motus_recorder__",
             """{"type":"input","timestamp":1710000000040,"x":10,"y":20,"value":"hel","pageUrl":"https://example.com"}"""));
 
-        // Wait for debounce timer (100ms default) + processing time
-        await Task.Delay(300);
+        // Wait for all binding callbacks to be dispatched and processed
+        await Task.Delay(500);
 
+        // StopAsync flushes the pending fill (timer hasn't fired due to 2s window)
         await engine.StopAsync();
 
         var fillActions = engine.CapturedActions.OfType<FillAction>().ToList();
