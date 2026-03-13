@@ -136,6 +136,10 @@ internal sealed partial class Page
 
         // First frame navigated is the main frame
         _mainFrameId ??= info.Id;
+
+        // Notify internal subscribers (e.g. Recorder)
+        if (info.ParentId is null)
+            FrameNavigated?.Invoke(info.Url);
     }
 
     private void OnFrameAttached(PageFrameAttachedEvent evt)

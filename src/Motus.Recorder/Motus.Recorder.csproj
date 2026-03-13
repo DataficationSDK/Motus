@@ -18,6 +18,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Motus.Recorder.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Motus\Motus.csproj" />
     <ProjectReference Include="..\Motus.Abstractions\Motus.Abstractions.csproj" />
   </ItemGroup>

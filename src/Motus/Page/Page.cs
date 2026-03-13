@@ -77,6 +77,10 @@ internal sealed partial class Page : IPage
     public event EventHandler<RequestEventArgs>? RequestFinished;
     public event EventHandler<ResponseEventArgs>? Response;
 
+    // --- Internal events for extensions (e.g. Recorder) ---
+    internal event Action<string>? FrameNavigated;
+    internal event Action<string, bool, string?>? DialogHandled;
+
     internal CdpSession Session => _session;
 
     internal CancellationToken PageLifetimeToken => _pageCts.Token;
