@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>Motus.Cli</AssemblyName>
+    <RootNamespace>Motus.Cli</RootNamespace>
+    <ProduceReferenceAssembly>false</ProduceReferenceAssembly>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>motus</ToolCommandName>
+    <PackageId>Motus.Cli</PackageId>
+    <Title>Motus CLI</Title>
+    <Description>Command-line interface for Motus browser automation. Provides test execution, recording, browser installation, and utility commands.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Motus.Cli.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.CommandLine" Version="2.0.0-beta5.25277.114" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Motus\Motus.csproj" />
+    <ProjectReference Include="..\Motus.Abstractions\Motus.Abstractions.csproj" />
+    <ProjectReference Include="..\Motus.Recorder\Motus.Recorder.csproj" />
+  </ItemGroup>
+
+</Project>
