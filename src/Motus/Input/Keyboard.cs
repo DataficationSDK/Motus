@@ -86,7 +86,7 @@ internal sealed class Keyboard : IKeyboard
 
             await UpAsync(finalKey);
 
-            foreach (var mod in modifiers.Reverse())
+            foreach (var mod in modifiers.AsEnumerable().Reverse())
                 await UpAsync(mod);
         }
         else
