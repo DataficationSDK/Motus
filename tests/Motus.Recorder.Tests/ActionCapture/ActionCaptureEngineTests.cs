@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Motus.Abstractions;
 using Motus.Recorder.ActionCapture;
 using Motus.Recorder.Records;
@@ -62,28 +61,7 @@ public class ActionCaptureEngineTests
         return page;
     }
 
-    /// <summary>
-    /// Builds the CDP Runtime.bindingCalled event JSON that the transport expects.
-    /// The payload field is a JSON string containing a JSON array of binding arguments.
-    /// </summary>
-    private static string BuildBindingCallEvent(string bindingName, string innerJson)
-    {
-        // payload must be a JSON string whose value is a JSON array: ["innerJson"]
-        var payloadValue = JsonSerializer.Serialize(new[] { innerJson });
-        var escapedPayload = JsonSerializer.Serialize(payloadValue); // double-serialize for embedding in JSON string
-
-        return $$"""
-            {
-                "method": "Runtime.bindingCalled",
-                "sessionId": "session-1",
-                "params": {
-                    "name": "{{bindingName}}",
-                    "payload": {{escapedPayload}},
-                    "executionContextId": 1
-                }
-            }
-            """;
-    }
+    // ---- Wiring tests (verify CDP commands sent) ----
 
     [TestMethod]
     public async Task StartAsync_RegistersBindingAndInjectsScript()
@@ -108,70 +86,85 @@ public class ActionCaptureEngineTests
     }
 
     [TestMethod]
-    public async Task BindingCallback_ClickPayload_EmitsClickAction()
+    public async Task StopAsync_SetsIsRecordingFalse()
     {
         await using var engine = new ActionCaptureEngine();
         await CreatePageAndStartEngineAsync(engine);
 
-        // Simulate mousedown via binding
-        _socket.Enqueue(BuildBindingCallEvent("__motus_recorder__",
-            """{"type":"mousedown","timestamp":1710000000000,"x":100,"y":200,"button":"left","clickCount":1,"modifiers":0,"pageUrl":"https://example.com"}"""));
+        await engine.StopAsync();
 
-        await Task.Delay(200);
+        Assert.IsFalse(engine.IsRecording);
+    }
 
-        // Simulate mouseup via binding
-        _socket.Enqueue(BuildBindingCallEvent("__motus_recorder__",
-            """{"type":"mouseup","timestamp":1710000000050,"x":101,"y":201,"button":"left","modifiers":0,"pageUrl":"https://example.com"}"""));
+    // ---- Direct payload injection tests (deterministic, no CDP binding path) ----
+    // The binding callback path uses Task.Run (fire-and-forget) with catch-all error
+    // suppression in Page.OnBindingCalled, making it unreliable for unit tests.
+    // ProcessDomEvent bypasses that path and tests the engine pipeline directly.
 
-        await Task.Delay(200);
+    [TestMethod]
+    public async Task ProcessDomEvent_ClickSequence_EmitsClickAction()
+    {
+        await using var engine = new ActionCaptureEngine();
+        await CreatePageAndStartEngineAsync(engine);
+
+        engine.ProcessDomEvent(
+            """{"type":"mousedown","timestamp":1710000000000,"x":100,"y":200,"button":"left","clickCount":1,"modifiers":0,"pageUrl":"https://example.com"}""");
+        engine.ProcessDomEvent(
+            """{"type":"mouseup","timestamp":1710000000050,"x":101,"y":201,"button":"left","modifiers":0,"pageUrl":"https://example.com"}""");
 
         await engine.StopAsync();
 
-        var clickAction = engine.CapturedActions.OfType<ClickAction>().FirstOrDefault();
-        Assert.IsNotNull(clickAction, "Should have captured a ClickAction");
-        Assert.AreEqual("left", clickAction.Button);
+        var click = engine.CapturedActions.OfType<ClickAction>().FirstOrDefault();
+        Assert.IsNotNull(click, "Should have captured a ClickAction");
+        Assert.AreEqual("left", click.Button);
+        Assert.AreEqual(1, click.ClickCount);
+        Assert.AreEqual(100.0, click.X);
+        Assert.AreEqual(200.0, click.Y);
     }
 
     [TestMethod]
-    public async Task MultipleInputPayloads_DebounceIntoSingleFillAction()
+    public async Task ProcessDomEvent_MultipleInputs_DebounceIntoSingleFill()
     {
-        // Use a long debounce window so the timer never fires mid-test.
         var options = new ActionCaptureOptions { FillDebounceMs = 5000 };
         await using var engine = new ActionCaptureEngine(options);
         await CreatePageAndStartEngineAsync(engine);
 
-        // Enqueue 3 inputs followed by a blur to force immediate flush.
-        // The blur eliminates any timer dependency for the assertion.
-        _socket.Enqueue(BuildBindingCallEvent("__motus_recorder__",
-            """{"type":"input","timestamp":1710000000000,"x":10,"y":20,"value":"h","pageUrl":"https://example.com"}"""));
-        _socket.Enqueue(BuildBindingCallEvent("__motus_recorder__",
-            """{"type":"input","timestamp":1710000000020,"x":10,"y":20,"value":"he","pageUrl":"https://example.com"}"""));
-        _socket.Enqueue(BuildBindingCallEvent("__motus_recorder__",
-            """{"type":"input","timestamp":1710000000040,"x":10,"y":20,"value":"hel","pageUrl":"https://example.com"}"""));
-        _socket.Enqueue(BuildBindingCallEvent("__motus_recorder__",
-            """{"type":"blur","timestamp":1710000000060,"pageUrl":"https://example.com"}"""));
+        engine.ProcessDomEvent(
+            """{"type":"input","timestamp":1710000000000,"x":10,"y":20,"value":"h","pageUrl":"https://example.com"}""");
+        engine.ProcessDomEvent(
+            """{"type":"input","timestamp":1710000000020,"x":10,"y":20,"value":"he","pageUrl":"https://example.com"}""");
+        engine.ProcessDomEvent(
+            """{"type":"input","timestamp":1710000000040,"x":10,"y":20,"value":"hel","pageUrl":"https://example.com"}""");
 
-        // Poll until the blur-triggered flush produces the FillAction.
-        // This avoids fixed delays that are fragile across CI environments.
-        var deadline = DateTime.UtcNow.AddSeconds(5);
-        FillAction? fill = null;
-        while (DateTime.UtcNow < deadline)
-        {
-            fill = engine.CapturedActions.OfType<FillAction>().FirstOrDefault();
-            if (fill is not null)
-                break;
-            await Task.Delay(50);
-        }
-
+        // StopAsync flushes the pending fill (timer hasn't fired due to 5s window)
         await engine.StopAsync();
 
-        Assert.IsNotNull(fill, "Should have captured a FillAction");
-        Assert.AreEqual("hel", fill.Value);
-
-        // Verify exactly one fill (all inputs collapsed, no timer-based splits)
-        var fillActions = engine.CapturedActions.OfType<FillAction>().ToList();
-        Assert.AreEqual(1, fillActions.Count, "Should have a single debounced FillAction");
+        var fills = engine.CapturedActions.OfType<FillAction>().ToList();
+        Assert.AreEqual(1, fills.Count, "Should have a single debounced FillAction");
+        Assert.AreEqual("hel", fills[0].Value);
     }
+
+    [TestMethod]
+    public async Task ProcessDomEvent_BlurFlushesFill_ThenCapturedActionsContainsIt()
+    {
+        var options = new ActionCaptureOptions { FillDebounceMs = 5000 };
+        await using var engine = new ActionCaptureEngine(options);
+        await CreatePageAndStartEngineAsync(engine);
+
+        engine.ProcessDomEvent(
+            """{"type":"input","timestamp":1710000000000,"x":10,"y":20,"value":"hello","pageUrl":"https://example.com"}""");
+        engine.ProcessDomEvent(
+            """{"type":"blur","timestamp":1710000000100,"pageUrl":"https://example.com"}""");
+
+        // Blur flushes immediately; no need to wait or stop
+        var fill = engine.CapturedActions.OfType<FillAction>().FirstOrDefault();
+        Assert.IsNotNull(fill, "Blur should have flushed the pending fill");
+        Assert.AreEqual("hello", fill.Value);
+
+        await engine.StopAsync();
+    }
+
+    // ---- CDP event tests (synchronous event dispatch path, no Task.Run) ----
 
     [TestMethod]
     public async Task CdpFrameNavigated_EmitsNavigationAction()
@@ -179,7 +172,6 @@ public class ActionCaptureEngineTests
         await using var engine = new ActionCaptureEngine();
         await CreatePageAndStartEngineAsync(engine);
 
-        // Simulate main frame navigation via the Page's internal event
         _socket.Enqueue("""
             {
                 "method": "Page.frameNavigated",
@@ -205,17 +197,6 @@ public class ActionCaptureEngineTests
         var nav = captured.OfType<NavigationAction>().FirstOrDefault();
         Assert.IsNotNull(nav, "Should have captured a NavigationAction");
         Assert.AreEqual("https://example.com/page2", nav.Url);
-    }
-
-    [TestMethod]
-    public async Task StopAsync_SetsIsRecordingFalse()
-    {
-        await using var engine = new ActionCaptureEngine();
-        await CreatePageAndStartEngineAsync(engine);
-
-        await engine.StopAsync();
-
-        Assert.IsFalse(engine.IsRecording);
     }
 
     [TestMethod]

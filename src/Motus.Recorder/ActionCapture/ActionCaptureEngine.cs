@@ -134,6 +134,24 @@ public sealed class ActionCaptureEngine : IActionCaptureEngine
             _channel.Writer.TryComplete();
     }
 
+    /// <summary>
+    /// Processes a raw DOM event JSON payload directly, bypassing the CDP binding callback path.
+    /// Used by tests to inject events without going through the full transport stack.
+    /// </summary>
+    internal void ProcessDomEvent(string json)
+    {
+        try
+        {
+            var payload = JsonSerializer.Deserialize(json, RecorderJsonContext.Default.DomEventPayload);
+            if (payload is not null)
+                _stateMachine?.ProcessEvent(payload);
+        }
+        catch
+        {
+            // Malformed payload; skip
+        }
+    }
+
     private Task<object?> OnBindingCalledAsync(object?[] args)
     {
         if (args.Length == 0)
