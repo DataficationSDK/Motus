@@ -17,7 +17,7 @@ public static class RunCommand
         var filterOpt = new Option<string?>("--filter") { Description = "Filter tests by name substring" };
         var reporterOpt = new Option<string[]>("--reporter")
         {
-            Description = "Reporter format (console, junit:path.xml, html:path.html)",
+            Description = "Reporter format (console, junit:path.xml, html:path.html, trx:path.trx)",
             Arity = ArgumentArity.ZeroOrMore,
             DefaultValueFactory = _ => new[] { "console" },
         };

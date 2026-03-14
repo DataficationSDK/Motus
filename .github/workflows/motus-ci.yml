@@ -56,6 +56,7 @@ jobs:
         with:
           name: test-results-${{ matrix.os }}
           path: TestResults/**/*.trx
+          retention-days: 14
 
       - name: Install ReportGenerator
         if: matrix.os == 'ubuntu-latest'
@@ -75,6 +76,7 @@ jobs:
         with:
           name: coverage-report
           path: TestResults/CoverageReport
+          retention-days: 14
 
       - name: Post coverage summary
         if: matrix.os == 'ubuntu-latest' && github.event_name == 'pull_request'
@@ -118,6 +120,29 @@ jobs:
         with:
           name: integration-test-results
           path: TestResults/**/*.trx
+          retention-days: 14
+
+      - name: Generate Motus reports
+        if: always()
+        run: >-
+          dotnet run --project src/Motus.Cli/Motus.Cli.csproj --configuration Release --no-build --
+          run samples/Motus.Samples/bin/Release/net10.0/Motus.Samples.dll
+          --filter "TestCategory!=Integration"
+          --reporter console
+          --reporter junit:TestResults/motus-junit.xml
+          --reporter html:TestResults/motus-report.html
+          --reporter trx:TestResults/motus-results.trx
+
+      - name: Upload Motus reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: motus-reports
+          path: |
+            TestResults/motus-junit.xml
+            TestResults/motus-report.html
+            TestResults/motus-results.trx
+          retention-days: 14
 
   # nuget-validate:
   #   name: NuGet Validation

@@ -5,7 +5,7 @@ namespace Motus.Cli.Services.Reporters;
 
 public sealed class JUnitReporter(string outputPath) : IReporter
 {
-    private readonly List<Abstractions.TestResult> _results = [];
+    private readonly List<(TestInfo Info, Abstractions.TestResult Result)> _results = [];
 
     public Task OnTestRunStartAsync(TestSuiteInfo suite) => Task.CompletedTask;
 
@@ -13,7 +13,7 @@ public sealed class JUnitReporter(string outputPath) : IReporter
 
     public Task OnTestEndAsync(TestInfo test, Abstractions.TestResult result)
     {
-        _results.Add(result);
+        _results.Add((test, result));
         return Task.CompletedTask;
     }
 
@@ -24,12 +24,14 @@ public sealed class JUnitReporter(string outputPath) : IReporter
             new XAttribute("name", summary.SuiteName),
             new XAttribute("tests", total),
             new XAttribute("failures", summary.Failed),
+            new XAttribute("skipped", summary.Skipped),
             new XAttribute("time", (summary.TotalDurationMs / 1000).ToString("F3")));
 
-        foreach (var result in _results)
+        foreach (var (info, result) in _results)
         {
             var testCase = new XElement("testcase",
                 new XAttribute("name", result.TestName),
+                new XAttribute("classname", info.SuiteName),
                 new XAttribute("time", (result.DurationMs / 1000).ToString("F3")));
 
             if (!result.Passed)
@@ -37,6 +39,12 @@ public sealed class JUnitReporter(string outputPath) : IReporter
                 testCase.Add(new XElement("failure",
                     new XAttribute("message", result.ErrorMessage ?? ""),
                     result.StackTrace ?? ""));
+            }
+
+            if (result.Attachments is { Count: > 0 })
+            {
+                testCase.Add(new XElement("system-out",
+                    string.Join("\n", result.Attachments)));
             }
 
             testSuite.Add(testCase);

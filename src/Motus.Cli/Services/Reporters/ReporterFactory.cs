@@ -29,6 +29,7 @@ public static class ReporterFactory
         {
             "junit" => new JUnitReporter(path),
             "html" => new HtmlReporter(path),
+            "trx" => new TrxReporter(path),
             _ => throw new ArgumentException($"Unknown reporter format: {format}"),
         };
     }
