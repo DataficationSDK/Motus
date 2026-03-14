@@ -1,8 +1,9 @@
 @inherits LayoutComponentBase
 @inject ITestSessionService Session
+@inject ITimelineService Timeline
 @implements IDisposable
 
-<div class="runner-shell">
+<div class="runner-shell" id="runner-shell">
     <div class="runner-toolbar">
         <RunnerToolbar />
     </div>
@@ -10,20 +11,77 @@
         <TestExplorer />
     </div>
     <div class="runner-main">
-        @Body
+        <div class="main-tabs">
+            <button class="main-tab @(activeTab == "browser" ? "tab-active" : "")"
+                    @onclick='() => activeTab = "browser"'>
+                Browser View
+            </button>
+            <button class="main-tab @(activeTab == "step" ? "tab-active" : "")"
+                    @onclick='() => activeTab = "step"'>
+                Step Detail
+            </button>
+            <button class="main-tab @(activeTab == "vr" ? "tab-active" : "")"
+                    @onclick='() => activeTab = "vr"'>
+                Visual Regression
+            </button>
+        </div>
+        <div class="main-content">
+            @switch (activeTab)
+            {
+                case "browser":
+                    <BrowserViewPanel />
+                    break;
+                case "step":
+                    <StepDetailPanel />
+                    break;
+                case "vr":
+                    <VisualRegressionPanel />
+                    break;
+            }
+        </div>
     </div>
-    <div class="runner-timeline">
+    <div class="runner-resize-handle" id="resize-handle"></div>
+    <div class="runner-bottom" id="runner-bottom">
         <TimelinePanel />
-    </div>
-    <div class="runner-detail">
-        <StepDetailPanel />
     </div>
 </div>
 
+<script suppress-error="BL9992">
+    (function() {
+        const handle = document.getElementById('resize-handle');
+        const bottom = document.getElementById('runner-bottom');
+        if (!handle || !bottom) return;
+        let startY, startH;
+        handle.addEventListener('pointerdown', e => {
+            startY = e.clientY;
+            startH = bottom.offsetHeight;
+            handle.setPointerCapture(e.pointerId);
+            document.body.style.userSelect = 'none';
+            document.body.style.cursor = 'row-resize';
+        });
+        handle.addEventListener('pointermove', e => {
+            if (startY == null) return;
+            const delta = startY - e.clientY;
+            const h = Math.max(48, Math.min(window.innerHeight * 0.4, startH + delta));
+            bottom.style.height = h + 'px';
+        });
+        handle.addEventListener('pointerup', e => {
+            startY = null;
+            handle.releasePointerCapture(e.pointerId);
+            document.body.style.userSelect = '';
+            document.body.style.cursor = '';
+        });
+    })();
+</script>
+
 @code {
+    private string activeTab = "browser";
+    private int? lastSelectedIndex;
+
     protected override void OnInitialized()
     {
         Session.StateChanged += OnStateChanged;
+        Timeline.TimelineChanged += OnTimelineChanged;
     }
 
     private async void OnStateChanged()
@@ -31,8 +89,22 @@
         await InvokeAsync(StateHasChanged);
     }
 
+    private async void OnTimelineChanged()
+    {
+        // Auto-switch to Step Detail when a timeline entry is selected
+        var idx = Timeline.SelectedIndex;
+        if (idx is not null && idx != lastSelectedIndex)
+        {
+            lastSelectedIndex = idx;
+            activeTab = "step";
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
     public void Dispose()
     {
         Session.StateChanged -= OnStateChanged;
+        Timeline.TimelineChanged -= OnTimelineChanged;
     }
 }

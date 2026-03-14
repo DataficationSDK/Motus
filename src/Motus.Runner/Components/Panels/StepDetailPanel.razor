@@ -1,4 +1,95 @@
-<div class="placeholder-panel placeholder-panel-horizontal">
-    <span class="placeholder-title">Step Detail</span>
-    <span class="placeholder-subtitle">&mdash; Available in Phase 4C</span>
-</div>
+@inject ITimelineService Timeline
+@implements IDisposable
+
+@if (Timeline.SelectedEntry is { } entry)
+{
+    <div class="step-detail">
+        <div class="step-header">
+            <span class="step-badge @(entry.HasError ? "badge-error" : "badge-success")">@entry.ActionType</span>
+            @if (entry.Selector is not null)
+            {
+                <code class="step-selector">@entry.Selector</code>
+            }
+            <span class="step-duration">@entry.Duration.TotalMilliseconds.ToString("F0")ms</span>
+            <span class="step-time">@entry.Timestamp.ToString("HH:mm:ss.fff")</span>
+        </div>
+
+        @if (entry.ErrorMessage is not null)
+        {
+            <div class="step-error">@entry.ErrorMessage</div>
+        }
+
+        <div class="step-screenshots">
+            @if (entry.ScreenshotBefore is not null)
+            {
+                <div class="screenshot-col">
+                    <span class="screenshot-label">Before</span>
+                    <img src="data:image/png;base64,@Convert.ToBase64String(entry.ScreenshotBefore)" alt="Before" />
+                </div>
+            }
+            @if (entry.ScreenshotAfter is not null)
+            {
+                <div class="screenshot-col">
+                    <span class="screenshot-label">After</span>
+                    <img src="data:image/png;base64,@Convert.ToBase64String(entry.ScreenshotAfter)" alt="After" />
+                </div>
+            }
+        </div>
+
+        @if (entry.NetworkRequests.Count > 0)
+        {
+            <details class="step-section">
+                <summary>Network (@entry.NetworkRequests.Count)</summary>
+                <table class="network-table">
+                    <thead>
+                        <tr><th>Method</th><th>URL</th><th>Status</th></tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var req in entry.NetworkRequests)
+                        {
+                            <tr class="@(req.Failed ? "row-failed" : "")">
+                                <td>@req.Method</td>
+                                <td class="url-cell">@req.Url</td>
+                                <td>@(req.Failed ? "FAIL" : req.StatusCode.ToString())</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </details>
+        }
+
+        @if (entry.ConsoleMessages.Count > 0)
+        {
+            <details class="step-section">
+                <summary>Console (@entry.ConsoleMessages.Count)</summary>
+                <div class="console-list">
+                    @foreach (var msg in entry.ConsoleMessages)
+                    {
+                        <div class="console-entry console-@msg.Type">[@msg.Type] @msg.Text</div>
+                    }
+                </div>
+            </details>
+        }
+    </div>
+}
+else
+{
+    <div class="step-empty">Select a step from the timeline to view details</div>
+}
+
+@code {
+    protected override void OnInitialized()
+    {
+        Timeline.TimelineChanged += OnTimelineChanged;
+    }
+
+    private async void OnTimelineChanged()
+    {
+        await InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        Timeline.TimelineChanged -= OnTimelineChanged;
+    }
+}

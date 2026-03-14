@@ -8,6 +8,12 @@ namespace Motus;
 /// </summary>
 internal sealed class BrowserContext : IBrowserContext
 {
+    /// <summary>
+    /// Global static hook invoked whenever any page is created in any context.
+    /// Used by the visual runner to detect test-created pages.
+    /// </summary>
+    internal static Action<Abstractions.IPage>? GlobalPageCreated;
+
     private readonly Browser _browser;
     private readonly CdpSessionRegistry _registry;
     private readonly string _browserContextId;
@@ -82,7 +88,7 @@ internal sealed class BrowserContext : IBrowserContext
 
     internal PluginHost? PluginHost { get; set; }
 
-    internal Abstractions.IPluginContext GetPluginContext() => new PluginContext(this);
+    public Abstractions.IPluginContext GetPluginContext() => new PluginContext(this);
 
     internal IReadOnlyDictionary<string, Func<object?[], Task<object?>>> Bindings => _bindings;
 
@@ -184,6 +190,7 @@ internal sealed class BrowserContext : IBrowserContext
 
         await _lifecycleHooks.FireOnPageCreatedAsync(page).ConfigureAwait(false);
         Page?.Invoke(this, page);
+        GlobalPageCreated?.Invoke(page);
 
         return page;
     }

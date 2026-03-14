@@ -1,4 +1,68 @@
-<div class="placeholder-panel placeholder-panel-horizontal">
-    <span class="placeholder-title">Timeline</span>
-    <span class="placeholder-subtitle">&mdash; Available in Phase 4C</span>
+@inject ITimelineService Timeline
+@implements IDisposable
+
+<div class="timeline-bar">
+    <div class="timeline-markers" @ref="_markersRef">
+        @foreach (var entry in Timeline.Entries)
+        {
+            var idx = entry.Index;
+            var cssClass = GetMarkerClass(entry);
+            <button class="timeline-marker @cssClass @(Timeline.SelectedIndex == idx ? "active" : "")"
+                    @onclick="() => SelectEntry(idx)"
+                    title="@entry.ActionType @(entry.Selector ?? "")">
+            </button>
+        }
+    </div>
+    @if (Timeline.Entries.Count > 0)
+    {
+        <div class="timeline-scrubber">
+            <input type="range"
+                   min="0"
+                   max="@(Timeline.Entries.Count - 1)"
+                   value="@(Timeline.SelectedIndex ?? 0)"
+                   @oninput="OnScrub" />
+            <span class="timeline-count">@(Timeline.Entries.Count) steps</span>
+        </div>
+    }
+    else
+    {
+        <span class="timeline-empty">No actions recorded</span>
+    }
 </div>
+
+@code {
+    private ElementReference _markersRef;
+
+    protected override void OnInitialized()
+    {
+        Timeline.TimelineChanged += OnTimelineChanged;
+    }
+
+    private string GetMarkerClass(TimelineEntry entry)
+    {
+        if (entry.HasError) return "marker-error";
+        if (entry.ActionType == "navigate") return "marker-navigate";
+        return "marker-success";
+    }
+
+    private void SelectEntry(int index)
+    {
+        Timeline.SelectEntry(index);
+    }
+
+    private void OnScrub(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var idx))
+            Timeline.SelectEntry(idx);
+    }
+
+    private async void OnTimelineChanged()
+    {
+        await InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        Timeline.TimelineChanged -= OnTimelineChanged;
+    }
+}

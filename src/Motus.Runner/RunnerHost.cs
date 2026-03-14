@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Motus.Runner.Services;
+using Motus.Runner.Services.Timeline;
+using Motus.Runner.Services.VisualRegression;
 
 namespace Motus.Runner;
 
@@ -38,6 +40,12 @@ public static class RunnerHost
         builder.Services.AddSingleton<ITestSessionService>(sp => sp.GetRequiredService<TestSessionService>());
         builder.Services.AddSingleton<ScreencastService>();
         builder.Services.AddSingleton<IScreencastService>(sp => sp.GetRequiredService<ScreencastService>());
+        builder.Services.AddSingleton<TimelineService>();
+        builder.Services.AddSingleton<ITimelineService>(sp => sp.GetRequiredService<TimelineService>());
+        builder.Services.AddSingleton<StepDebugService>();
+        builder.Services.AddSingleton<IStepDebugService>(sp => sp.GetRequiredService<StepDebugService>());
+        builder.Services.AddSingleton<VisualRegressionService>();
+        builder.Services.AddSingleton<IVisualRegressionService>(sp => sp.GetRequiredService<VisualRegressionService>());
 
         builder.Services.AddRazorComponents()
             .AddInteractiveServerComponents();
@@ -45,6 +53,10 @@ public static class RunnerHost
         var app = builder.Build();
 
         var screencast = app.Services.GetRequiredService<IScreencastService>();
+        var timeline = app.Services.GetRequiredService<ITimelineService>();
+        var stepDebug = app.Services.GetRequiredService<IStepDebugService>();
+
+        // Bridge explicit SetActivePage calls (e.g. from CLI commands)
         RunnerPageBridge.PageActivated += page =>
         {
             _ = Task.Run(async () =>
@@ -52,6 +64,27 @@ public static class RunnerHost
                 try { await screencast.AttachPageAsync(page); }
                 catch { /* best-effort */ }
             });
+
+            if (page is not null)
+            {
+                timeline.Clear();
+                var hook = new TimelineRecorderHook(timeline, stepDebug);
+                page.Context.GetPluginContext().RegisterLifecycleHook(hook);
+            }
+        };
+
+        // Auto-detect pages created by tests via the global BrowserContext hook
+        Motus.BrowserContext.GlobalPageCreated = page =>
+        {
+            _ = Task.Run(async () =>
+            {
+                try { await screencast.AttachPageAsync(page); }
+                catch { /* best-effort */ }
+            });
+
+            timeline.Clear();
+            var hook = new TimelineRecorderHook(timeline, stepDebug);
+            page.Context.GetPluginContext().RegisterLifecycleHook(hook);
         };
 
         if (!app.Environment.IsDevelopment())

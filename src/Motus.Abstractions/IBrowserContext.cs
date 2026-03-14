@@ -137,6 +137,11 @@ public interface IBrowserContext : IAsyncDisposable
     Task AddInitScriptAsync(string script);
 
     /// <summary>
+    /// Gets the plugin context for registering extensions at runtime.
+    /// </summary>
+    IPluginContext GetPluginContext();
+
+    /// <summary>
     /// Closes the context and all its pages.
     /// </summary>
     Task CloseAsync();

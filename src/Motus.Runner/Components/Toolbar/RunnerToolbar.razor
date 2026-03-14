@@ -1,4 +1,6 @@
 @inject ITestSessionService Session
+@inject IStepDebugService StepDebug
+@implements IDisposable
 
 <div class="toolbar">
     <button class="toolbar-btn run-btn" @onclick="RunAll" disabled="@Session.IsRunning" title="Run All Tests">
@@ -7,6 +9,32 @@
     <button class="toolbar-btn stop-btn" @onclick="Stop" disabled="@(!Session.IsRunning)" title="Stop">
         &#9632; Stop
     </button>
+    <div class="toolbar-separator"></div>
+    <div class="step-debug-group">
+        <button class="toolbar-btn @(StepDebug.IsStepMode ? "step-active" : "")"
+                @onclick="ToggleStepMode"
+                title="Toggle Step Mode">
+            Step Mode
+        </button>
+        <button class="toolbar-btn"
+                @onclick="StepDebug.Advance"
+                disabled="@(!StepDebug.IsPaused)"
+                title="Advance one step">
+            &#9654;| Step
+        </button>
+        <button class="toolbar-btn"
+                @onclick="StepDebug.Resume"
+                disabled="@(!StepDebug.IsStepMode)"
+                title="Resume execution">
+            &#9654;&#9654; Resume
+        </button>
+        @if (StepDebug.IsPaused)
+        {
+            <span class="paused-indicator" title="@StepDebug.PendingSelector">
+                Paused: @StepDebug.PendingActionType
+            </span>
+        }
+    </div>
     <div class="toolbar-separator"></div>
     <input class="toolbar-filter"
            type="text"
@@ -26,6 +54,19 @@
     private int FailedCount => Session.States.Values.Count(s => s.Status == TestStatus.Failed);
     private int PendingCount => Session.States.Values.Count(s => s.Status is TestStatus.Pending or TestStatus.Skipped);
 
+    protected override void OnInitialized()
+    {
+        StepDebug.StateChanged += OnStepDebugChanged;
+    }
+
+    private void ToggleStepMode()
+    {
+        if (StepDebug.IsStepMode)
+            StepDebug.DisableStepMode();
+        else
+            StepDebug.EnableStepMode();
+    }
+
     private async Task RunAll()
     {
         await Session.RunAllAsync();
@@ -39,5 +80,15 @@
     private void OnFilterInput(ChangeEventArgs e)
     {
         Session.SetFilter(e.Value?.ToString());
+    }
+
+    private async void OnStepDebugChanged()
+    {
+        await InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        StepDebug.StateChanged -= OnStepDebugChanged;
     }
 }

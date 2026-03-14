@@ -1,0 +1,88 @@
+@inject IVisualRegressionService VisualRegression
+@implements IDisposable
+
+@if (VisualRegression.AllCaptures.Count > 0)
+{
+    <div class="vr-panel">
+        <div class="vr-list">
+            @foreach (var capture in VisualRegression.AllCaptures)
+            {
+                <button class="vr-item @(selectedCapture == capture ? "vr-selected" : "")"
+                        @onclick="() => selectedCapture = capture">
+                    <span class="vr-name">@capture.CaptureName</span>
+                    @if (capture.Diff is { } diff)
+                    {
+                        <span class="vr-badge @(diff.IsMatch ? "vr-match" : "vr-mismatch")">
+                            @(diff.IsMatch ? "Match" : $"{diff.DiffPercent}%")
+                        </span>
+                    }
+                    else
+                    {
+                        <span class="vr-badge vr-new">New</span>
+                    }
+                </button>
+            }
+        </div>
+
+        @if (selectedCapture is not null)
+        {
+            <div class="vr-comparison">
+                @if (selectedCapture.Baseline is not null)
+                {
+                    <div class="vr-col">
+                        <span class="vr-label">Baseline</span>
+                        <img src="data:image/png;base64,@Convert.ToBase64String(selectedCapture.Baseline)" alt="Baseline" />
+                    </div>
+                }
+                <div class="vr-col">
+                    <span class="vr-label">Current</span>
+                    <img src="data:image/png;base64,@Convert.ToBase64String(selectedCapture.Screenshot)" alt="Current" />
+                </div>
+                @if (selectedCapture.Diff?.DiffImage is not null)
+                {
+                    <div class="vr-col">
+                        <span class="vr-label">Diff</span>
+                        <img src="data:image/png;base64,@Convert.ToBase64String(selectedCapture.Diff.DiffImage)" alt="Diff" />
+                    </div>
+                }
+                <div class="vr-actions">
+                    <button class="toolbar-btn run-btn" @onclick="AcceptBaseline">Accept as Baseline</button>
+                </div>
+            </div>
+        }
+    </div>
+}
+else
+{
+    <div class="vr-empty">No visual captures recorded</div>
+}
+
+@code {
+    private VisualCapture? selectedCapture;
+
+    protected override void OnInitialized()
+    {
+        VisualRegression.CapturesChanged += OnCapturesChanged;
+    }
+
+    private async Task AcceptBaseline()
+    {
+        if (selectedCapture is not null)
+        {
+            await VisualRegression.AcceptBaselineAsync(
+                selectedCapture.TestName,
+                selectedCapture.CaptureName,
+                selectedCapture.Screenshot);
+        }
+    }
+
+    private async void OnCapturesChanged()
+    {
+        await InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        VisualRegression.CapturesChanged -= OnCapturesChanged;
+    }
+}

@@ -1,12 +1,12 @@
 .runner-shell {
     display: grid;
     grid-template-columns: var(--vsc-sidebar-width) 1fr;
-    grid-template-rows: var(--vsc-toolbar-height) 1fr var(--vsc-bottom-panel-height) auto;
+    grid-template-rows: var(--vsc-toolbar-height) 1fr auto auto;
     grid-template-areas:
         "toolbar  toolbar"
         "sidebar  main"
-        "timeline timeline"
-        "detail   detail";
+        "resize   resize"
+        "bottom   bottom";
     height: 100vh;
     width: 100vw;
     overflow: hidden;
@@ -30,20 +30,63 @@
 .runner-main {
     grid-area: main;
     background: var(--vsc-bg);
-    overflow: auto;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
 }
 
-.runner-timeline {
-    grid-area: timeline;
+.main-tabs {
+    display: flex;
     background: var(--vsc-bg-secondary);
-    border-top: 1px solid var(--vsc-border);
-    overflow: auto;
+    border-bottom: 1px solid var(--vsc-border);
+    flex-shrink: 0;
 }
 
-.runner-detail {
-    grid-area: detail;
-    background: var(--vsc-bg-tertiary);
-    border-top: 1px solid var(--vsc-border);
+.main-tab {
+    padding: 6px 16px;
+    font-size: 12px;
+    color: var(--vsc-fg-dim);
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s;
+}
+
+.main-tab:hover {
+    color: var(--vsc-fg);
+}
+
+.tab-active {
+    color: var(--vsc-fg-bright);
+    border-bottom-color: var(--vsc-accent);
+}
+
+.main-content {
+    flex: 1;
     overflow: auto;
-    min-height: 80px;
+    min-height: 0;
+}
+
+.runner-resize-handle {
+    grid-area: resize;
+    height: 5px;
+    cursor: row-resize;
+    background: var(--vsc-border);
+    transition: background 0.15s;
+    touch-action: none;
+}
+
+.runner-resize-handle:hover,
+.runner-resize-handle:active {
+    background: var(--vsc-accent);
+}
+
+.runner-bottom {
+    grid-area: bottom;
+    background: var(--vsc-bg-secondary);
+    height: 64px;
+    min-height: 48px;
+    overflow: auto;
 }

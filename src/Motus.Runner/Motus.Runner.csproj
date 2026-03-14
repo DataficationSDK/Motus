@@ -9,6 +9,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="SkiaSharp" Version="2.88.*" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Motus\Motus.csproj" />
     <ProjectReference Include="..\Motus.Abstractions\Motus.Abstractions.csproj" />
   </ItemGroup>

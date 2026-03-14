@@ -74,3 +74,29 @@
 .stat-pending {
     color: var(--vsc-fg-dim);
 }
+
+.step-debug-group {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.step-active {
+    background: var(--vsc-accent) !important;
+    color: #fff !important;
+}
+
+.paused-indicator {
+    font-size: 11px;
+    color: var(--vsc-yellow, #cca700);
+    font-family: var(--vsc-font-mono);
+    padding: 2px 6px;
+    background: rgba(204, 167, 0, 0.15);
+    border-radius: 3px;
+    animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}

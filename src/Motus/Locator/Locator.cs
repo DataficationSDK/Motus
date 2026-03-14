@@ -223,53 +223,69 @@ internal sealed class Locator : ILocator
 
     private async Task RunWithHooksAsync(string actionName, Func<Task> action)
     {
-        await _page.ContextInternal.LifecycleHooks.FireBeforeActionAsync(_page, actionName).ConfigureAwait(false);
-        Exception? error = null;
+        ActionContext.CurrentSelector.Value = _selector;
         try
         {
-            await action().ConfigureAwait(false);
-        }
-        catch (MotusException mex) when (mex.Screenshot is null)
-        {
-            error = mex;
-            await FailureCapture.AttachScreenshotAsync(mex, _page).ConfigureAwait(false);
-            throw;
-        }
-        catch (Exception ex)
-        {
-            error = ex;
-            throw;
+            await _page.ContextInternal.LifecycleHooks.FireBeforeActionAsync(_page, actionName).ConfigureAwait(false);
+            Exception? error = null;
+            try
+            {
+                await action().ConfigureAwait(false);
+            }
+            catch (MotusException mex) when (mex.Screenshot is null)
+            {
+                error = mex;
+                await FailureCapture.AttachScreenshotAsync(mex, _page).ConfigureAwait(false);
+                throw;
+            }
+            catch (Exception ex)
+            {
+                error = ex;
+                throw;
+            }
+            finally
+            {
+                await _page.ContextInternal.LifecycleHooks.FireAfterActionAsync(
+                    _page, actionName, new ActionResult(actionName, error)).ConfigureAwait(false);
+            }
         }
         finally
         {
-            await _page.ContextInternal.LifecycleHooks.FireAfterActionAsync(
-                _page, actionName, new ActionResult(actionName, error)).ConfigureAwait(false);
+            ActionContext.CurrentSelector.Value = null;
         }
     }
 
     private async Task<T> RunWithHooksAsync<T>(string actionName, Func<Task<T>> action)
     {
-        await _page.ContextInternal.LifecycleHooks.FireBeforeActionAsync(_page, actionName).ConfigureAwait(false);
-        Exception? error = null;
+        ActionContext.CurrentSelector.Value = _selector;
         try
         {
-            return await action().ConfigureAwait(false);
-        }
-        catch (MotusException mex) when (mex.Screenshot is null)
-        {
-            error = mex;
-            await FailureCapture.AttachScreenshotAsync(mex, _page).ConfigureAwait(false);
-            throw;
-        }
-        catch (Exception ex)
-        {
-            error = ex;
-            throw;
+            await _page.ContextInternal.LifecycleHooks.FireBeforeActionAsync(_page, actionName).ConfigureAwait(false);
+            Exception? error = null;
+            try
+            {
+                return await action().ConfigureAwait(false);
+            }
+            catch (MotusException mex) when (mex.Screenshot is null)
+            {
+                error = mex;
+                await FailureCapture.AttachScreenshotAsync(mex, _page).ConfigureAwait(false);
+                throw;
+            }
+            catch (Exception ex)
+            {
+                error = ex;
+                throw;
+            }
+            finally
+            {
+                await _page.ContextInternal.LifecycleHooks.FireAfterActionAsync(
+                    _page, actionName, new ActionResult(actionName, error)).ConfigureAwait(false);
+            }
         }
         finally
         {
-            await _page.ContextInternal.LifecycleHooks.FireAfterActionAsync(
-                _page, actionName, new ActionResult(actionName, error)).ConfigureAwait(false);
+            ActionContext.CurrentSelector.Value = null;
         }
     }
 
