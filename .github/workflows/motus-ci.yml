@@ -125,7 +125,7 @@ jobs:
       - name: Generate Motus reports
         if: always()
         run: >-
-          dotnet run --project src/Motus.Cli/Motus.Cli.csproj --configuration Release --no-build --
+          dotnet run --project src/Motus.Cli/Motus.Cli.csproj --configuration Release --framework net10.0 --no-build --
           run samples/Motus.Samples/bin/Release/net10.0/Motus.Samples.dll
           --filter "TestCategory!=Integration"
           --reporter console
