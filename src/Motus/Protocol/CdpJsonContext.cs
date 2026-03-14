@@ -154,6 +154,18 @@ namespace Motus;
 [JsonSerializable(typeof(DomGetNodeForLocationResult))]
 [JsonSerializable(typeof(DomResolveNodeParams))]
 [JsonSerializable(typeof(DomResolveNodeResult))]
+// --- Page domain (screencast) ---
+[JsonSerializable(typeof(PageStartScreencastParams))]
+[JsonSerializable(typeof(PageStartScreencastResult))]
+[JsonSerializable(typeof(PageStopScreencastResult))]
+[JsonSerializable(typeof(PageScreencastFrameAckParams))]
+[JsonSerializable(typeof(PageScreencastFrameAckResult))]
+[JsonSerializable(typeof(PageScreencastFrameEvent))]
+[JsonSerializable(typeof(PageScreencastFrameMetadata))]
+// --- DOM domain (box model) ---
+[JsonSerializable(typeof(DomGetBoxModelParams))]
+[JsonSerializable(typeof(DomGetBoxModelResult))]
+[JsonSerializable(typeof(DomBoxModel))]
 // --- Page domain (clip) ---
 [JsonSerializable(typeof(PageCaptureScreenshotWithClipParams))]
 [JsonSerializable(typeof(PageClipRect))]
@@ -822,3 +834,55 @@ internal sealed record FetchAuthRequiredEvent(
     string ResourceType,
     string? NetworkId,
     FetchAuthChallenge AuthChallenge);
+
+// ============================================================================
+// Page domain (screencast)
+// ============================================================================
+
+internal sealed record PageStartScreencastParams(
+    string? Format = null,
+    int? Quality = null,
+    int? MaxWidth = null,
+    int? MaxHeight = null,
+    int? EveryNthFrame = null);
+
+internal sealed record PageStartScreencastResult();
+
+internal sealed record PageStopScreencastResult();
+
+internal sealed record PageScreencastFrameAckParams(int SessionId);
+
+internal sealed record PageScreencastFrameAckResult();
+
+internal sealed record PageScreencastFrameMetadata(
+    double OffsetTop,
+    double PageScaleFactor,
+    double DeviceWidth,
+    double DeviceHeight,
+    double ScrollOffsetX,
+    double ScrollOffsetY,
+    double? Timestamp = null);
+
+internal sealed record PageScreencastFrameEvent(
+    string Data,
+    PageScreencastFrameMetadata Metadata,
+    int SessionId);
+
+// ============================================================================
+// DOM domain (box model)
+// ============================================================================
+
+internal sealed record DomGetBoxModelParams(
+    string? ObjectId = null,
+    int? BackendNodeId = null,
+    int? NodeId = null);
+
+internal sealed record DomBoxModel(
+    double[] Content,
+    double[] Padding,
+    double[] Border,
+    double[] Margin,
+    double Width,
+    double Height);
+
+internal sealed record DomGetBoxModelResult(DomBoxModel Model);

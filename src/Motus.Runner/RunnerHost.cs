@@ -36,11 +36,23 @@ public static class RunnerHost
         builder.Services.AddSingleton<TestExecutionService>();
         builder.Services.AddSingleton<TestSessionService>();
         builder.Services.AddSingleton<ITestSessionService>(sp => sp.GetRequiredService<TestSessionService>());
+        builder.Services.AddSingleton<ScreencastService>();
+        builder.Services.AddSingleton<IScreencastService>(sp => sp.GetRequiredService<ScreencastService>());
 
         builder.Services.AddRazorComponents()
             .AddInteractiveServerComponents();
 
         var app = builder.Build();
+
+        var screencast = app.Services.GetRequiredService<IScreencastService>();
+        RunnerPageBridge.PageActivated += page =>
+        {
+            _ = Task.Run(async () =>
+            {
+                try { await screencast.AttachPageAsync(page); }
+                catch { /* best-effort */ }
+            });
+        };
 
         if (!app.Environment.IsDevelopment())
         {

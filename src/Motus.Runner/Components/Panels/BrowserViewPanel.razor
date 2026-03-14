@@ -1,5 +1,87 @@
-<div class="placeholder-panel">
-    <div class="placeholder-icon">&#9881;</div>
-    <div class="placeholder-title">Browser View</div>
-    <div class="placeholder-subtitle">Available in Phase 4B</div>
+@using Motus.Runner.Services
+@inject IScreencastService Screencast
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+<div class="browser-view-panel">
+    @if (Screencast.IsStreaming)
+    {
+        <div class="screencast-container">
+            <img id="motus-screencast-img" class="screencast-img" />
+            @if (_highlight is not null && _imgWidth > 0 && _imgHeight > 0)
+            {
+                var scaleX = _imgWidth / 1280.0;
+                var scaleY = _imgHeight / 720.0;
+                var left = _highlight.X * scaleX;
+                var top = _highlight.Y * scaleY;
+                var width = _highlight.Width * scaleX;
+                var height = _highlight.Height * scaleY;
+                <div class="highlight-overlay"
+                     style="left:@(left)px;top:@(top)px;width:@(width)px;height:@(height)px;background:@(_highlight.Color);">
+                </div>
+            }
+        </div>
+    }
+    else
+    {
+        <div class="placeholder-panel">
+            <div class="placeholder-icon">&#128247;</div>
+            <div class="placeholder-title">Browser View</div>
+            <div class="placeholder-subtitle">No active test running</div>
+        </div>
+    }
 </div>
+
+@code {
+    private ElementHighlight? _highlight;
+    private double _imgWidth;
+    private double _imgHeight;
+
+    protected override void OnInitialized()
+    {
+        Screencast.FrameReceived += OnFrameReceived;
+        Screencast.HighlightChanged += OnHighlightChanged;
+    }
+
+    private async void OnFrameReceived(string base64)
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("motus.updateFrame", base64);
+        }
+        catch (JSDisconnectedException)
+        {
+            // Circuit disconnected
+        }
+    }
+
+    private async void OnHighlightChanged()
+    {
+        _highlight = Screencast.CurrentHighlight;
+
+        if (_highlight is not null)
+        {
+            try
+            {
+                var dims = await JS.InvokeAsync<ImageDimensions>("motus.getImageDimensions");
+                _imgWidth = dims.Width;
+                _imgHeight = dims.Height;
+            }
+            catch (JSDisconnectedException)
+            {
+                return;
+            }
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        Screencast.FrameReceived -= OnFrameReceived;
+        Screencast.HighlightChanged -= OnHighlightChanged;
+        await Task.CompletedTask;
+    }
+
+    private sealed record ImageDimensions(double Width, double Height);
+}

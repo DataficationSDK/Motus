@@ -24,6 +24,7 @@
     <InternalsVisibleTo Include="Motus.Testing" />
     <InternalsVisibleTo Include="Motus.Recorder" />
     <InternalsVisibleTo Include="Motus.Recorder.Tests" />
+    <InternalsVisibleTo Include="Motus.Runner" />
   </ItemGroup>
 
   <ItemGroup>
