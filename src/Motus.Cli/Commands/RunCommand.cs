@@ -1,6 +1,7 @@
 using System.CommandLine;
 using Motus.Cli.Services;
 using Motus.Cli.Services.Reporters;
+using Motus.Runner;
 
 namespace Motus.Cli.Commands;
 
@@ -37,8 +38,7 @@ public static class RunCommand
 
             if (visual)
             {
-                Console.WriteLine("Visual runner available in Phase 4.");
-                parseResult.Configuration.Output.Write("");
+                await RunnerHost.StartAsync([], assemblies, filter, port: 5100, ct: ct);
                 return;
             }
 

@@ -1,0 +1,21 @@
+.explorer {
+    padding: 0;
+    height: 100%;
+    font-size: 13px;
+}
+
+.explorer-header {
+    padding: 8px 12px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--vsc-fg-dim);
+    border-bottom: 1px solid var(--vsc-border);
+}
+
+.explorer-empty {
+    padding: 16px 12px;
+    color: var(--vsc-fg-dim);
+    font-style: italic;
+}

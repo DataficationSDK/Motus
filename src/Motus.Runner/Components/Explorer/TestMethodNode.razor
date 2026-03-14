@@ -1,0 +1,23 @@
+@inject ITestSessionService Session
+
+<div class="method-node" @onclick="RunTest" title="@Test.FullName">
+    <TestStatusBadge Status="@(State?.Status ?? TestStatus.Pending)" />
+    <span class="method-name">@Test.TestMethod.Name</span>
+    @if (State?.Duration is not null)
+    {
+        <span class="method-duration">@($"{State.Duration.Value.TotalMilliseconds:F0}ms")</span>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public DiscoveredTest Test { get; set; } = null!;
+    [Parameter] public TestNodeState? State { get; set; }
+
+    private async Task RunTest()
+    {
+        if (!Session.IsRunning)
+        {
+            await Session.RunTestAsync(Test.FullName);
+        }
+    }
+}

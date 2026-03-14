@@ -1,0 +1,144 @@
+using System.Collections.Concurrent;
+using Motus.Runner.Services.Models;
+
+namespace Motus.Runner.Services;
+
+public sealed class TestSessionService : ITestSessionService
+{
+    private readonly TestDiscovery _discovery;
+    private readonly TestExecutionService _executor;
+    private List<DiscoveredTest> _discoveredTests = [];
+    private readonly ConcurrentDictionary<string, TestNodeState> _states = new();
+    private CancellationTokenSource? _runCts;
+    private int _running;
+
+    public TestSessionService(TestDiscovery discovery, TestExecutionService executor)
+    {
+        _discovery = discovery;
+        _executor = executor;
+    }
+
+    public IReadOnlyList<DiscoveredTest> DiscoveredTests => _discoveredTests;
+    public IReadOnlyDictionary<string, TestNodeState> States => _states;
+    public bool IsRunning => _running != 0;
+    public string? FilterText { get; private set; }
+    public event Action? StateChanged;
+
+    public Task LoadAssembliesAsync(string[] paths, string? filter)
+    {
+        var tests = _discovery.Discover(paths, filter);
+        _discoveredTests = tests;
+        _states.Clear();
+
+        foreach (var test in tests)
+        {
+            _states[test.FullName] = new TestNodeState(test.FullName, TestStatus.Pending, null, null, null);
+        }
+
+        NotifyStateChanged();
+        return Task.CompletedTask;
+    }
+
+    public async Task RunAllAsync(CancellationToken ct = default)
+    {
+        if (Interlocked.CompareExchange(ref _running, 1, 0) != 0)
+            return;
+
+        _runCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+
+        try
+        {
+            ResetAllToPending();
+            NotifyStateChanged();
+
+            await _executor.ExecuteAsync(_discoveredTests, UpdateTestState, _runCts.Token);
+        }
+        finally
+        {
+            _runCts.Dispose();
+            _runCts = null;
+            Interlocked.Exchange(ref _running, 0);
+            NotifyStateChanged();
+        }
+    }
+
+    public async Task RunTestAsync(string fullName, CancellationToken ct = default)
+    {
+        if (Interlocked.CompareExchange(ref _running, 1, 0) != 0)
+            return;
+
+        _runCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+
+        try
+        {
+            var test = _discoveredTests.Find(t => t.FullName == fullName);
+            if (test is null) return;
+
+            _states[fullName] = new TestNodeState(fullName, TestStatus.Pending, null, null, null);
+            NotifyStateChanged();
+
+            await _executor.ExecuteAsync([test], UpdateTestState, _runCts.Token);
+        }
+        finally
+        {
+            _runCts.Dispose();
+            _runCts = null;
+            Interlocked.Exchange(ref _running, 0);
+            NotifyStateChanged();
+        }
+    }
+
+    public async Task RunClassAsync(string className, CancellationToken ct = default)
+    {
+        if (Interlocked.CompareExchange(ref _running, 1, 0) != 0)
+            return;
+
+        _runCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+
+        try
+        {
+            var tests = _discoveredTests.Where(t => t.TestClass.FullName == className).ToList();
+            foreach (var test in tests)
+            {
+                _states[test.FullName] = new TestNodeState(test.FullName, TestStatus.Pending, null, null, null);
+            }
+            NotifyStateChanged();
+
+            await _executor.ExecuteAsync(tests, UpdateTestState, _runCts.Token);
+        }
+        finally
+        {
+            _runCts.Dispose();
+            _runCts = null;
+            Interlocked.Exchange(ref _running, 0);
+            NotifyStateChanged();
+        }
+    }
+
+    public void SetFilter(string? text)
+    {
+        FilterText = string.IsNullOrWhiteSpace(text) ? null : text;
+        NotifyStateChanged();
+    }
+
+    public void RequestStop()
+    {
+        _runCts?.Cancel();
+    }
+
+    private void ResetAllToPending()
+    {
+        foreach (var test in _discoveredTests)
+        {
+            _states[test.FullName] = new TestNodeState(test.FullName, TestStatus.Pending, null, null, null);
+        }
+    }
+
+    private void UpdateTestState(TestNodeState state)
+    {
+        _states[state.FullName] = state;
+        NotifyStateChanged();
+    }
+
+    private void NotifyStateChanged() => StateChanged?.Invoke();
+}

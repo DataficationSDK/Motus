@@ -1,0 +1,249 @@
+/* VS Code Dark Theme Design Tokens */
+:root {
+    --vsc-bg: #1e1e1e;
+    --vsc-bg-secondary: #252526;
+    --vsc-bg-tertiary: #2d2d2d;
+    --vsc-bg-hover: #2a2d2e;
+    --vsc-bg-active: #37373d;
+    --vsc-bg-input: #3c3c3c;
+    --vsc-border: #474747;
+    --vsc-fg: #cccccc;
+    --vsc-fg-dim: #969696;
+    --vsc-fg-bright: #e0e0e0;
+    --vsc-accent: #0078d4;
+    --vsc-accent-hover: #1c8ae8;
+    --vsc-green: #4ec9b0;
+    --vsc-red: #f44747;
+    --vsc-amber: #dcdcaa;
+    --vsc-blue: #569cd6;
+    --vsc-sidebar-width: 280px;
+    --vsc-toolbar-height: 40px;
+    --vsc-bottom-panel-height: 200px;
+    --vsc-font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, sans-serif;
+    --vsc-font-mono: 'Cascadia Code', 'Fira Code', 'JetBrains Mono', Consolas, monospace;
+    --vsc-font-size: 13px;
+}
+
+*, *::before, *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+html, body {
+    height: 100%;
+    overflow: hidden;
+    background: var(--vsc-bg);
+    color: var(--vsc-fg);
+    font-family: var(--vsc-font-family);
+    font-size: var(--vsc-font-size);
+}
+
+#blazor-error-ui {
+    display: none;
+    position: fixed;
+    bottom: 0;
+    width: 100%;
+    z-index: 1000;
+    padding: 8px 16px;
+    background: var(--vsc-red);
+    color: #fff;
+    text-align: center;
+}
+
+#blazor-error-ui[style] {
+    display: block;
+}
+
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--vsc-border);
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--vsc-fg-dim);
+}
+
+button {
+    font-family: inherit;
+    font-size: inherit;
+    border: none;
+    cursor: pointer;
+    outline: none;
+}
+
+button:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+input {
+    font-family: inherit;
+    font-size: inherit;
+    border: none;
+    outline: none;
+}
+
+/* Placeholder panels */
+.placeholder-panel {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: var(--vsc-fg-dim);
+    gap: 4px;
+}
+
+.placeholder-panel-horizontal {
+    flex-direction: row;
+    gap: 6px;
+}
+
+.placeholder-icon {
+    font-size: 32px;
+    opacity: 0.4;
+}
+
+.placeholder-title {
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.placeholder-subtitle {
+    font-size: 12px;
+    opacity: 0.6;
+}
+
+/* Explorer tree nodes */
+.suite-node {
+    user-select: none;
+}
+
+.suite-header,
+.class-header {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    cursor: pointer;
+}
+
+.suite-header:hover,
+.class-header:hover {
+    background: var(--vsc-bg-hover);
+}
+
+.suite-header {
+    padding-left: 8px;
+    font-weight: 600;
+}
+
+.class-header {
+    padding-left: 20px;
+}
+
+.chevron {
+    width: 14px;
+    font-size: 10px;
+    color: var(--vsc-fg-dim);
+    flex-shrink: 0;
+}
+
+.suite-name,
+.class-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+}
+
+.suite-count {
+    color: var(--vsc-fg-dim);
+    font-size: 11px;
+    margin-left: 4px;
+}
+
+.run-class-btn {
+    padding: 1px 5px;
+    font-size: 10px;
+    background: transparent;
+    color: var(--vsc-fg-dim);
+    border-radius: 3px;
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+
+.class-header:hover .run-class-btn {
+    opacity: 1;
+}
+
+.run-class-btn:hover:not(:disabled) {
+    background: var(--vsc-bg-active);
+    color: var(--vsc-green);
+}
+
+.method-node {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px 2px 36px;
+    cursor: pointer;
+}
+
+.method-node:hover {
+    background: var(--vsc-bg-hover);
+}
+
+.method-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+}
+
+.method-duration {
+    color: var(--vsc-fg-dim);
+    font-size: 11px;
+    font-family: var(--vsc-font-mono);
+    flex-shrink: 0;
+}
+
+/* Status badges */
+.status-badge {
+    flex-shrink: 0;
+    font-size: 10px;
+    line-height: 1;
+}
+
+.status-passed {
+    color: var(--vsc-green);
+}
+
+.status-failed {
+    color: var(--vsc-red);
+}
+
+.status-running {
+    color: var(--vsc-amber);
+    animation: pulse 1s ease-in-out infinite;
+}
+
+.status-skipped,
+.status-pending {
+    color: var(--vsc-fg-dim);
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+}

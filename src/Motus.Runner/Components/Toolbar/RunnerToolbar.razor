@@ -1,0 +1,43 @@
+@inject ITestSessionService Session
+
+<div class="toolbar">
+    <button class="toolbar-btn run-btn" @onclick="RunAll" disabled="@Session.IsRunning" title="Run All Tests">
+        &#9654; Run All
+    </button>
+    <button class="toolbar-btn stop-btn" @onclick="Stop" disabled="@(!Session.IsRunning)" title="Stop">
+        &#9632; Stop
+    </button>
+    <div class="toolbar-separator"></div>
+    <input class="toolbar-filter"
+           type="text"
+           placeholder="Filter tests..."
+           value="@Session.FilterText"
+           @oninput="OnFilterInput" />
+    <div class="toolbar-spacer"></div>
+    <div class="toolbar-stats">
+        <span class="stat stat-passed" title="Passed">@PassedCount</span>
+        <span class="stat stat-failed" title="Failed">@FailedCount</span>
+        <span class="stat stat-pending" title="Pending">@PendingCount</span>
+    </div>
+</div>
+
+@code {
+    private int PassedCount => Session.States.Values.Count(s => s.Status == TestStatus.Passed);
+    private int FailedCount => Session.States.Values.Count(s => s.Status == TestStatus.Failed);
+    private int PendingCount => Session.States.Values.Count(s => s.Status is TestStatus.Pending or TestStatus.Skipped);
+
+    private async Task RunAll()
+    {
+        await Session.RunAllAsync();
+    }
+
+    private void Stop()
+    {
+        Session.RequestStop();
+    }
+
+    private void OnFilterInput(ChangeEventArgs e)
+    {
+        Session.SetFilter(e.Value?.ToString());
+    }
+}

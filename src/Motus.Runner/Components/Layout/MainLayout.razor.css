@@ -1,0 +1,49 @@
+.runner-shell {
+    display: grid;
+    grid-template-columns: var(--vsc-sidebar-width) 1fr;
+    grid-template-rows: var(--vsc-toolbar-height) 1fr var(--vsc-bottom-panel-height) auto;
+    grid-template-areas:
+        "toolbar  toolbar"
+        "sidebar  main"
+        "timeline timeline"
+        "detail   detail";
+    height: 100vh;
+    width: 100vw;
+    overflow: hidden;
+}
+
+.runner-toolbar {
+    grid-area: toolbar;
+    background: var(--vsc-bg-secondary);
+    border-bottom: 1px solid var(--vsc-border);
+    display: flex;
+    align-items: center;
+}
+
+.runner-sidebar {
+    grid-area: sidebar;
+    background: var(--vsc-bg-secondary);
+    border-right: 1px solid var(--vsc-border);
+    overflow-y: auto;
+}
+
+.runner-main {
+    grid-area: main;
+    background: var(--vsc-bg);
+    overflow: auto;
+}
+
+.runner-timeline {
+    grid-area: timeline;
+    background: var(--vsc-bg-secondary);
+    border-top: 1px solid var(--vsc-border);
+    overflow: auto;
+}
+
+.runner-detail {
+    grid-area: detail;
+    background: var(--vsc-bg-tertiary);
+    border-top: 1px solid var(--vsc-border);
+    overflow: auto;
+    min-height: 80px;
+}

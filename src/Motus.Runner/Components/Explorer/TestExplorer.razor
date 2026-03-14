@@ -1,0 +1,49 @@
+@inject ITestSessionService Session
+@implements IDisposable
+
+<div class="explorer">
+    <div class="explorer-header">Test Explorer</div>
+    @if (!Session.DiscoveredTests.Any())
+    {
+        <div class="explorer-empty">No tests discovered</div>
+    }
+    else
+    {
+        @foreach (var assemblyGroup in FilteredTests.GroupBy(t => t.AssemblyName))
+        {
+            <TestSuiteNode AssemblyName="@assemblyGroup.Key"
+                           Tests="@assemblyGroup.ToList()"
+                           States="@Session.States" />
+        }
+    }
+</div>
+
+@code {
+    private IEnumerable<DiscoveredTest> FilteredTests
+    {
+        get
+        {
+            var tests = Session.DiscoveredTests.AsEnumerable();
+            if (Session.FilterText is not null)
+            {
+                tests = tests.Where(t => t.FullName.Contains(Session.FilterText, StringComparison.OrdinalIgnoreCase));
+            }
+            return tests;
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        Session.StateChanged += OnStateChanged;
+    }
+
+    private async void OnStateChanged()
+    {
+        await InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        Session.StateChanged -= OnStateChanged;
+    }
+}

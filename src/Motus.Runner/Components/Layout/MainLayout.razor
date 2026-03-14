@@ -1,5 +1,38 @@
 @inherits LayoutComponentBase
+@inject ITestSessionService Session
+@implements IDisposable
 
-<main>
-    @Body
-</main>
+<div class="runner-shell">
+    <div class="runner-toolbar">
+        <RunnerToolbar />
+    </div>
+    <div class="runner-sidebar">
+        <TestExplorer />
+    </div>
+    <div class="runner-main">
+        @Body
+    </div>
+    <div class="runner-timeline">
+        <TimelinePanel />
+    </div>
+    <div class="runner-detail">
+        <StepDetailPanel />
+    </div>
+</div>
+
+@code {
+    protected override void OnInitialized()
+    {
+        Session.StateChanged += OnStateChanged;
+    }
+
+    private async void OnStateChanged()
+    {
+        await InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        Session.StateChanged -= OnStateChanged;
+    }
+}

@@ -25,9 +25,14 @@
   </ItemGroup>
 
   <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Motus\Motus.csproj" />
     <ProjectReference Include="..\Motus.Abstractions\Motus.Abstractions.csproj" />
     <ProjectReference Include="..\Motus.Recorder\Motus.Recorder.csproj" />
+    <ProjectReference Include="..\Motus.Runner\Motus.Runner.csproj" />
   </ItemGroup>
 
 </Project>

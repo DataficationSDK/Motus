@@ -1,0 +1,22 @@
+<span class="status-badge @StatusClass" title="@Status">@StatusChar</span>
+
+@code {
+    [Parameter, EditorRequired] public TestStatus Status { get; set; }
+
+    private string StatusClass => Status switch
+    {
+        TestStatus.Passed => "status-passed",
+        TestStatus.Failed => "status-failed",
+        TestStatus.Running => "status-running",
+        TestStatus.Skipped => "status-skipped",
+        _ => "status-pending",
+    };
+
+    private string StatusChar => Status switch
+    {
+        TestStatus.Passed => "\u25CF",
+        TestStatus.Failed => "\u25CF",
+        TestStatus.Running => "\u25CC",
+        _ => "\u25CB",
+    };
+}

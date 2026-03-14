@@ -1,0 +1,58 @@
+@inject ITestSessionService Session
+
+<div class="suite-node">
+    <div class="suite-header" @onclick="Toggle">
+        <span class="chevron">@(Expanded ? "\u25BE" : "\u25B8")</span>
+        <TestStatusBadge Status="@AggregateStatus" />
+        <span class="suite-name" title="@AssemblyName">@AssemblyName</span>
+        <span class="suite-count">(@Tests.Count)</span>
+    </div>
+    @if (Expanded)
+    {
+        @foreach (var classGroup in Tests.GroupBy(t => t.TestClass.FullName ?? t.TestClass.Name))
+        {
+            <TestClassNode ClassName="@classGroup.Key"
+                           DisplayName="@classGroup.First().TestClass.Name"
+                           Tests="@classGroup.ToList()"
+                           States="@States" />
+        }
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string AssemblyName { get; set; } = "";
+    [Parameter, EditorRequired] public List<DiscoveredTest> Tests { get; set; } = [];
+    [Parameter, EditorRequired] public IReadOnlyDictionary<string, TestNodeState> States { get; set; } = null!;
+
+    private bool Expanded { get; set; } = true;
+
+    private TestStatus AggregateStatus => GetAggregateStatus(Tests, States);
+
+    private void Toggle() => Expanded = !Expanded;
+
+    internal static TestStatus GetAggregateStatus(List<DiscoveredTest> tests, IReadOnlyDictionary<string, TestNodeState> states)
+    {
+        var hasRunning = false;
+        var hasFailed = false;
+        var hasPassed = false;
+
+        foreach (var test in tests)
+        {
+            if (states.TryGetValue(test.FullName, out var state))
+            {
+                switch (state.Status)
+                {
+                    case TestStatus.Failed: hasFailed = true; break;
+                    case TestStatus.Running: hasRunning = true; break;
+                    case TestStatus.Passed: hasPassed = true; break;
+                }
+            }
+        }
+
+        if (hasFailed) return TestStatus.Failed;
+        if (hasRunning) return TestStatus.Running;
+        if (hasPassed && !tests.Any(t => states.TryGetValue(t.FullName, out var s) && s.Status == TestStatus.Pending))
+            return TestStatus.Passed;
+        return TestStatus.Pending;
+    }
+}
