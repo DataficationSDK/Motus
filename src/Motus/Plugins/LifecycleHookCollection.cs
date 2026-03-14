@@ -22,7 +22,7 @@ internal sealed class LifecycleHookCollection
     {
         foreach (var hook in Snapshot())
         {
-            try { await hook.BeforeNavigationAsync(page, url); }
+            try { await hook.BeforeNavigationAsync(page, url).ConfigureAwait(false); }
             catch { /* swallow to match event pump error policy */ }
         }
     }
@@ -31,7 +31,7 @@ internal sealed class LifecycleHookCollection
     {
         foreach (var hook in Snapshot())
         {
-            try { await hook.AfterNavigationAsync(page, response); }
+            try { await hook.AfterNavigationAsync(page, response).ConfigureAwait(false); }
             catch { }
         }
     }
@@ -40,7 +40,7 @@ internal sealed class LifecycleHookCollection
     {
         foreach (var hook in Snapshot())
         {
-            try { await hook.BeforeActionAsync(page, action); }
+            try { await hook.BeforeActionAsync(page, action).ConfigureAwait(false); }
             catch { }
         }
     }
@@ -49,7 +49,7 @@ internal sealed class LifecycleHookCollection
     {
         foreach (var hook in Snapshot())
         {
-            try { await hook.AfterActionAsync(page, action, result); }
+            try { await hook.AfterActionAsync(page, action, result).ConfigureAwait(false); }
             catch { }
         }
     }
@@ -58,7 +58,7 @@ internal sealed class LifecycleHookCollection
     {
         foreach (var hook in Snapshot())
         {
-            try { await hook.OnPageCreatedAsync(page); }
+            try { await hook.OnPageCreatedAsync(page).ConfigureAwait(false); }
             catch { }
         }
     }
@@ -67,7 +67,7 @@ internal sealed class LifecycleHookCollection
     {
         foreach (var hook in Snapshot())
         {
-            try { await hook.OnPageClosedAsync(page); }
+            try { await hook.OnPageClosedAsync(page).ConfigureAwait(false); }
             catch { }
         }
     }
@@ -76,7 +76,7 @@ internal sealed class LifecycleHookCollection
     {
         foreach (var hook in Snapshot())
         {
-            try { await hook.OnConsoleMessageAsync(page, args); }
+            try { await hook.OnConsoleMessageAsync(page, args).ConfigureAwait(false); }
             catch { }
         }
     }
@@ -85,7 +85,7 @@ internal sealed class LifecycleHookCollection
     {
         foreach (var hook in Snapshot())
         {
-            try { await hook.OnPageErrorAsync(page, args); }
+            try { await hook.OnPageErrorAsync(page, args).ConfigureAwait(false); }
             catch { }
         }
     }

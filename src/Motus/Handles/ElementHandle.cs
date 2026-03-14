@@ -22,7 +22,7 @@ internal sealed class ElementHandle : JsHandle, IElementHandle
                 AwaitPromise: false),
             CdpJsonContext.Default.RuntimeCallFunctionOnParams,
             CdpJsonContext.Default.RuntimeCallFunctionOnResult,
-            ct);
+            ct).ConfigureAwait(false);
 
         if (result.ExceptionDetails is not null)
             throw new InvalidOperationException(
@@ -45,7 +45,7 @@ internal sealed class ElementHandle : JsHandle, IElementHandle
                 AwaitPromise: false),
             CdpJsonContext.Default.RuntimeCallFunctionOnParams,
             CdpJsonContext.Default.RuntimeCallFunctionOnResult,
-            ct);
+            ct).ConfigureAwait(false);
 
         if (result.ExceptionDetails is not null)
             throw new InvalidOperationException(
@@ -74,7 +74,7 @@ internal sealed class ElementHandle : JsHandle, IElementHandle
                 AwaitPromise: false),
             CdpJsonContext.Default.RuntimeCallFunctionOnParams,
             CdpJsonContext.Default.RuntimeCallFunctionOnResult,
-            ct);
+            ct).ConfigureAwait(false);
 
         if (result.ExceptionDetails is not null)
             throw new InvalidOperationException(

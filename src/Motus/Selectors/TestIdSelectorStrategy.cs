@@ -44,12 +44,12 @@ internal sealed class TestIdSelectorStrategy : ISelectorStrategy
                 """
             : $"""Array.from(document.querySelectorAll('{cssSelector}'))""";
 
-        return await SelectorStrategyHelpers.EvalToHandlesAsync(page, js, ct);
+        return await SelectorStrategyHelpers.EvalToHandlesAsync(page, js, ct).ConfigureAwait(false);
     }
 
     public async Task<string?> GenerateSelector(IElementHandle element, CancellationToken ct = default)
     {
-        var value = await element.GetAttributeAsync(_attributeName, ct);
+        var value = await element.GetAttributeAsync(_attributeName, ct).ConfigureAwait(false);
         return value is not null ? $"{_attributeName}={value}" : null;
     }
 }

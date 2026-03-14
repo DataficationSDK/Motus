@@ -38,12 +38,12 @@ internal static class ActionabilityChecker
                 string objectId;
                 try
                 {
-                    objectId = await resolveObjectId(ct);
+                    objectId = await resolveObjectId(ct).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) { throw; }
                 catch (Exception ex) when (ex is InvalidOperationException or MotusSelectorException)
                 {
-                    await Task.Delay(PollingIntervalMs, ct);
+                    await Task.Delay(PollingIntervalMs, ct).ConfigureAwait(false);
                     continue;
                 }
 
@@ -53,37 +53,37 @@ internal static class ActionabilityChecker
                         return objectId;
 
                     lastCheckName = "visible";
-                    if (flags.HasFlag(ActionabilityFlags.Visible) && !await IsVisibleAsync(page, objectId, ct))
+                    if (flags.HasFlag(ActionabilityFlags.Visible) && !await IsVisibleAsync(page, objectId, ct).ConfigureAwait(false))
                     {
-                        await Task.Delay(PollingIntervalMs, ct);
+                        await Task.Delay(PollingIntervalMs, ct).ConfigureAwait(false);
                         continue;
                     }
 
                     lastCheckName = "enabled";
-                    if (flags.HasFlag(ActionabilityFlags.Enabled) && !await IsEnabledAsync(page, objectId, ct))
+                    if (flags.HasFlag(ActionabilityFlags.Enabled) && !await IsEnabledAsync(page, objectId, ct).ConfigureAwait(false))
                     {
-                        await Task.Delay(PollingIntervalMs, ct);
+                        await Task.Delay(PollingIntervalMs, ct).ConfigureAwait(false);
                         continue;
                     }
 
                     lastCheckName = "editable";
-                    if (flags.HasFlag(ActionabilityFlags.Editable) && !await IsEditableAsync(page, objectId, ct))
+                    if (flags.HasFlag(ActionabilityFlags.Editable) && !await IsEditableAsync(page, objectId, ct).ConfigureAwait(false))
                     {
-                        await Task.Delay(PollingIntervalMs, ct);
+                        await Task.Delay(PollingIntervalMs, ct).ConfigureAwait(false);
                         continue;
                     }
 
                     lastCheckName = "stable";
-                    if (flags.HasFlag(ActionabilityFlags.Stable) && !await IsStableAsync(page, objectId, ct))
+                    if (flags.HasFlag(ActionabilityFlags.Stable) && !await IsStableAsync(page, objectId, ct).ConfigureAwait(false))
                     {
-                        await Task.Delay(PollingIntervalMs, ct);
+                        await Task.Delay(PollingIntervalMs, ct).ConfigureAwait(false);
                         continue;
                     }
 
                     lastCheckName = "receivesEvents";
-                    if (flags.HasFlag(ActionabilityFlags.ReceivesEvents) && !await ReceivesEventsAsync(page, objectId, ct))
+                    if (flags.HasFlag(ActionabilityFlags.ReceivesEvents) && !await ReceivesEventsAsync(page, objectId, ct).ConfigureAwait(false))
                     {
-                        await Task.Delay(PollingIntervalMs, ct);
+                        await Task.Delay(PollingIntervalMs, ct).ConfigureAwait(false);
                         continue;
                     }
 
@@ -93,7 +93,7 @@ internal static class ActionabilityChecker
                 catch (Exception ex) when (ex is InvalidOperationException or MotusSelectorException)
                 {
                     // Element went stale during checks, retry from scratch
-                    await Task.Delay(PollingIntervalMs, ct);
+                    await Task.Delay(PollingIntervalMs, ct).ConfigureAwait(false);
                 }
             }
         }
@@ -118,14 +118,14 @@ internal static class ActionabilityChecker
                 var r = this.getBoundingClientRect();
                 return r.width > 0 && r.height > 0;
             }
-            """, ct);
+            """, ct).ConfigureAwait(false);
     }
 
     private static async Task<bool> IsEnabledAsync(Page page, string objectId, CancellationToken ct)
     {
         return await EvalBoolAsync(page, objectId,
             "function() { return !this.disabled && this.getAttribute('aria-disabled') !== 'true'; }",
-            ct);
+            ct).ConfigureAwait(false);
     }
 
     private static async Task<bool> IsEditableAsync(Page page, string objectId, CancellationToken ct)
@@ -140,7 +140,7 @@ internal static class ActionabilityChecker
                 if (tag === 'input' || tag === 'textarea') return !this.disabled && !this.readOnly;
                 return false;
             }
-            """, ct);
+            """, ct).ConfigureAwait(false);
     }
 
     private static async Task<bool> IsStableAsync(Page page, string objectId, CancellationToken ct)
@@ -159,74 +159,27 @@ internal static class ActionabilityChecker
                     });
                 });
             }
-            """, ct, awaitPromise: true);
+            """, ct, awaitPromise: true).ConfigureAwait(false);
     }
 
     private static async Task<bool> ReceivesEventsAsync(Page page, string objectId, CancellationToken ct)
     {
-        // Get bounding box center
-        var boxResult = await page.Session.SendAsync(
-            "Runtime.callFunctionOn",
-            new RuntimeCallFunctionOnParams(
-                FunctionDeclaration: """
-                    function() {
-                        var r = this.getBoundingClientRect();
-                        return { x: r.x, y: r.y, width: r.width, height: r.height };
-                    }
-                    """,
-                ObjectId: objectId,
-                ReturnByValue: true,
-                AwaitPromise: false),
-            CdpJsonContext.Default.RuntimeCallFunctionOnParams,
-            CdpJsonContext.Default.RuntimeCallFunctionOnResult,
-            ct);
-
-        if (boxResult.Result.Value is not JsonElement boxEl)
-            return false;
-
-        var box = boxEl.Deserialize<BoundingBox>();
-        if (box is null)
-            return false;
-
-        var cx = (int)(box.X + box.Width / 2);
-        var cy = (int)(box.Y + box.Height / 2);
-
-        // Get the topmost node at the center point
-        var nodeResult = await page.Session.SendAsync(
-            "DOM.getNodeForLocation",
-            new DomGetNodeForLocationParams(cx, cy),
-            CdpJsonContext.Default.DomGetNodeForLocationParams,
-            CdpJsonContext.Default.DomGetNodeForLocationResult,
-            ct);
-
-        // Resolve the hit-tested node to a remote object
-        var resolvedResult = await page.Session.SendAsync(
-            "DOM.resolveNode",
-            new DomResolveNodeParams(BackendNodeId: nodeResult.BackendNodeId, ObjectGroup: "motus-actionability"),
-            CdpJsonContext.Default.DomResolveNodeParams,
-            CdpJsonContext.Default.DomResolveNodeResult,
-            ct);
-
-        if (resolvedResult.Object.ObjectId is null)
-            return false;
-
-        // Check if the original element is or contains the hit-tested element
-        var identityResult = await page.Session.SendAsync(
-            "Runtime.callFunctionOn",
-            new RuntimeCallFunctionOnParams(
-                FunctionDeclaration: "function(top) { return this === top || this.contains(top); }",
-                ObjectId: objectId,
-                Arguments: [new RuntimeCallArgument(ObjectId: resolvedResult.Object.ObjectId)],
-                ReturnByValue: true,
-                AwaitPromise: false),
-            CdpJsonContext.Default.RuntimeCallFunctionOnParams,
-            CdpJsonContext.Default.RuntimeCallFunctionOnResult,
-            ct);
-
-        if (identityResult.Result.Value is JsonElement val && val.ValueKind == JsonValueKind.True)
-            return true;
-
-        return false;
+        // Pure JS hit-test using document.elementFromPoint at the element's center.
+        // This avoids the CDP DOM domain (DOM.getNodeForLocation + DOM.resolveNode)
+        // which fails for elements with text children because DOM.resolveNode returns
+        // a null objectId for text nodes, causing the check to always return false.
+        // elementFromPoint returns the nearest Element (not text node), making
+        // this.contains(top) work correctly for buttons, links, and other text-bearing elements.
+        return await EvalBoolAsync(page, objectId,
+            """
+            function() {
+                var r = this.getBoundingClientRect();
+                var cx = r.x + r.width / 2;
+                var cy = r.y + r.height / 2;
+                var top = document.elementFromPoint(cx, cy);
+                return top !== null && (this === top || this.contains(top));
+            }
+            """, ct).ConfigureAwait(false);
     }
 
     private static async Task<bool> EvalBoolAsync(
@@ -242,7 +195,7 @@ internal static class ActionabilityChecker
                 AwaitPromise: awaitPromise),
             CdpJsonContext.Default.RuntimeCallFunctionOnParams,
             CdpJsonContext.Default.RuntimeCallFunctionOnResult,
-            ct);
+            ct).ConfigureAwait(false);
 
         if (result.ExceptionDetails is not null)
             throw new InvalidOperationException(

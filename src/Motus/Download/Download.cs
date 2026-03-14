@@ -40,19 +40,19 @@ internal sealed class Download : IDownload
 
     public async Task<string?> PathAsync()
     {
-        var outcome = await _completionTcs.Task;
+        var outcome = await _completionTcs.Task.ConfigureAwait(false);
         return outcome.Success ? _tempPath : null;
     }
 
     public async Task<string?> FailureAsync()
     {
-        var outcome = await _completionTcs.Task;
+        var outcome = await _completionTcs.Task.ConfigureAwait(false);
         return outcome.Error;
     }
 
     public async Task SaveAsAsync(string path)
     {
-        var outcome = await _completionTcs.Task;
+        var outcome = await _completionTcs.Task.ConfigureAwait(false);
         if (!outcome.Success)
             throw new InvalidOperationException($"Download failed: {outcome.Error}");
 

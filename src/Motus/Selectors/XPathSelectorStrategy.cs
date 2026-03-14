@@ -26,7 +26,7 @@ internal sealed class XPathSelectorStrategy : ISelectorStrategy
                 return a;
             })()
             """;
-        return await SelectorStrategyHelpers.EvalToHandlesAsync(page, js, ct);
+        return await SelectorStrategyHelpers.EvalToHandlesAsync(page, js, ct).ConfigureAwait(false);
     }
 
     public async Task<string?> GenerateSelector(IElementHandle element, CancellationToken ct = default)
@@ -49,7 +49,7 @@ internal sealed class XPathSelectorStrategy : ISelectorStrategy
                 }
                 return 'xpath=' + parts.join('');
             }
-            """);
+            """).ConfigureAwait(false);
         return result;
     }
 }

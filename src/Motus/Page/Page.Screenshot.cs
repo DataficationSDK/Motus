@@ -17,7 +17,7 @@ internal sealed partial class Page
                 CaptureBeyondViewport: options?.FullPage == true ? true : null),
             CdpJsonContext.Default.PageCaptureScreenshotParams,
             CdpJsonContext.Default.PageCaptureScreenshotResult,
-            _pageCts.Token);
+            _pageCts.Token).ConfigureAwait(false);
 
         var bytes = Convert.FromBase64String(result.Data);
 
@@ -26,7 +26,7 @@ internal sealed partial class Page
             var dir = Path.GetDirectoryName(options.Path);
             if (dir is not null)
                 Directory.CreateDirectory(dir);
-            await File.WriteAllBytesAsync(options.Path, bytes, _pageCts.Token);
+            await File.WriteAllBytesAsync(options.Path, bytes, _pageCts.Token).ConfigureAwait(false);
         }
 
         return bytes;
@@ -37,7 +37,7 @@ internal sealed partial class Page
         var result = await _session.SendAsync(
             "Page.printToPDF",
             CdpJsonContext.Default.PagePrintToPdfResult,
-            _pageCts.Token);
+            _pageCts.Token).ConfigureAwait(false);
 
         var bytes = Convert.FromBase64String(result.Data);
 
@@ -46,7 +46,7 @@ internal sealed partial class Page
             var dir = Path.GetDirectoryName(path);
             if (dir is not null)
                 Directory.CreateDirectory(dir);
-            await File.WriteAllBytesAsync(path, bytes, _pageCts.Token);
+            await File.WriteAllBytesAsync(path, bytes, _pageCts.Token).ConfigureAwait(false);
         }
 
         return bytes;

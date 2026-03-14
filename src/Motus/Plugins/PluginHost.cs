@@ -41,7 +41,7 @@ internal sealed class PluginHost
         {
             try
             {
-                await plugin.OnLoadedAsync(pluginContext);
+                await plugin.OnLoadedAsync(pluginContext).ConfigureAwait(false);
                 _plugins.Add(plugin);
             }
             catch
@@ -58,7 +58,7 @@ internal sealed class PluginHost
         {
             try
             {
-                await _plugins[i].OnUnloadedAsync();
+                await _plugins[i].OnUnloadedAsync().ConfigureAwait(false);
             }
             catch
             {

@@ -23,23 +23,8 @@ internal interface ICdpSocket : IAsyncDisposable
 
     /// <summary>
     /// Receives one complete WebSocket message, assembling frames as needed.
-    /// Returns the number of bytes written to <paramref name="buffer"/>, or 0 if the socket closed cleanly.
-    /// When the message exceeds <paramref name="buffer"/> length, the implementation must
-    /// signal via <see cref="MessageTooLargeException"/> so the caller can retry with a larger buffer.
+    /// Returns the message bytes, or an empty span if the socket closed cleanly.
+    /// The returned memory is valid until the next call to <see cref="ReceiveAsync"/>.
     /// </summary>
-    ValueTask<int> ReceiveAsync(Memory<byte> buffer, CancellationToken ct);
-}
-
-/// <summary>
-/// Thrown when a received WebSocket message exceeds the provided buffer size.
-/// </summary>
-internal sealed class MessageTooLargeException : Exception
-{
-    internal int RequiredSize { get; }
-
-    internal MessageTooLargeException(int requiredSize)
-        : base($"Message requires at least {requiredSize} bytes.")
-    {
-        RequiredSize = requiredSize;
-    }
+    ValueTask<ReadOnlyMemory<byte>> ReceiveAsync(CancellationToken ct);
 }

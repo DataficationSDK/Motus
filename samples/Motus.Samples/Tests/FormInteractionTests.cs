@@ -9,7 +9,7 @@ public class FormInteractionTests : MotusTestBase
     [TestMethod]
     public async Task FillAsync_PopulatesTextField()
     {
-        await Page.SetContentAsync(Fixtures.LoginForm);
+        await Fixtures.SetPageContentAsync(Page,Fixtures.LoginForm);
 
         // FillAsync clears the field first, then sets the value instantly
         var email = Page.GetByLabel("Email");
@@ -20,7 +20,7 @@ public class FormInteractionTests : MotusTestBase
     [TestMethod]
     public async Task TypeAsync_SimulatesKeystrokes()
     {
-        await Page.SetContentAsync(Fixtures.LoginForm);
+        await Fixtures.SetPageContentAsync(Page,Fixtures.LoginForm);
 
         // TypeAsync dispatches individual key events with an optional delay between them
         var password = Page.GetByLabel("Password");
@@ -31,7 +31,7 @@ public class FormInteractionTests : MotusTestBase
     [TestMethod]
     public async Task PressAsync_SubmitsForm()
     {
-        await Page.SetContentAsync(Fixtures.LoginForm);
+        await Fixtures.SetPageContentAsync(Page,Fixtures.LoginForm);
 
         await Page.GetByLabel("Email").FillAsync("bob@example.com");
 
@@ -46,7 +46,7 @@ public class FormInteractionTests : MotusTestBase
     [TestMethod]
     public async Task CheckAsync_TogglesCheckbox()
     {
-        await Page.SetContentAsync(Fixtures.LoginForm);
+        await Fixtures.SetPageContentAsync(Page,Fixtures.LoginForm);
 
         var remember = Page.Locator("#remember");
         await remember.CheckAsync();
@@ -58,7 +58,7 @@ public class FormInteractionTests : MotusTestBase
     [TestMethod]
     public async Task SelectOptionAsync_ChoosesValue()
     {
-        await Page.SetContentAsync(Fixtures.LoginForm);
+        await Fixtures.SetPageContentAsync(Page,Fixtures.LoginForm);
 
         // SelectOptionAsync picks option(s) by value
         var role = Page.GetByLabel("Role");
@@ -69,7 +69,7 @@ public class FormInteractionTests : MotusTestBase
     [TestMethod]
     public async Task ClearAsync_EmptiesInput()
     {
-        await Page.SetContentAsync(Fixtures.LoginForm);
+        await Fixtures.SetPageContentAsync(Page,Fixtures.LoginForm);
 
         var email = Page.GetByLabel("Email");
         await email.FillAsync("filled@example.com");

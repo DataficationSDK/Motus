@@ -51,6 +51,28 @@ public class ActionabilityTests
         _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": [{{""name"": ""0"", ""value"": {{""type"": ""object"", ""objectId"": ""{objectId}""}}}}, {{""name"": ""length"", ""value"": {{""type"": ""number"", ""value"": 1}}}}]}}}}");
     }
 
+    /// <summary>
+    /// Queues the standard actionability responses for a full click:
+    /// visible (1) + enabled (1) + stable (1) + receivesEvents (1) + boundingBox (1) + mouse (3)
+    /// </summary>
+    private void QueueClickResponses(ref int id, double x, double y, double w, double h)
+    {
+        // visible -> true
+        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""boolean"", ""value"": true}}}}}}");
+        // enabled -> true
+        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""boolean"", ""value"": true}}}}}}");
+        // stable -> true
+        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""boolean"", ""value"": true}}}}}}");
+        // receives-events -> true (pure JS elementFromPoint check)
+        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""boolean"", ""value"": true}}}}}}");
+        // GetBoundingBoxOrThrow
+        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""object"", ""value"": {{""x"": {x}, ""y"": {y}, ""width"": {w}, ""height"": {h}}}}}}}}}");
+        // mouse events (move, down, up)
+        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{}}}}");
+        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{}}}}");
+        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{}}}}");
+    }
+
     [TestMethod]
     public async Task VisibilityCheck_PassesWhenVisible()
     {
@@ -58,28 +80,8 @@ public class ActionabilityTests
         var locator = page.Locator("#btn");
 
         var id = 9;
-        // resolve (strategy: 2 calls)
         QueueStrategyResolve(ref id, "btn-1");
-        // visible check -> true
-        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""boolean"", ""value"": true}}}}}}");
-        // enabled check -> true
-        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""boolean"", ""value"": true}}}}}}");
-        // stable check -> true
-        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""boolean"", ""value"": true}}}}}}");
-        // receives-events: bounding box
-        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""object"", ""value"": {{""x"": 10, ""y"": 20, ""width"": 100, ""height"": 50}}}}}}}}");
-        // DOM.getNodeForLocation
-        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""backendNodeId"": 7}}}}");
-        // DOM.resolveNode
-        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""object"": {{""type"": ""object"", ""objectId"": ""resolved-7""}}}}}}");
-        // identity check -> true
-        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""boolean"", ""value"": true}}}}}}");
-        // GetBoundingBoxOrThrow for click
-        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""object"", ""value"": {{""x"": 10, ""y"": 20, ""width"": 100, ""height"": 50}}}}}}}}");
-        // Mouse events
-        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{}}}}");
-        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{}}}}");
-        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{}}}}");
+        QueueClickResponses(ref id, 10, 20, 100, 50);
 
         await locator.ClickAsync();
     }
@@ -130,26 +132,7 @@ public class ActionabilityTests
 
         var id = 9;
         QueueStrategyResolve(ref id, "anim-1");
-        // visible -> true
-        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""boolean"", ""value"": true}}}}}}");
-        // enabled -> true
-        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""boolean"", ""value"": true}}}}}}");
-        // stable check -> true
-        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""boolean"", ""value"": true}}}}}}");
-        // receives-events: bounding box
-        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""object"", ""value"": {{""x"": 0, ""y"": 0, ""width"": 50, ""height"": 50}}}}}}}}");
-        // DOM.getNodeForLocation
-        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""backendNodeId"": 5}}}}");
-        // DOM.resolveNode
-        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""object"": {{""type"": ""object"", ""objectId"": ""resolved-5""}}}}}}");
-        // identity check -> true
-        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""boolean"", ""value"": true}}}}}}");
-        // bounding box for click
-        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""object"", ""value"": {{""x"": 0, ""y"": 0, ""width"": 50, ""height"": 50}}}}}}}}");
-        // mouse events
-        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{}}}}");
-        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{}}}}");
-        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{}}}}");
+        QueueClickResponses(ref id, 0, 0, 50, 50);
 
         await locator.ClickAsync();
 
@@ -162,33 +145,14 @@ public class ActionabilityTests
     }
 
     [TestMethod]
-    public async Task ReceivesEventsCheck_SendsDomGetNodeForLocation()
+    public async Task ReceivesEventsCheck_UsesElementFromPoint()
     {
         var page = await CreatePageAsync();
         var locator = page.Locator("#overlay-target");
 
         var id = 9;
         QueueStrategyResolve(ref id, "ot-1");
-        // visible -> true
-        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""boolean"", ""value"": true}}}}}}");
-        // enabled -> true
-        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""boolean"", ""value"": true}}}}}}");
-        // stable -> true
-        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""boolean"", ""value"": true}}}}}}");
-        // receives-events: bounding box
-        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""object"", ""value"": {{""x"": 50, ""y"": 50, ""width"": 100, ""height"": 40}}}}}}}}");
-        // DOM.getNodeForLocation
-        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""backendNodeId"": 99}}}}");
-        // DOM.resolveNode
-        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""object"": {{""type"": ""object"", ""objectId"": ""hit-99""}}}}}}");
-        // identity check -> true
-        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""boolean"", ""value"": true}}}}}}");
-        // bounding box for click
-        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""object"", ""value"": {{""x"": 50, ""y"": 50, ""width"": 100, ""height"": 40}}}}}}}}");
-        // mouse events
-        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{}}}}");
-        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{}}}}");
-        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{}}}}");
+        QueueClickResponses(ref id, 50, 50, 100, 40);
 
         await locator.ClickAsync();
 
@@ -196,10 +160,9 @@ public class ActionabilityTests
             .Select(i => _socket.GetSentJson(i))
             .ToList();
 
-        Assert.IsTrue(allSent.Any(s => s.Contains("DOM.getNodeForLocation")),
-            "Receives-events check should send DOM.getNodeForLocation.");
-        Assert.IsTrue(allSent.Any(s => s.Contains("DOM.resolveNode")),
-            "Receives-events check should send DOM.resolveNode.");
+        // ReceivesEvents now uses a pure JS elementFromPoint check instead of DOM domain calls
+        Assert.IsTrue(allSent.Any(s => s.Contains("elementFromPoint")),
+            "Receives-events check should use document.elementFromPoint.");
     }
 
     [TestMethod]
@@ -214,13 +177,7 @@ public class ActionabilityTests
         _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""boolean"", ""value"": true}}}}}}");
         // stable -> true (no enabled check for hover)
         _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""boolean"", ""value"": true}}}}}}");
-        // receives-events: bounding box
-        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""object"", ""value"": {{""x"": 0, ""y"": 0, ""width"": 60, ""height"": 30}}}}}}}}");
-        // DOM.getNodeForLocation
-        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""backendNodeId"": 3}}}}");
-        // DOM.resolveNode
-        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""object"": {{""type"": ""object"", ""objectId"": ""resolved-3""}}}}}}");
-        // identity check -> true
+        // receives-events -> true (pure JS elementFromPoint check)
         _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""boolean"", ""value"": true}}}}}}");
         // bounding box for hover
         _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""object"", ""value"": {{""x"": 0, ""y"": 0, ""width"": 60, ""height"": 30}}}}}}}}");

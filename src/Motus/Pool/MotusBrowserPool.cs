@@ -16,7 +16,7 @@ public static class MotusBrowserPool
     {
         options ??= new BrowserPoolOptions();
         var pool = new BrowserPool(options);
-        await pool.WarmUpAsync(ct);
+        await pool.WarmUpAsync(ct).ConfigureAwait(false);
         return pool;
     }
 }

@@ -14,7 +14,7 @@ public class PageObjectModelTests : MotusTestBase
     [TestInitialize]
     public async Task SetUp()
     {
-        await Page.SetContentAsync(Fixtures.TodoApp);
+        await Fixtures.SetPageContentAsync(Page,Fixtures.TodoApp);
         _todo = new TodoAppPage(Page);
     }
 

@@ -13,13 +13,13 @@ internal sealed partial class Page
     {
         _networkManager = new NetworkManager(_session, this, _pageCts.Token);
         bool hasFetchRoutes = HasAnyRoutes();
-        await _networkManager.InitializeAsync(hasFetchRoutes, ct);
+        await _networkManager.InitializeAsync(hasFetchRoutes, ct).ConfigureAwait(false);
     }
 
     internal async Task EnableAuthHandlingAsync()
     {
         if (_networkManager is not null)
-            await _networkManager.EnableFetchWithAuthAsync(_pageCts.Token);
+            await _networkManager.EnableFetchWithAuthAsync(_pageCts.Token).ConfigureAwait(false);
     }
 
     private bool HasAnyRoutes()
@@ -38,7 +38,7 @@ internal sealed partial class Page
         }
 
         if (wasEmpty && _networkManager is not null)
-            await _networkManager.EnableFetchAsync(_pageCts.Token);
+            await _networkManager.EnableFetchAsync(_pageCts.Token).ConfigureAwait(false);
     }
 
     public async Task UnrouteAsync(string urlPattern, Func<IRoute, Task>? handler = null)
@@ -52,7 +52,7 @@ internal sealed partial class Page
         }
 
         if (!HasAnyRoutes() && _networkManager is not null)
-            await _networkManager.DisableFetchAsync(_pageCts.Token);
+            await _networkManager.DisableFetchAsync(_pageCts.Token).ConfigureAwait(false);
     }
 
     public Task<IRequest> WaitForRequestAsync(string urlPattern, double? timeout = null)

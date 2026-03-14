@@ -57,10 +57,7 @@ public class LocatorTests
     /// 3. visible check (Runtime.callFunctionOn)
     /// 4. enabled check (Runtime.callFunctionOn)
     /// 5. stable check (Runtime.callFunctionOn)
-    /// 6. receives-events: bounding box (Runtime.callFunctionOn)
-    /// 7. receives-events: DOM.getNodeForLocation
-    /// 8. receives-events: DOM.resolveNode
-    /// 9. receives-events: identity check (Runtime.callFunctionOn)
+    /// 6. receives-events: elementFromPoint check (Runtime.callFunctionOn)
     /// Then the action-specific calls follow.
     /// </summary>
     private void QueueClickActionabilityResponses(int startId, string objectId = "btn-1")
@@ -74,13 +71,7 @@ public class LocatorTests
         _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""boolean"", ""value"": true}}}}}}");
         // stable
         _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""boolean"", ""value"": true}}}}}}");
-        // receives-events: bounding box
-        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""object"", ""value"": {{""x"": 100, ""y"": 200, ""width"": 80, ""height"": 30}}}}}}}}");
-        // DOM.getNodeForLocation
-        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""backendNodeId"": 42}}}}");
-        // DOM.resolveNode
-        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""object"": {{""type"": ""object"", ""objectId"": ""resolved-1""}}}}}}");
-        // identity check
+        // receives-events: pure JS elementFromPoint check
         _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""boolean"", ""value"": true}}}}}}");
     }
 
@@ -114,13 +105,13 @@ public class LocatorTests
 
         QueueClickActionabilityResponses(9);
 
-        // getBoundingClientRect for the click action itself
-        _socket.QueueResponse("""{"id": 18, "sessionId": "session-1", "result": {"result": {"type": "object", "value": {"x": 100, "y": 200, "width": 80, "height": 30}}}}""");
+        // getBoundingClientRect for the click action itself (id=15: after resolve(2)+visible+enabled+stable+receivesEvents)
+        _socket.QueueResponse("""{"id": 15, "sessionId": "session-1", "result": {"result": {"type": "object", "value": {"x": 100, "y": 200, "width": 80, "height": 30}}}}""");
 
         // Mouse: mouseMoved, mousePressed, mouseReleased
-        _socket.QueueResponse("""{"id": 19, "sessionId": "session-1", "result": {}}""");
-        _socket.QueueResponse("""{"id": 20, "sessionId": "session-1", "result": {}}""");
-        _socket.QueueResponse("""{"id": 21, "sessionId": "session-1", "result": {}}""");
+        _socket.QueueResponse("""{"id": 16, "sessionId": "session-1", "result": {}}""");
+        _socket.QueueResponse("""{"id": 17, "sessionId": "session-1", "result": {}}""");
+        _socket.QueueResponse("""{"id": 18, "sessionId": "session-1", "result": {}}""");
 
         await locator.ClickAsync();
 

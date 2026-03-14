@@ -12,7 +12,7 @@ internal static class AssertionRetryHelper
             return perCallTimeout.Value;
 
         var configTimeout = MotusConfigLoader.Config.Assertions?.Timeout;
-        return configTimeout ?? 30_000;
+        return configTimeout ?? 10_000;
     }
 
     internal static async Task RetryUntilAsync(
@@ -35,7 +35,7 @@ internal static class AssertionRetryHelper
 
                 try
                 {
-                    var (passed, actual) = await condition(linkedToken);
+                    var (passed, actual) = await condition(linkedToken).ConfigureAwait(false);
                     lastActual = actual;
 
                     var effective = negate ? !passed : passed;
@@ -46,12 +46,16 @@ internal static class AssertionRetryHelper
                 {
                     throw;
                 }
-                catch
+                catch (Exception ex) when (
+                    ex is InvalidOperationException   // evaluation failures, element not found
+                    or Abstractions.MotusProtocolException  // CDP command errors (stale context, etc.)
+                    or Abstractions.MotusTargetClosedException  // target navigated away
+                    or TimeoutException)               // inner operation timeouts
                 {
-                    // Element not found or evaluation error; retry
+                    // Retriable error from element resolution or JS evaluation; retry
                 }
 
-                await Task.Delay(PollingIntervalMs, linkedToken);
+                await Task.Delay(PollingIntervalMs, linkedToken).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException)

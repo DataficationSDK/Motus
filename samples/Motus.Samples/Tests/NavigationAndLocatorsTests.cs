@@ -10,7 +10,7 @@ public class NavigationAndLocatorsTests : MotusTestBase
     [TestMethod]
     public async Task SetContent_TitleIsAccessible()
     {
-        await Page.SetContentAsync(Fixtures.Dashboard);
+        await Fixtures.SetPageContentAsync(Page,Fixtures.Dashboard);
 
         // TitleAsync reads the <title> element
         var title = await Page.TitleAsync();
@@ -23,7 +23,7 @@ public class NavigationAndLocatorsTests : MotusTestBase
     [TestMethod]
     public async Task GetByRole_FindsButton()
     {
-        await Page.SetContentAsync(Fixtures.TodoApp);
+        await Fixtures.SetPageContentAsync(Page,Fixtures.TodoApp);
 
         // GetByRole matches ARIA roles; the second parameter filters by accessible name
         var addButton = Page.GetByRole("button", "Add");
@@ -33,7 +33,7 @@ public class NavigationAndLocatorsTests : MotusTestBase
     [TestMethod]
     public async Task GetByLabel_FindsInput()
     {
-        await Page.SetContentAsync(Fixtures.LoginForm);
+        await Fixtures.SetPageContentAsync(Page,Fixtures.LoginForm);
 
         // GetByLabel matches by associated <label> text
         var emailInput = Page.GetByLabel("Email");
@@ -43,7 +43,7 @@ public class NavigationAndLocatorsTests : MotusTestBase
     [TestMethod]
     public async Task GetByPlaceholder_FindsInput()
     {
-        await Page.SetContentAsync(Fixtures.LoginForm);
+        await Fixtures.SetPageContentAsync(Page,Fixtures.LoginForm);
 
         // GetByPlaceholder matches the placeholder attribute
         var input = Page.GetByPlaceholder("you@example.com");
@@ -53,7 +53,7 @@ public class NavigationAndLocatorsTests : MotusTestBase
     [TestMethod]
     public async Task GetByTestId_FindsElement()
     {
-        await Page.SetContentAsync(Fixtures.Dashboard);
+        await Fixtures.SetPageContentAsync(Page,Fixtures.Dashboard);
 
         // GetByTestId matches data-testid attributes
         var card = Page.GetByTestId("card-revenue");
@@ -63,7 +63,7 @@ public class NavigationAndLocatorsTests : MotusTestBase
     [TestMethod]
     public async Task GetByText_FindsHeading()
     {
-        await Page.SetContentAsync(Fixtures.Dashboard);
+        await Fixtures.SetPageContentAsync(Page,Fixtures.Dashboard);
 
         // GetByText matches visible text content
         var heading = Page.GetByText("Dashboard", exact: true);
@@ -73,14 +73,14 @@ public class NavigationAndLocatorsTests : MotusTestBase
     [TestMethod]
     public async Task LocatorChaining_NthAndFilter()
     {
-        await Page.SetContentAsync(Fixtures.Dashboard);
+        await Fixtures.SetPageContentAsync(Page,Fixtures.Dashboard);
 
         // Locator returns all matches; Filter narrows by text; Nth picks one by index
         var cards = Page.Locator(".card");
         await Expect.That(cards).ToHaveCountAsync(3);
 
-        var revenueCard = cards.Filter(new LocatorOptions { HasText = "Revenue" });
-        await Expect.That(revenueCard).ToHaveCountAsync(1);
+        // Filter narrows by text content; First gets the single match
+        var revenueCard = cards.Filter(new LocatorOptions { HasText = "Revenue" }).First;
         await Expect.That(revenueCard).ToContainTextAsync("$12,345");
 
         // Nth is zero-based

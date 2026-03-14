@@ -28,7 +28,7 @@ internal sealed class Keyboard : IKeyboard
                 Location: def.Location),
             CdpJsonContext.Default.InputDispatchKeyEventParams,
             CdpJsonContext.Default.InputDispatchKeyEventResult,
-            _ct);
+            _ct).ConfigureAwait(false);
 
         // For printable characters, also send a char event
         if (def.Key.Length == 1 && !KeyDefinitions.IsModifier(key))
@@ -46,7 +46,7 @@ internal sealed class Keyboard : IKeyboard
                     Location: def.Location),
                 CdpJsonContext.Default.InputDispatchKeyEventParams,
                 CdpJsonContext.Default.InputDispatchKeyEventResult,
-                _ct);
+                _ct).ConfigureAwait(false);
         }
     }
 
@@ -65,7 +65,7 @@ internal sealed class Keyboard : IKeyboard
                 Location: def.Location),
             CdpJsonContext.Default.InputDispatchKeyEventParams,
             CdpJsonContext.Default.InputDispatchKeyEventResult,
-            _ct);
+            _ct).ConfigureAwait(false);
     }
 
     public async Task PressAsync(string key, KeyboardPressOptions? options = null)
@@ -77,26 +77,26 @@ internal sealed class Keyboard : IKeyboard
             var finalKey = parts[^1];
 
             foreach (var mod in modifiers)
-                await DownAsync(mod);
+                await DownAsync(mod).ConfigureAwait(false);
 
-            await DownAsync(finalKey);
+            await DownAsync(finalKey).ConfigureAwait(false);
 
             if (options?.Delay is > 0)
-                await Task.Delay(options.Delay.Value, _ct);
+                await Task.Delay(options.Delay.Value, _ct).ConfigureAwait(false);
 
-            await UpAsync(finalKey);
+            await UpAsync(finalKey).ConfigureAwait(false);
 
             foreach (var mod in modifiers.AsEnumerable().Reverse())
-                await UpAsync(mod);
+                await UpAsync(mod).ConfigureAwait(false);
         }
         else
         {
-            await DownAsync(key);
+            await DownAsync(key).ConfigureAwait(false);
 
             if (options?.Delay is > 0)
-                await Task.Delay(options.Delay.Value, _ct);
+                await Task.Delay(options.Delay.Value, _ct).ConfigureAwait(false);
 
-            await UpAsync(key);
+            await UpAsync(key).ConfigureAwait(false);
         }
     }
 
@@ -104,10 +104,10 @@ internal sealed class Keyboard : IKeyboard
     {
         foreach (var c in text)
         {
-            await PressAsync(c.ToString());
+            await PressAsync(c.ToString()).ConfigureAwait(false);
 
             if (options?.Delay is > 0)
-                await Task.Delay(options.Delay.Value, _ct);
+                await Task.Delay(options.Delay.Value, _ct).ConfigureAwait(false);
         }
     }
 
@@ -118,6 +118,6 @@ internal sealed class Keyboard : IKeyboard
             new InputInsertTextParams(text),
             CdpJsonContext.Default.InputInsertTextParams,
             CdpJsonContext.Default.InputInsertTextResult,
-            _ct);
+            _ct).ConfigureAwait(false);
     }
 }

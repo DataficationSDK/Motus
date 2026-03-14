@@ -28,7 +28,7 @@ internal sealed class MotusRoute : IRoute
         {
             { BodyBytes: { } bb } => bb,
             { Body: { } s } => System.Text.Encoding.UTF8.GetBytes(s),
-            { Path: { } p } => await File.ReadAllBytesAsync(p),
+            { Path: { } p } => await File.ReadAllBytesAsync(p).ConfigureAwait(false),
             _ => []
         };
 
@@ -43,7 +43,7 @@ internal sealed class MotusRoute : IRoute
                 Body: bodyBytes.Length > 0 ? Convert.ToBase64String(bodyBytes) : null),
             CdpJsonContext.Default.FetchFulfillRequestParams,
             CdpJsonContext.Default.FetchFulfillRequestResult,
-            CancellationToken.None);
+            CancellationToken.None).ConfigureAwait(false);
     }
 
     public async Task ContinueAsync(RouteContinueOptions? options = null)
@@ -69,7 +69,7 @@ internal sealed class MotusRoute : IRoute
                 Headers: headers),
             CdpJsonContext.Default.FetchContinueRequestParams,
             CdpJsonContext.Default.FetchContinueRequestResult,
-            CancellationToken.None);
+            CancellationToken.None).ConfigureAwait(false);
     }
 
     public async Task AbortAsync(string? errorCode = null)
@@ -84,7 +84,7 @@ internal sealed class MotusRoute : IRoute
                 ErrorReason: MapErrorCode(errorCode ?? "failed")),
             CdpJsonContext.Default.FetchFailRequestParams,
             CdpJsonContext.Default.FetchFailRequestResult,
-            CancellationToken.None);
+            CancellationToken.None).ConfigureAwait(false);
     }
 
     private void ThrowIfHandled()

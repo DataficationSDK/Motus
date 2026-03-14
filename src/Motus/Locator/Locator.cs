@@ -45,7 +45,7 @@ internal sealed class Locator : ILocator
 
     internal async Task<bool> IsEmptyAsync(CancellationToken ct)
     {
-        var objectId = await ResolveObjectIdCoreAsync(ct);
+        var objectId = await ResolveObjectIdCoreAsync(ct).ConfigureAwait(false);
         return await EvalOnElementAsync<bool>(objectId,
             """
             function() {
@@ -54,23 +54,23 @@ internal sealed class Locator : ILocator
                     return this.value === '';
                 return this.textContent.trim() === '';
             }
-            """, null, ct);
+            """, null, ct).ConfigureAwait(false);
     }
 
     internal async Task<string?> GetComputedStyleAsync(string property, CancellationToken ct)
     {
-        var objectId = await ResolveObjectIdCoreAsync(ct);
+        var objectId = await ResolveObjectIdCoreAsync(ct).ConfigureAwait(false);
         return await EvalOnElementAsync<string?>(objectId,
             "function(prop) { return window.getComputedStyle(this).getPropertyValue(prop); }",
-            [new RuntimeCallArgument(Value: JsonSerializer.SerializeToElement(property))], ct);
+            [new RuntimeCallArgument(Value: JsonSerializer.SerializeToElement(property))], ct).ConfigureAwait(false);
     }
 
     internal async Task<bool> HasClassAsync(string className, CancellationToken ct)
     {
-        var objectId = await ResolveObjectIdCoreAsync(ct);
+        var objectId = await ResolveObjectIdCoreAsync(ct).ConfigureAwait(false);
         return await EvalOnElementAsync<bool>(objectId,
             "function(cls) { return this.classList.contains(cls); }",
-            [new RuntimeCallArgument(Value: JsonSerializer.SerializeToElement(className))], ct);
+            [new RuntimeCallArgument(Value: JsonSerializer.SerializeToElement(className))], ct).ConfigureAwait(false);
     }
 
     // --- Timeout Helper ---
@@ -115,7 +115,7 @@ internal sealed class Locator : ILocator
         if (!registry.TryGetStrategy(prefix, out var strategy))
             throw new InvalidOperationException($"No selector strategy registered for prefix: {prefix}");
 
-        var handles = await strategy!.ResolveAsync(expression, _page.GetFrameForSelectors(), _pierceShadow, ct);
+        var handles = await strategy!.ResolveAsync(expression, _page.GetFrameForSelectors(), _pierceShadow, ct).ConfigureAwait(false);
 
         // Apply hasText filter
         if (_hasText is not null)
@@ -123,7 +123,7 @@ internal sealed class Locator : ILocator
             var filtered = new List<IElementHandle>();
             foreach (var handle in handles)
             {
-                var text = await handle.TextContentAsync(ct);
+                var text = await handle.TextContentAsync(ct).ConfigureAwait(false);
                 if (text is not null && text.Contains(_hasText, StringComparison.Ordinal))
                     filtered.Add(handle);
             }
@@ -168,14 +168,14 @@ internal sealed class Locator : ILocator
                 AwaitPromise: true),
             CdpJsonContext.Default.RuntimeCallFunctionOnParams,
             CdpJsonContext.Default.RuntimeCallFunctionOnResult,
-            ct);
+            ct).ConfigureAwait(false);
 
         if (result.ExceptionDetails is not null)
             throw new InvalidOperationException(
                 $"Evaluation failed: {result.ExceptionDetails.Text}");
 
         if (result.Result.Value is JsonElement element)
-            return element.Deserialize<T>()!;
+            return element.Deserialize<T>(CdpJsonContext.Default.Options)!;
 
         if (result.Result.Type == "undefined" ||
             (result.Result.Type == "object" && result.Result.Subtype == "null"))
@@ -198,7 +198,7 @@ internal sealed class Locator : ILocator
                 AwaitPromise: true),
             CdpJsonContext.Default.RuntimeCallFunctionOnParams,
             CdpJsonContext.Default.RuntimeCallFunctionOnResult,
-            ct);
+            ct).ConfigureAwait(false);
 
         if (result.ExceptionDetails is not null)
             throw new InvalidOperationException(
@@ -214,7 +214,7 @@ internal sealed class Locator : ILocator
                 if (r.width === 0 && r.height === 0) return null;
                 return { x: r.x, y: r.y, width: r.width, height: r.height };
             }
-            """, null, ct);
+            """, null, ct).ConfigureAwait(false);
 
         return box ?? throw new InvalidOperationException("Element has zero size bounding box.");
     }
@@ -223,16 +223,16 @@ internal sealed class Locator : ILocator
 
     private async Task RunWithHooksAsync(string actionName, Func<Task> action)
     {
-        await _page.ContextInternal.LifecycleHooks.FireBeforeActionAsync(_page, actionName);
+        await _page.ContextInternal.LifecycleHooks.FireBeforeActionAsync(_page, actionName).ConfigureAwait(false);
         Exception? error = null;
         try
         {
-            await action();
+            await action().ConfigureAwait(false);
         }
         catch (MotusException mex) when (mex.Screenshot is null)
         {
             error = mex;
-            await FailureCapture.AttachScreenshotAsync(mex, _page);
+            await FailureCapture.AttachScreenshotAsync(mex, _page).ConfigureAwait(false);
             throw;
         }
         catch (Exception ex)
@@ -243,22 +243,22 @@ internal sealed class Locator : ILocator
         finally
         {
             await _page.ContextInternal.LifecycleHooks.FireAfterActionAsync(
-                _page, actionName, new ActionResult(actionName, error));
+                _page, actionName, new ActionResult(actionName, error)).ConfigureAwait(false);
         }
     }
 
     private async Task<T> RunWithHooksAsync<T>(string actionName, Func<Task<T>> action)
     {
-        await _page.ContextInternal.LifecycleHooks.FireBeforeActionAsync(_page, actionName);
+        await _page.ContextInternal.LifecycleHooks.FireBeforeActionAsync(_page, actionName).ConfigureAwait(false);
         Exception? error = null;
         try
         {
-            return await action();
+            return await action().ConfigureAwait(false);
         }
         catch (MotusException mex) when (mex.Screenshot is null)
         {
             error = mex;
-            await FailureCapture.AttachScreenshotAsync(mex, _page);
+            await FailureCapture.AttachScreenshotAsync(mex, _page).ConfigureAwait(false);
             throw;
         }
         catch (Exception ex)
@@ -269,7 +269,7 @@ internal sealed class Locator : ILocator
         finally
         {
             await _page.ContextInternal.LifecycleHooks.FireAfterActionAsync(
-                _page, actionName, new ActionResult(actionName, error));
+                _page, actionName, new ActionResult(actionName, error)).ConfigureAwait(false);
         }
     }
 
@@ -304,10 +304,10 @@ internal sealed class Locator : ILocator
             var objectId = await ActionabilityChecker.WaitForActionabilityAsync(
                 _page, ResolveObjectIdCoreAsync,
                 ActionabilityFlags.Visible | ActionabilityFlags.Enabled | ActionabilityFlags.Stable | ActionabilityFlags.ReceivesEvents,
-                _selector, cts.Token);
-            var box = await GetBoundingBoxOrThrowAsync(objectId, cts.Token);
-            await _page.Mouse.ClickAsync(box.X + box.Width / 2, box.Y + box.Height / 2);
-        });
+                _selector, cts.Token).ConfigureAwait(false);
+            var box = await GetBoundingBoxOrThrowAsync(objectId, cts.Token).ConfigureAwait(false);
+            await _page.Mouse.ClickAsync(box.X + box.Width / 2, box.Y + box.Height / 2).ConfigureAwait(false);
+        }).ConfigureAwait(false);
     }
 
     public async Task DblClickAsync(double? timeout = null)
@@ -318,10 +318,10 @@ internal sealed class Locator : ILocator
             var objectId = await ActionabilityChecker.WaitForActionabilityAsync(
                 _page, ResolveObjectIdCoreAsync,
                 ActionabilityFlags.Visible | ActionabilityFlags.Enabled | ActionabilityFlags.Stable | ActionabilityFlags.ReceivesEvents,
-                _selector, cts.Token);
-            var box = await GetBoundingBoxOrThrowAsync(objectId, cts.Token);
-            await _page.Mouse.DblClickAsync(box.X + box.Width / 2, box.Y + box.Height / 2);
-        });
+                _selector, cts.Token).ConfigureAwait(false);
+            var box = await GetBoundingBoxOrThrowAsync(objectId, cts.Token).ConfigureAwait(false);
+            await _page.Mouse.DblClickAsync(box.X + box.Width / 2, box.Y + box.Height / 2).ConfigureAwait(false);
+        }).ConfigureAwait(false);
     }
 
     public async Task FillAsync(string value, double? timeout = null)
@@ -332,7 +332,7 @@ internal sealed class Locator : ILocator
             var objectId = await ActionabilityChecker.WaitForActionabilityAsync(
                 _page, ResolveObjectIdCoreAsync,
                 ActionabilityFlags.Visible | ActionabilityFlags.Enabled | ActionabilityFlags.Editable,
-                _selector, cts.Token);
+                _selector, cts.Token).ConfigureAwait(false);
             await EvalOnElementVoidAsync(objectId,
                 """
                 function(value) {
@@ -343,8 +343,8 @@ internal sealed class Locator : ILocator
                 }
                 """,
                 [new RuntimeCallArgument(Value: JsonSerializer.SerializeToElement(value))],
-                cts.Token);
-        });
+                cts.Token).ConfigureAwait(false);
+        }).ConfigureAwait(false);
     }
 
     public async Task ClearAsync(double? timeout = null)
@@ -355,7 +355,7 @@ internal sealed class Locator : ILocator
             var objectId = await ActionabilityChecker.WaitForActionabilityAsync(
                 _page, ResolveObjectIdCoreAsync,
                 ActionabilityFlags.Visible | ActionabilityFlags.Enabled | ActionabilityFlags.Editable,
-                _selector, cts.Token);
+                _selector, cts.Token).ConfigureAwait(false);
             await EvalOnElementVoidAsync(objectId,
                 """
                 function() {
@@ -364,8 +364,8 @@ internal sealed class Locator : ILocator
                     this.dispatchEvent(new Event('input', { bubbles: true }));
                     this.dispatchEvent(new Event('change', { bubbles: true }));
                 }
-                """, null, cts.Token);
-        });
+                """, null, cts.Token).ConfigureAwait(false);
+        }).ConfigureAwait(false);
     }
 
     public async Task TypeAsync(string text, KeyboardTypeOptions? options = null)
@@ -376,10 +376,10 @@ internal sealed class Locator : ILocator
             var objectId = await ActionabilityChecker.WaitForActionabilityAsync(
                 _page, ResolveObjectIdCoreAsync,
                 ActionabilityFlags.Visible | ActionabilityFlags.Enabled | ActionabilityFlags.Editable,
-                _selector, cts.Token);
-            await EvalOnElementVoidAsync(objectId, "function() { this.focus(); }", null, cts.Token);
-            await _page.Keyboard.TypeAsync(text, options);
-        });
+                _selector, cts.Token).ConfigureAwait(false);
+            await EvalOnElementVoidAsync(objectId, "function() { this.focus(); }", null, cts.Token).ConfigureAwait(false);
+            await _page.Keyboard.TypeAsync(text, options).ConfigureAwait(false);
+        }).ConfigureAwait(false);
     }
 
     public async Task PressAsync(string key, KeyboardPressOptions? options = null)
@@ -390,10 +390,10 @@ internal sealed class Locator : ILocator
             var objectId = await ActionabilityChecker.WaitForActionabilityAsync(
                 _page, ResolveObjectIdCoreAsync,
                 ActionabilityFlags.Visible | ActionabilityFlags.Enabled | ActionabilityFlags.Editable,
-                _selector, cts.Token);
-            await EvalOnElementVoidAsync(objectId, "function() { this.focus(); }", null, cts.Token);
-            await _page.Keyboard.PressAsync(key, options);
-        });
+                _selector, cts.Token).ConfigureAwait(false);
+            await EvalOnElementVoidAsync(objectId, "function() { this.focus(); }", null, cts.Token).ConfigureAwait(false);
+            await _page.Keyboard.PressAsync(key, options).ConfigureAwait(false);
+        }).ConfigureAwait(false);
     }
 
     public async Task CheckAsync(double? timeout = null)
@@ -404,14 +404,14 @@ internal sealed class Locator : ILocator
             var objectId = await ActionabilityChecker.WaitForActionabilityAsync(
                 _page, ResolveObjectIdCoreAsync,
                 ActionabilityFlags.Visible | ActionabilityFlags.Enabled,
-                _selector, cts.Token);
-            var isChecked = await EvalOnElementAsync<bool>(objectId, "function() { return this.checked; }", null, cts.Token);
+                _selector, cts.Token).ConfigureAwait(false);
+            var isChecked = await EvalOnElementAsync<bool>(objectId, "function() { return this.checked; }", null, cts.Token).ConfigureAwait(false);
             if (!isChecked)
             {
-                var box = await GetBoundingBoxOrThrowAsync(objectId, cts.Token);
-                await _page.Mouse.ClickAsync(box.X + box.Width / 2, box.Y + box.Height / 2);
+                var box = await GetBoundingBoxOrThrowAsync(objectId, cts.Token).ConfigureAwait(false);
+                await _page.Mouse.ClickAsync(box.X + box.Width / 2, box.Y + box.Height / 2).ConfigureAwait(false);
             }
-        });
+        }).ConfigureAwait(false);
     }
 
     public async Task UncheckAsync(double? timeout = null)
@@ -422,22 +422,22 @@ internal sealed class Locator : ILocator
             var objectId = await ActionabilityChecker.WaitForActionabilityAsync(
                 _page, ResolveObjectIdCoreAsync,
                 ActionabilityFlags.Visible | ActionabilityFlags.Enabled,
-                _selector, cts.Token);
-            var isChecked = await EvalOnElementAsync<bool>(objectId, "function() { return this.checked; }", null, cts.Token);
+                _selector, cts.Token).ConfigureAwait(false);
+            var isChecked = await EvalOnElementAsync<bool>(objectId, "function() { return this.checked; }", null, cts.Token).ConfigureAwait(false);
             if (isChecked)
             {
-                var box = await GetBoundingBoxOrThrowAsync(objectId, cts.Token);
-                await _page.Mouse.ClickAsync(box.X + box.Width / 2, box.Y + box.Height / 2);
+                var box = await GetBoundingBoxOrThrowAsync(objectId, cts.Token).ConfigureAwait(false);
+                await _page.Mouse.ClickAsync(box.X + box.Width / 2, box.Y + box.Height / 2).ConfigureAwait(false);
             }
-        });
+        }).ConfigureAwait(false);
     }
 
     public async Task SetCheckedAsync(bool @checked, double? timeout = null)
     {
         if (@checked)
-            await CheckAsync(timeout);
+            await CheckAsync(timeout).ConfigureAwait(false);
         else
-            await UncheckAsync(timeout);
+            await UncheckAsync(timeout).ConfigureAwait(false);
     }
 
     public async Task<IReadOnlyList<string>> SelectOptionAsync(params string[] values)
@@ -448,7 +448,7 @@ internal sealed class Locator : ILocator
             var objectId = await ActionabilityChecker.WaitForActionabilityAsync(
                 _page, ResolveObjectIdCoreAsync,
                 ActionabilityFlags.Visible | ActionabilityFlags.Enabled,
-                _selector, cts.Token);
+                _selector, cts.Token).ConfigureAwait(false);
             return await EvalOnElementAsync<string[]>(objectId,
                 """
                 function(values) {
@@ -464,8 +464,8 @@ internal sealed class Locator : ILocator
                 }
                 """,
                 [new RuntimeCallArgument(Value: JsonSerializer.SerializeToElement(values))],
-                cts.Token);
-        });
+                cts.Token).ConfigureAwait(false);
+        }).ConfigureAwait(false);
     }
 
     public async Task SetInputFilesAsync(IEnumerable<FilePayload> files, double? timeout = null)
@@ -476,7 +476,7 @@ internal sealed class Locator : ILocator
             var objectId = await ActionabilityChecker.WaitForActionabilityAsync(
                 _page, ResolveObjectIdCoreAsync,
                 ActionabilityFlags.Visible | ActionabilityFlags.Enabled,
-                _selector, cts.Token);
+                _selector, cts.Token).ConfigureAwait(false);
             var tempFiles = new List<string>();
 
             try
@@ -484,7 +484,7 @@ internal sealed class Locator : ILocator
                 foreach (var file in files)
                 {
                     var tempPath = Path.Combine(Path.GetTempPath(), file.Name);
-                    await File.WriteAllBytesAsync(tempPath, file.Buffer);
+                    await File.WriteAllBytesAsync(tempPath, file.Buffer).ConfigureAwait(false);
                     tempFiles.Add(tempPath);
                 }
 
@@ -495,7 +495,7 @@ internal sealed class Locator : ILocator
                         ObjectId: objectId),
                     CdpJsonContext.Default.DomSetFileInputFilesParams,
                     CdpJsonContext.Default.DomSetFileInputFilesResult,
-                    cts.Token);
+                    cts.Token).ConfigureAwait(false);
             }
             finally
             {
@@ -504,7 +504,7 @@ internal sealed class Locator : ILocator
                     try { File.Delete(tempFile); } catch { /* best effort */ }
                 }
             }
-        });
+        }).ConfigureAwait(false);
     }
 
     public async Task HoverAsync(double? timeout = null)
@@ -515,10 +515,10 @@ internal sealed class Locator : ILocator
             var objectId = await ActionabilityChecker.WaitForActionabilityAsync(
                 _page, ResolveObjectIdCoreAsync,
                 ActionabilityFlags.Visible | ActionabilityFlags.Stable | ActionabilityFlags.ReceivesEvents,
-                _selector, cts.Token);
-            var box = await GetBoundingBoxOrThrowAsync(objectId, cts.Token);
-            await _page.Mouse.MoveAsync(box.X + box.Width / 2, box.Y + box.Height / 2);
-        });
+                _selector, cts.Token).ConfigureAwait(false);
+            var box = await GetBoundingBoxOrThrowAsync(objectId, cts.Token).ConfigureAwait(false);
+            await _page.Mouse.MoveAsync(box.X + box.Width / 2, box.Y + box.Height / 2).ConfigureAwait(false);
+        }).ConfigureAwait(false);
     }
 
     public async Task FocusAsync(double? timeout = null)
@@ -527,8 +527,8 @@ internal sealed class Locator : ILocator
         var objectId = await ActionabilityChecker.WaitForActionabilityAsync(
             _page, ResolveObjectIdCoreAsync,
             ActionabilityFlags.None,
-            _selector, cts.Token);
-        await EvalOnElementVoidAsync(objectId, "function() { this.focus(); }", null, cts.Token);
+            _selector, cts.Token).ConfigureAwait(false);
+        await EvalOnElementVoidAsync(objectId, "function() { this.focus(); }", null, cts.Token).ConfigureAwait(false);
     }
 
     public async Task TapAsync(double? timeout = null)
@@ -539,10 +539,10 @@ internal sealed class Locator : ILocator
             var objectId = await ActionabilityChecker.WaitForActionabilityAsync(
                 _page, ResolveObjectIdCoreAsync,
                 ActionabilityFlags.Visible | ActionabilityFlags.Enabled | ActionabilityFlags.Stable | ActionabilityFlags.ReceivesEvents,
-                _selector, cts.Token);
-            var box = await GetBoundingBoxOrThrowAsync(objectId, cts.Token);
-            await _page.Touchscreen.TapAsync(box.X + box.Width / 2, box.Y + box.Height / 2);
-        });
+                _selector, cts.Token).ConfigureAwait(false);
+            var box = await GetBoundingBoxOrThrowAsync(objectId, cts.Token).ConfigureAwait(false);
+            await _page.Touchscreen.TapAsync(box.X + box.Width / 2, box.Y + box.Height / 2).ConfigureAwait(false);
+        }).ConfigureAwait(false);
     }
 
     public async Task ScrollIntoViewIfNeededAsync(double? timeout = null)
@@ -551,10 +551,10 @@ internal sealed class Locator : ILocator
         var objectId = await ActionabilityChecker.WaitForActionabilityAsync(
             _page, ResolveObjectIdCoreAsync,
             ActionabilityFlags.None,
-            _selector, cts.Token);
+            _selector, cts.Token).ConfigureAwait(false);
         await EvalOnElementVoidAsync(objectId,
             "function() { this.scrollIntoViewIfNeeded ? this.scrollIntoViewIfNeeded() : this.scrollIntoView({ block: 'center' }); }",
-            null, cts.Token);
+            null, cts.Token).ConfigureAwait(false);
     }
 
     public async Task<byte[]> ScreenshotAsync(ScreenshotOptions? options = null)
@@ -563,8 +563,8 @@ internal sealed class Locator : ILocator
         var objectId = await ActionabilityChecker.WaitForActionabilityAsync(
             _page, ResolveObjectIdCoreAsync,
             ActionabilityFlags.Visible,
-            _selector, cts.Token);
-        var box = await GetBoundingBoxOrThrowAsync(objectId, cts.Token);
+            _selector, cts.Token).ConfigureAwait(false);
+        var box = await GetBoundingBoxOrThrowAsync(objectId, cts.Token).ConfigureAwait(false);
 
         var format = options?.Type == ScreenshotType.Jpeg ? "jpeg" : "png";
         var quality = options?.Type == ScreenshotType.Jpeg ? options.Quality : null;
@@ -577,7 +577,7 @@ internal sealed class Locator : ILocator
                 Quality: quality),
             CdpJsonContext.Default.PageCaptureScreenshotWithClipParams,
             CdpJsonContext.Default.PageCaptureScreenshotResult,
-            cts.Token);
+            cts.Token).ConfigureAwait(false);
 
         var bytes = Convert.FromBase64String(result.Data);
 
@@ -586,7 +586,7 @@ internal sealed class Locator : ILocator
             var dir = Path.GetDirectoryName(options.Path);
             if (dir is not null)
                 Directory.CreateDirectory(dir);
-            await File.WriteAllBytesAsync(options.Path, bytes);
+            await File.WriteAllBytesAsync(options.Path, bytes).ConfigureAwait(false);
         }
 
         return bytes;
@@ -595,7 +595,7 @@ internal sealed class Locator : ILocator
     public async Task DispatchEventAsync(string type, object? eventInit = null)
     {
         using var cts = BuildActionCts(null);
-        var objectId = await ResolveObjectIdCoreAsync(cts.Token);
+        var objectId = await ResolveObjectIdCoreAsync(cts.Token).ConfigureAwait(false);
         await EvalOnElementVoidAsync(objectId,
             """
             function(type, eventInit) {
@@ -606,17 +606,17 @@ internal sealed class Locator : ILocator
             [
                 new RuntimeCallArgument(Value: JsonSerializer.SerializeToElement(type)),
                 new RuntimeCallArgument(Value: JsonSerializer.SerializeToElement(eventInit))
-            ], cts.Token);
+            ], cts.Token).ConfigureAwait(false);
     }
 
     public async Task<T> EvaluateAsync<T>(string expression, object? arg = null)
     {
         using var cts = BuildActionCts(null);
-        var objectId = await ResolveObjectIdCoreAsync(cts.Token);
+        var objectId = await ResolveObjectIdCoreAsync(cts.Token).ConfigureAwait(false);
         var args = arg is not null
             ? new[] { new RuntimeCallArgument(Value: JsonSerializer.SerializeToElement(arg)) }
             : (RuntimeCallArgument[]?)null;
-        return await EvalOnElementAsync<T>(objectId, expression, args, cts.Token);
+        return await EvalOnElementAsync<T>(objectId, expression, args, cts.Token).ConfigureAwait(false);
     }
 
     // --- Query Methods ---
@@ -624,44 +624,44 @@ internal sealed class Locator : ILocator
     public async Task<string?> TextContentAsync(double? timeout = null)
     {
         using var cts = BuildActionCts(timeout);
-        var objectId = await ResolveObjectIdCoreAsync(cts.Token);
-        return await EvalOnElementAsync<string?>(objectId, "function() { return this.textContent; }", null, cts.Token);
+        var objectId = await ResolveObjectIdCoreAsync(cts.Token).ConfigureAwait(false);
+        return await EvalOnElementAsync<string?>(objectId, "function() { return this.textContent; }", null, cts.Token).ConfigureAwait(false);
     }
 
     public async Task<string> InnerTextAsync(double? timeout = null)
     {
         using var cts = BuildActionCts(timeout);
-        var objectId = await ResolveObjectIdCoreAsync(cts.Token);
-        return await EvalOnElementAsync<string>(objectId, "function() { return this.innerText; }", null, cts.Token);
+        var objectId = await ResolveObjectIdCoreAsync(cts.Token).ConfigureAwait(false);
+        return await EvalOnElementAsync<string>(objectId, "function() { return this.innerText; }", null, cts.Token).ConfigureAwait(false);
     }
 
     public async Task<string> InnerHTMLAsync(double? timeout = null)
     {
         using var cts = BuildActionCts(timeout);
-        var objectId = await ResolveObjectIdCoreAsync(cts.Token);
-        return await EvalOnElementAsync<string>(objectId, "function() { return this.innerHTML; }", null, cts.Token);
+        var objectId = await ResolveObjectIdCoreAsync(cts.Token).ConfigureAwait(false);
+        return await EvalOnElementAsync<string>(objectId, "function() { return this.innerHTML; }", null, cts.Token).ConfigureAwait(false);
     }
 
     public async Task<string?> GetAttributeAsync(string name, double? timeout = null)
     {
         using var cts = BuildActionCts(timeout);
-        var objectId = await ResolveObjectIdCoreAsync(cts.Token);
+        var objectId = await ResolveObjectIdCoreAsync(cts.Token).ConfigureAwait(false);
         return await EvalOnElementAsync<string?>(objectId,
             "function(name) { return this.getAttribute(name); }",
-            [new RuntimeCallArgument(Value: JsonSerializer.SerializeToElement(name))], cts.Token);
+            [new RuntimeCallArgument(Value: JsonSerializer.SerializeToElement(name))], cts.Token).ConfigureAwait(false);
     }
 
     public async Task<string> InputValueAsync(double? timeout = null)
     {
         using var cts = BuildActionCts(timeout);
-        var objectId = await ResolveObjectIdCoreAsync(cts.Token);
-        return await EvalOnElementAsync<string>(objectId, "function() { return this.value; }", null, cts.Token);
+        var objectId = await ResolveObjectIdCoreAsync(cts.Token).ConfigureAwait(false);
+        return await EvalOnElementAsync<string>(objectId, "function() { return this.value; }", null, cts.Token).ConfigureAwait(false);
     }
 
     public async Task<BoundingBox?> BoundingBoxAsync(double? timeout = null)
     {
         using var cts = BuildActionCts(timeout);
-        var objectId = await ResolveObjectIdCoreAsync(cts.Token);
+        var objectId = await ResolveObjectIdCoreAsync(cts.Token).ConfigureAwait(false);
         return await EvalOnElementAsync<BoundingBox?>(objectId,
             """
             function() {
@@ -669,26 +669,26 @@ internal sealed class Locator : ILocator
                 if (r.width === 0 && r.height === 0) return null;
                 return { x: r.x, y: r.y, width: r.width, height: r.height };
             }
-            """, null, cts.Token);
+            """, null, cts.Token).ConfigureAwait(false);
     }
 
     public async Task<int> CountAsync()
     {
         using var cts = BuildActionCts(null);
-        var handles = await ResolveAllHandlesAsync(cts.Token);
+        var handles = await ResolveAllHandlesAsync(cts.Token).ConfigureAwait(false);
         return handles.Count;
     }
 
     public async Task<IReadOnlyList<string>> AllInnerTextsAsync()
     {
         using var cts = BuildActionCts(null);
-        var handles = await ResolveAllHandlesAsync(cts.Token);
+        var handles = await ResolveAllHandlesAsync(cts.Token).ConfigureAwait(false);
         var results = new List<string>();
         foreach (var handle in handles)
         {
             var objectId = ((ElementHandle)handle).ObjectId;
             var text = await EvalOnElementAsync<string>(objectId,
-                "function() { return this.innerText; }", null, cts.Token);
+                "function() { return this.innerText; }", null, cts.Token).ConfigureAwait(false);
             results.Add(text);
         }
         return results;
@@ -697,11 +697,11 @@ internal sealed class Locator : ILocator
     public async Task<IReadOnlyList<string>> AllTextContentsAsync()
     {
         using var cts = BuildActionCts(null);
-        var handles = await ResolveAllHandlesAsync(cts.Token);
+        var handles = await ResolveAllHandlesAsync(cts.Token).ConfigureAwait(false);
         var results = new List<string>();
         foreach (var handle in handles)
         {
-            var text = await handle.TextContentAsync(cts.Token);
+            var text = await handle.TextContentAsync(cts.Token).ConfigureAwait(false);
             results.Add(text ?? string.Empty);
         }
         return results;
@@ -712,28 +712,28 @@ internal sealed class Locator : ILocator
     public async Task<bool> IsCheckedAsync(double? timeout = null)
     {
         using var cts = BuildActionCts(timeout);
-        var objectId = await ResolveObjectIdCoreAsync(cts.Token);
-        return await EvalOnElementAsync<bool>(objectId, "function() { return !!this.checked; }", null, cts.Token);
+        var objectId = await ResolveObjectIdCoreAsync(cts.Token).ConfigureAwait(false);
+        return await EvalOnElementAsync<bool>(objectId, "function() { return !!this.checked; }", null, cts.Token).ConfigureAwait(false);
     }
 
     public async Task<bool> IsDisabledAsync(double? timeout = null)
     {
         using var cts = BuildActionCts(timeout);
-        var objectId = await ResolveObjectIdCoreAsync(cts.Token);
-        return await EvalOnElementAsync<bool>(objectId, "function() { return !!this.disabled; }", null, cts.Token);
+        var objectId = await ResolveObjectIdCoreAsync(cts.Token).ConfigureAwait(false);
+        return await EvalOnElementAsync<bool>(objectId, "function() { return !!this.disabled; }", null, cts.Token).ConfigureAwait(false);
     }
 
     public async Task<bool> IsEnabledAsync(double? timeout = null)
     {
         using var cts = BuildActionCts(timeout);
-        var objectId = await ResolveObjectIdCoreAsync(cts.Token);
-        return await EvalOnElementAsync<bool>(objectId, "function() { return !this.disabled; }", null, cts.Token);
+        var objectId = await ResolveObjectIdCoreAsync(cts.Token).ConfigureAwait(false);
+        return await EvalOnElementAsync<bool>(objectId, "function() { return !this.disabled; }", null, cts.Token).ConfigureAwait(false);
     }
 
     public async Task<bool> IsEditableAsync(double? timeout = null)
     {
         using var cts = BuildActionCts(timeout);
-        var objectId = await ResolveObjectIdCoreAsync(cts.Token);
+        var objectId = await ResolveObjectIdCoreAsync(cts.Token).ConfigureAwait(false);
         return await EvalOnElementAsync<bool>(objectId,
             """
             function() {
@@ -742,13 +742,13 @@ internal sealed class Locator : ILocator
                 if (tag === 'input' || tag === 'textarea' || tag === 'select') return !this.disabled && !this.readOnly;
                 return false;
             }
-            """, null, cts.Token);
+            """, null, cts.Token).ConfigureAwait(false);
     }
 
     public async Task<bool> IsVisibleAsync(double? timeout = null)
     {
         using var cts = BuildActionCts(timeout);
-        var objectId = await ResolveObjectIdCoreAsync(cts.Token);
+        var objectId = await ResolveObjectIdCoreAsync(cts.Token).ConfigureAwait(false);
         return await EvalOnElementAsync<bool>(objectId,
             """
             function() {
@@ -759,12 +759,12 @@ internal sealed class Locator : ILocator
                 var r = this.getBoundingClientRect();
                 return r.width > 0 && r.height > 0;
             }
-            """, null, cts.Token);
+            """, null, cts.Token).ConfigureAwait(false);
     }
 
     public async Task<bool> IsHiddenAsync(double? timeout = null)
     {
-        return !await IsVisibleAsync(timeout);
+        return !await IsVisibleAsync(timeout).ConfigureAwait(false);
     }
 
     // --- Waiting ---
@@ -782,10 +782,10 @@ internal sealed class Locator : ILocator
             {
                 var satisfied = target switch
                 {
-                    ElementState.Attached => await TryResolveExistsAsync(ct),
-                    ElementState.Detached => !await TryResolveExistsAsync(ct),
-                    ElementState.Visible => await TryCheckVisibleAsync(ct),
-                    ElementState.Hidden => await TryCheckHiddenAsync(ct),
+                    ElementState.Attached => await TryResolveExistsAsync(ct).ConfigureAwait(false),
+                    ElementState.Detached => !await TryResolveExistsAsync(ct).ConfigureAwait(false),
+                    ElementState.Visible => await TryCheckVisibleAsync(ct).ConfigureAwait(false),
+                    ElementState.Hidden => await TryCheckHiddenAsync(ct).ConfigureAwait(false),
                     _ => false,
                 };
                 if (satisfied) return;
@@ -805,19 +805,19 @@ internal sealed class Locator : ILocator
                     lastEvaluatedValue: null,
                     message: $"WaitForAsync('{target}') timed out for selector '{_selector}'.");
             }
-            await Task.Delay(ActionabilityChecker.PollingIntervalMs, ct);
+            await Task.Delay(ActionabilityChecker.PollingIntervalMs, ct).ConfigureAwait(false);
         }
     }
 
     private async Task<bool> TryResolveExistsAsync(CancellationToken ct)
     {
-        await ResolveObjectIdCoreAsync(ct);
+        await ResolveObjectIdCoreAsync(ct).ConfigureAwait(false);
         return true;
     }
 
     private async Task<bool> TryCheckVisibleAsync(CancellationToken ct)
     {
-        var objectId = await ResolveObjectIdCoreAsync(ct);
+        var objectId = await ResolveObjectIdCoreAsync(ct).ConfigureAwait(false);
         return await EvalOnElementAsync<bool>(objectId,
             """
             function() {
@@ -828,12 +828,12 @@ internal sealed class Locator : ILocator
                 var r = this.getBoundingClientRect();
                 return r.width > 0 && r.height > 0;
             }
-            """, null, ct);
+            """, null, ct).ConfigureAwait(false);
     }
 
     private async Task<bool> TryCheckHiddenAsync(CancellationToken ct)
     {
-        var objectId = await ResolveObjectIdCoreAsync(ct);
+        var objectId = await ResolveObjectIdCoreAsync(ct).ConfigureAwait(false);
         return await EvalOnElementAsync<bool>(objectId,
             """
             function() {
@@ -842,7 +842,7 @@ internal sealed class Locator : ILocator
                        parseFloat(style.opacity) === 0 ||
                        this.getBoundingClientRect().width === 0;
             }
-            """, null, ct);
+            """, null, ct).ConfigureAwait(false);
     }
 
     // --- IWaitCondition Polling ---
@@ -859,9 +859,9 @@ internal sealed class Locator : ILocator
             while (true)
             {
                 cts.Token.ThrowIfCancellationRequested();
-                if (await condition.EvaluateAsync(_page, options))
+                if (await condition.EvaluateAsync(_page, options).ConfigureAwait(false))
                     return;
-                await Task.Delay(intervalMs, cts.Token);
+                await Task.Delay(intervalMs, cts.Token).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException)
@@ -879,14 +879,14 @@ internal sealed class Locator : ILocator
     public async Task<IElementHandle> ElementHandleAsync(double? timeout = null)
     {
         using var cts = BuildActionCts(timeout);
-        var objectId = await ResolveObjectIdCoreAsync(cts.Token);
+        var objectId = await ResolveObjectIdCoreAsync(cts.Token).ConfigureAwait(false);
         return new ElementHandle(_page.Session, objectId);
     }
 
     public async Task<IReadOnlyList<IElementHandle>> ElementHandlesAsync()
     {
         using var cts = BuildActionCts(null);
-        return await ResolveAllHandlesAsync(cts.Token);
+        return await ResolveAllHandlesAsync(cts.Token).ConfigureAwait(false);
     }
 
     private async Task<IReadOnlyList<IElementHandle>> ResolveAllHandlesAsync(CancellationToken ct)
@@ -897,6 +897,6 @@ internal sealed class Locator : ILocator
         if (!registry.TryGetStrategy(prefix, out var strategy))
             throw new InvalidOperationException($"No selector strategy registered for prefix: {prefix}");
 
-        return await strategy!.ResolveAsync(expression, _page.GetFrameForSelectors(), _pierceShadow, ct);
+        return await strategy!.ResolveAsync(expression, _page.GetFrameForSelectors(), _pierceShadow, ct).ConfigureAwait(false);
     }
 }

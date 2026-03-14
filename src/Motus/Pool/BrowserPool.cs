@@ -33,13 +33,13 @@ internal sealed class BrowserPool : IBrowserPool
         {
             tasks.Add(WarmUpOneAsync(ct));
         }
-        await Task.WhenAll(tasks);
+        await Task.WhenAll(tasks).ConfigureAwait(false);
     }
 
     private async Task WarmUpOneAsync(CancellationToken ct)
     {
-        await _capacitySemaphore.WaitAsync(ct);
-        var browser = await MotusLauncher.LaunchAsync(_options.LaunchOptions, ct);
+        await _capacitySemaphore.WaitAsync(ct).ConfigureAwait(false);
+        var browser = await MotusLauncher.LaunchAsync(_options.LaunchOptions, ct).ConfigureAwait(false);
         SubscribeDisconnected(browser);
         Interlocked.Increment(ref _idleCount);
         _idleChannel.Writer.TryWrite(browser);
@@ -59,7 +59,7 @@ internal sealed class BrowserPool : IBrowserPool
                 return new BrowserLease(idle, ReturnAsync);
             }
             // Disconnected browser; discard and release capacity
-            await idle.DisposeAsync();
+            await idle.DisposeAsync().ConfigureAwait(false);
             _capacitySemaphore.Release();
         }
 
@@ -67,7 +67,7 @@ internal sealed class BrowserPool : IBrowserPool
         using var timeoutCts = new CancellationTokenSource(_options.AcquireTimeout);
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
 
-        if (!await _capacitySemaphore.WaitAsync(0, CancellationToken.None))
+        if (!await _capacitySemaphore.WaitAsync(0, CancellationToken.None).ConfigureAwait(false))
         {
             // At capacity. Wait for either a return or a timeout.
             // Try reading from idle channel (a browser may be returned while we wait)
@@ -84,12 +84,12 @@ internal sealed class BrowserPool : IBrowserPool
                         Interlocked.Increment(ref _activeCount);
                         return new BrowserLease(returned, ReturnAsync);
                     }
-                    await returned.DisposeAsync();
+                    await returned.DisposeAsync().ConfigureAwait(false);
                     _capacitySemaphore.Release();
                 }
 
                 // Try to acquire capacity with timeout
-                if (await _capacitySemaphore.WaitAsync(_options.AcquireTimeout, delayCts.Token))
+                if (await _capacitySemaphore.WaitAsync(_options.AcquireTimeout, delayCts.Token).ConfigureAwait(false))
                     break;
 
                 throw new TimeoutException(
@@ -108,11 +108,11 @@ internal sealed class BrowserPool : IBrowserPool
                 Interlocked.Increment(ref _activeCount);
                 return new BrowserLease(recheck, ReturnAsync);
             }
-            await recheck.DisposeAsync();
+            await recheck.DisposeAsync().ConfigureAwait(false);
             // Capacity already consumed for this launch attempt
         }
 
-        var browser = await MotusLauncher.LaunchAsync(_options.LaunchOptions, linkedCts.Token);
+        var browser = await MotusLauncher.LaunchAsync(_options.LaunchOptions, linkedCts.Token).ConfigureAwait(false);
         SubscribeDisconnected(browser);
         Interlocked.Increment(ref _activeCount);
         return new BrowserLease(browser, ReturnAsync);
@@ -155,7 +155,7 @@ internal sealed class BrowserPool : IBrowserPool
         while (_idleChannel.Reader.TryRead(out var browser))
         {
             Interlocked.Decrement(ref _idleCount);
-            await browser.DisposeAsync();
+            await browser.DisposeAsync().ConfigureAwait(false);
         }
 
         _capacitySemaphore.Dispose();

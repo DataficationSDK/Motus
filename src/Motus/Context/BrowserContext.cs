@@ -107,7 +107,7 @@ internal sealed class BrowserContext : IBrowserContext
             new TargetCreateTargetParams("about:blank", BrowserContextId: _browserContextId),
             CdpJsonContext.Default.TargetCreateTargetParams,
             CdpJsonContext.Default.TargetCreateTargetResult,
-            CancellationToken.None);
+            CancellationToken.None).ConfigureAwait(false);
 
         // Attach to the target to get a session
         var attachResult = await _registry.BrowserSession.SendAsync(
@@ -115,14 +115,14 @@ internal sealed class BrowserContext : IBrowserContext
             new TargetAttachToTargetParams(createResult.TargetId, Flatten: true),
             CdpJsonContext.Default.TargetAttachToTargetParams,
             CdpJsonContext.Default.TargetAttachToTargetResult,
-            CancellationToken.None);
+            CancellationToken.None).ConfigureAwait(false);
 
         var session = _registry.CreateSession(attachResult.SessionId);
         var page = new Page(session, this, createResult.TargetId);
-        await page.InitializeAsync(CancellationToken.None);
+        await page.InitializeAsync(CancellationToken.None).ConfigureAwait(false);
 
         // Apply context options (viewport, locale, timezone, etc.)
-        await ApplyContextOptionsToPageAsync(page);
+        await ApplyContextOptionsToPageAsync(page).ConfigureAwait(false);
 
         // Propagate context-level extra headers to the new page
         Dictionary<string, string> extraHeaders;
@@ -135,7 +135,7 @@ internal sealed class BrowserContext : IBrowserContext
                 new NetworkSetExtraHttpHeadersParams(extraHeaders),
                 CdpJsonContext.Default.NetworkSetExtraHttpHeadersParams,
                 CdpJsonContext.Default.NetworkSetExtraHttpHeadersResult,
-                CancellationToken.None);
+                CancellationToken.None).ConfigureAwait(false);
         }
 
         // Propagate context-level offline state to the new page
@@ -148,7 +148,7 @@ internal sealed class BrowserContext : IBrowserContext
                     DownloadThroughput: -1, UploadThroughput: -1),
                 CdpJsonContext.Default.NetworkEmulateNetworkConditionsParams,
                 CdpJsonContext.Default.NetworkEmulateNetworkConditionsResult,
-                CancellationToken.None);
+                CancellationToken.None).ConfigureAwait(false);
         }
 
         // Restore storage state (one-time per context)
@@ -157,7 +157,7 @@ internal sealed class BrowserContext : IBrowserContext
             var state = _options.StorageState;
 
             if (state.Cookies.Count > 0)
-                await AddCookiesInternalAsync(page, state.Cookies);
+                await AddCookiesInternalAsync(page, state.Cookies).ConfigureAwait(false);
 
             if (state.Origins.Count > 0)
             {
@@ -174,7 +174,7 @@ internal sealed class BrowserContext : IBrowserContext
                         new RuntimeEvaluateParams(Expression: script, ReturnByValue: true),
                         CdpJsonContext.Default.RuntimeEvaluateParams,
                         CdpJsonContext.Default.RuntimeEvaluateResult,
-                        CancellationToken.None);
+                        CancellationToken.None).ConfigureAwait(false);
                 }
             }
         }
@@ -182,7 +182,7 @@ internal sealed class BrowserContext : IBrowserContext
         lock (_pages)
             _pages.Add(page);
 
-        await _lifecycleHooks.FireOnPageCreatedAsync(page);
+        await _lifecycleHooks.FireOnPageCreatedAsync(page).ConfigureAwait(false);
         Page?.Invoke(this, page);
 
         return page;
@@ -200,7 +200,7 @@ internal sealed class BrowserContext : IBrowserContext
                 new TargetCloseTargetParams(targetId),
                 CdpJsonContext.Default.TargetCloseTargetParams,
                 CdpJsonContext.Default.TargetCloseTargetResult,
-                CancellationToken.None);
+                CancellationToken.None).ConfigureAwait(false);
         }
         catch (CdpDisconnectedException)
         {
@@ -215,7 +215,7 @@ internal sealed class BrowserContext : IBrowserContext
 
         // Unload plugins before closing pages
         if (PluginHost is not null)
-            await PluginHost.UnloadAsync();
+            await PluginHost.UnloadAsync().ConfigureAwait(false);
 
         // Close all pages
         List<Page> pagesToClose;
@@ -224,8 +224,8 @@ internal sealed class BrowserContext : IBrowserContext
 
         foreach (var page in pagesToClose)
         {
-            await _lifecycleHooks.FireOnPageClosedAsync(page);
-            await page.DisposeAsync();
+            await _lifecycleHooks.FireOnPageClosedAsync(page).ConfigureAwait(false);
+            await page.DisposeAsync().ConfigureAwait(false);
         }
 
         lock (_pages)
@@ -239,7 +239,7 @@ internal sealed class BrowserContext : IBrowserContext
                 new TargetDisposeBrowserContextParams(_browserContextId),
                 CdpJsonContext.Default.TargetDisposeBrowserContextParams,
                 CdpJsonContext.Default.TargetDisposeBrowserContextResult,
-                CancellationToken.None);
+                CancellationToken.None).ConfigureAwait(false);
         }
         catch (CdpDisconnectedException)
         {
@@ -249,7 +249,7 @@ internal sealed class BrowserContext : IBrowserContext
         Close?.Invoke(this, EventArgs.Empty);
     }
 
-    public async ValueTask DisposeAsync() => await CloseAsync();
+    public async ValueTask DisposeAsync() => await CloseAsync().ConfigureAwait(false);
 
     // --- Cookies ---
 
@@ -261,7 +261,7 @@ internal sealed class BrowserContext : IBrowserContext
             new NetworkGetCookiesParams(urls?.ToArray()),
             CdpJsonContext.Default.NetworkGetCookiesParams,
             CdpJsonContext.Default.NetworkGetCookiesResult,
-            CancellationToken.None);
+            CancellationToken.None).ConfigureAwait(false);
 
         return result.Cookies.Select(c => new Cookie(
             c.Name, c.Value, c.Domain, c.Path, c.Expires,
@@ -285,7 +285,7 @@ internal sealed class BrowserContext : IBrowserContext
                     Expires: cookie.Expires > 0 ? cookie.Expires : null),
                 CdpJsonContext.Default.NetworkSetCookieParams,
                 CdpJsonContext.Default.NetworkSetCookieResult,
-                CancellationToken.None);
+                CancellationToken.None).ConfigureAwait(false);
         }
     }
 
@@ -295,7 +295,7 @@ internal sealed class BrowserContext : IBrowserContext
         await page.Session.SendAsync(
             "Network.clearBrowserCookies",
             CdpJsonContext.Default.NetworkClearBrowserCookiesResult,
-            CancellationToken.None);
+            CancellationToken.None).ConfigureAwait(false);
     }
 
     // --- Permissions ---
@@ -310,7 +310,7 @@ internal sealed class BrowserContext : IBrowserContext
                 BrowserContextId: _browserContextId),
             CdpJsonContext.Default.BrowserGrantPermissionsParams,
             CdpJsonContext.Default.BrowserGrantPermissionsResult,
-            CancellationToken.None);
+            CancellationToken.None).ConfigureAwait(false);
     }
 
     public async Task ClearPermissionsAsync()
@@ -318,7 +318,7 @@ internal sealed class BrowserContext : IBrowserContext
         await _registry.BrowserSession.SendAsync(
             "Browser.resetPermissions",
             CdpJsonContext.Default.BrowserResetPermissionsResult,
-            CancellationToken.None);
+            CancellationToken.None).ConfigureAwait(false);
     }
 
     // --- Geolocation ---
@@ -334,7 +334,7 @@ internal sealed class BrowserContext : IBrowserContext
                 geolocation?.Accuracy),
             CdpJsonContext.Default.EmulationSetGeolocationOverrideParams,
             CdpJsonContext.Default.EmulationSetGeolocationOverrideResult,
-            CancellationToken.None);
+            CancellationToken.None).ConfigureAwait(false);
     }
 
     // --- Bindings & Init Scripts ---
@@ -350,7 +350,7 @@ internal sealed class BrowserContext : IBrowserContext
 
         foreach (var page in currentPages)
         {
-            await page.ExposeBindingInternalAsync(name, callback);
+            await page.ExposeBindingInternalAsync(name, callback).ConfigureAwait(false);
         }
     }
 
@@ -366,7 +366,7 @@ internal sealed class BrowserContext : IBrowserContext
 
         foreach (var page in currentPages)
         {
-            await page.AddInitScriptInternalAsync(script);
+            await page.AddInitScriptInternalAsync(script).ConfigureAwait(false);
         }
     }
 
@@ -382,7 +382,7 @@ internal sealed class BrowserContext : IBrowserContext
             currentPages = _pages.ToList();
 
         foreach (var page in currentPages)
-            await page.RouteAsync(urlPattern, handler);
+            await page.RouteAsync(urlPattern, handler).ConfigureAwait(false);
     }
 
     public async Task UnrouteAsync(string urlPattern, Func<IRoute, Task>? handler = null)
@@ -400,7 +400,7 @@ internal sealed class BrowserContext : IBrowserContext
             currentPages = _pages.ToList();
 
         foreach (var page in currentPages)
-            await page.UnrouteAsync(urlPattern, handler);
+            await page.UnrouteAsync(urlPattern, handler).ConfigureAwait(false);
     }
 
     public async Task SetOfflineAsync(bool offline)
@@ -420,7 +420,7 @@ internal sealed class BrowserContext : IBrowserContext
                     DownloadThroughput: -1, UploadThroughput: -1),
                 CdpJsonContext.Default.NetworkEmulateNetworkConditionsParams,
                 CdpJsonContext.Default.NetworkEmulateNetworkConditionsResult,
-                CancellationToken.None);
+                CancellationToken.None).ConfigureAwait(false);
         }
     }
 
@@ -444,7 +444,7 @@ internal sealed class BrowserContext : IBrowserContext
                 new NetworkSetExtraHttpHeadersParams(new Dictionary<string, string>(headers)),
                 CdpJsonContext.Default.NetworkSetExtraHttpHeadersParams,
                 CdpJsonContext.Default.NetworkSetExtraHttpHeadersResult,
-                CancellationToken.None);
+                CancellationToken.None).ConfigureAwait(false);
         }
     }
 
@@ -477,7 +477,7 @@ internal sealed class BrowserContext : IBrowserContext
 
         if (currentPages.Count > 0)
         {
-            cookies = await CookiesAsync();
+            cookies = await CookiesAsync().ConfigureAwait(false);
         }
         else
         {
@@ -501,7 +501,7 @@ internal sealed class BrowserContext : IBrowserContext
                         ReturnByValue: true),
                     CdpJsonContext.Default.RuntimeEvaluateParams,
                     CdpJsonContext.Default.RuntimeEvaluateResult,
-                    CancellationToken.None);
+                    CancellationToken.None).ConfigureAwait(false);
 
                 if (result.Result.Value is System.Text.Json.JsonElement el
                     && el.ValueKind == System.Text.Json.JsonValueKind.String)
@@ -528,7 +528,7 @@ internal sealed class BrowserContext : IBrowserContext
         if (path is not null)
         {
             var json = System.Text.Json.JsonSerializer.Serialize(state);
-            await File.WriteAllTextAsync(path, json);
+            await File.WriteAllTextAsync(path, json).ConfigureAwait(false);
         }
 
         return state;
@@ -553,7 +553,7 @@ internal sealed class BrowserContext : IBrowserContext
                     Mobile: false),
                 CdpJsonContext.Default.EmulationSetDeviceMetricsOverrideParams,
                 CdpJsonContext.Default.EmulationSetDeviceMetricsOverrideResult,
-                CancellationToken.None);
+                CancellationToken.None).ConfigureAwait(false);
         }
 
         if (_options.Locale is not null)
@@ -563,7 +563,7 @@ internal sealed class BrowserContext : IBrowserContext
                 new EmulationSetLocaleOverrideParams(_options.Locale),
                 CdpJsonContext.Default.EmulationSetLocaleOverrideParams,
                 CdpJsonContext.Default.EmulationSetLocaleOverrideResult,
-                CancellationToken.None);
+                CancellationToken.None).ConfigureAwait(false);
         }
 
         if (_options.TimezoneId is not null)
@@ -573,7 +573,7 @@ internal sealed class BrowserContext : IBrowserContext
                 new EmulationSetTimezoneOverrideParams(_options.TimezoneId),
                 CdpJsonContext.Default.EmulationSetTimezoneOverrideParams,
                 CdpJsonContext.Default.EmulationSetTimezoneOverrideResult,
-                CancellationToken.None);
+                CancellationToken.None).ConfigureAwait(false);
         }
 
         if (_options.ColorScheme is not null)
@@ -586,7 +586,7 @@ internal sealed class BrowserContext : IBrowserContext
                         _options.ColorScheme.Value.ToString().ToLowerInvariant())]),
                 CdpJsonContext.Default.EmulationSetEmulatedMediaParams,
                 CdpJsonContext.Default.EmulationSetEmulatedMediaResult,
-                CancellationToken.None);
+                CancellationToken.None).ConfigureAwait(false);
         }
 
         if (_options.UserAgent is not null)
@@ -596,7 +596,7 @@ internal sealed class BrowserContext : IBrowserContext
                 new EmulationSetUserAgentOverrideParams(_options.UserAgent),
                 CdpJsonContext.Default.EmulationSetUserAgentOverrideParams,
                 CdpJsonContext.Default.EmulationSetUserAgentOverrideResult,
-                CancellationToken.None);
+                CancellationToken.None).ConfigureAwait(false);
         }
 
         if (_options.IgnoreHTTPSErrors)
@@ -604,14 +604,14 @@ internal sealed class BrowserContext : IBrowserContext
             await page.Session.SendAsync(
                 "Security.enable",
                 CdpJsonContext.Default.SecurityEnableResult,
-                CancellationToken.None);
+                CancellationToken.None).ConfigureAwait(false);
 
             await page.Session.SendAsync(
                 "Security.setIgnoreCertificateErrors",
                 new SecuritySetIgnoreCertificateErrorsParams(Ignore: true),
                 CdpJsonContext.Default.SecuritySetIgnoreCertificateErrorsParams,
                 CdpJsonContext.Default.SecuritySetIgnoreCertificateErrorsResult,
-                CancellationToken.None);
+                CancellationToken.None).ConfigureAwait(false);
         }
 
         if (_options.Geolocation is not null)
@@ -624,12 +624,12 @@ internal sealed class BrowserContext : IBrowserContext
                     _options.Geolocation.Accuracy),
                 CdpJsonContext.Default.EmulationSetGeolocationOverrideParams,
                 CdpJsonContext.Default.EmulationSetGeolocationOverrideResult,
-                CancellationToken.None);
+                CancellationToken.None).ConfigureAwait(false);
         }
 
         if (_options.HttpCredentials is not null)
         {
-            await page.EnableAuthHandlingAsync();
+            await page.EnableAuthHandlingAsync().ConfigureAwait(false);
         }
     }
 
@@ -649,7 +649,7 @@ internal sealed class BrowserContext : IBrowserContext
                     Expires: cookie.Expires > 0 ? cookie.Expires : null),
                 CdpJsonContext.Default.NetworkSetCookieParams,
                 CdpJsonContext.Default.NetworkSetCookieResult,
-                CancellationToken.None);
+                CancellationToken.None).ConfigureAwait(false);
         }
     }
 

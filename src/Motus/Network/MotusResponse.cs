@@ -48,7 +48,7 @@ internal sealed class MotusResponse : IResponse
             new NetworkGetResponseBodyParams(_networkRequestId),
             CdpJsonContext.Default.NetworkGetResponseBodyParams,
             CdpJsonContext.Default.NetworkGetResponseBodyResult,
-            ct);
+            ct).ConfigureAwait(false);
 
         _body = result.Base64Encoded
             ? Convert.FromBase64String(result.Body)
@@ -58,8 +58,8 @@ internal sealed class MotusResponse : IResponse
     }
 
     public async Task<string> TextAsync(CancellationToken ct = default) =>
-        Encoding.UTF8.GetString(await BodyAsync(ct));
+        Encoding.UTF8.GetString(await BodyAsync(ct).ConfigureAwait(false));
 
     public async Task<T> JsonAsync<T>(CancellationToken ct = default) =>
-        JsonSerializer.Deserialize<T>(await TextAsync(ct))!;
+        JsonSerializer.Deserialize<T>(await TextAsync(ct).ConfigureAwait(false))!;
 }

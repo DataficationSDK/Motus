@@ -14,7 +14,7 @@ internal sealed partial class Page
         if (_context.BaseURL is not null && !Uri.IsWellFormedUriString(url, UriKind.Absolute))
             url = new Uri(new Uri(_context.BaseURL), url).ToString();
 
-        await _context.LifecycleHooks.FireBeforeNavigationAsync(this, url);
+        await _context.LifecycleHooks.FireBeforeNavigationAsync(this, url).ConfigureAwait(false);
 
         var waitUntil = options?.WaitUntil ?? WaitUntil.Load;
         var timeout = TimeSpan.FromMilliseconds(options?.Timeout ?? 30_000);
@@ -26,15 +26,15 @@ internal sealed partial class Page
             new PageNavigateParams(url, Referrer: options?.Referer),
             CdpJsonContext.Default.PageNavigateParams,
             CdpJsonContext.Default.PageNavigateResult,
-            _pageCts.Token);
+            _pageCts.Token).ConfigureAwait(false);
 
         if (result.ErrorText is not null)
             throw new MotusNavigationException(url, errorCode: result.ErrorText, pageUrl: Url);
 
-        await waiter;
+        await waiter.ConfigureAwait(false);
 
         IResponse? response = _networkManager?.GetLastNavigationResponse();
-        await _context.LifecycleHooks.FireAfterNavigationAsync(this, response);
+        await _context.LifecycleHooks.FireAfterNavigationAsync(this, response).ConfigureAwait(false);
         return response;
     }
 
@@ -43,13 +43,13 @@ internal sealed partial class Page
         var history = await _session.SendAsync(
             "Page.getNavigationHistory",
             CdpJsonContext.Default.PageGetNavigationHistoryResult,
-            _pageCts.Token);
+            _pageCts.Token).ConfigureAwait(false);
 
         if (history.CurrentIndex <= 0)
             return null;
 
         var entry = history.Entries[history.CurrentIndex - 1];
-        await _context.LifecycleHooks.FireBeforeNavigationAsync(this, entry.Url);
+        await _context.LifecycleHooks.FireBeforeNavigationAsync(this, entry.Url).ConfigureAwait(false);
 
         var waitUntil = options?.WaitUntil ?? WaitUntil.Load;
         var timeout = TimeSpan.FromMilliseconds(options?.Timeout ?? 30_000);
@@ -61,12 +61,12 @@ internal sealed partial class Page
             new PageNavigateToHistoryEntryParams(entry.Id),
             CdpJsonContext.Default.PageNavigateToHistoryEntryParams,
             CdpJsonContext.Default.PageNavigateToHistoryEntryResult,
-            _pageCts.Token);
+            _pageCts.Token).ConfigureAwait(false);
 
-        await waiter;
+        await waiter.ConfigureAwait(false);
 
         IResponse? response = _networkManager?.GetLastNavigationResponse();
-        await _context.LifecycleHooks.FireAfterNavigationAsync(this, response);
+        await _context.LifecycleHooks.FireAfterNavigationAsync(this, response).ConfigureAwait(false);
         return response;
     }
 
@@ -75,13 +75,13 @@ internal sealed partial class Page
         var history = await _session.SendAsync(
             "Page.getNavigationHistory",
             CdpJsonContext.Default.PageGetNavigationHistoryResult,
-            _pageCts.Token);
+            _pageCts.Token).ConfigureAwait(false);
 
         if (history.CurrentIndex >= history.Entries.Length - 1)
             return null;
 
         var entry = history.Entries[history.CurrentIndex + 1];
-        await _context.LifecycleHooks.FireBeforeNavigationAsync(this, entry.Url);
+        await _context.LifecycleHooks.FireBeforeNavigationAsync(this, entry.Url).ConfigureAwait(false);
 
         var waitUntil = options?.WaitUntil ?? WaitUntil.Load;
         var timeout = TimeSpan.FromMilliseconds(options?.Timeout ?? 30_000);
@@ -93,18 +93,18 @@ internal sealed partial class Page
             new PageNavigateToHistoryEntryParams(entry.Id),
             CdpJsonContext.Default.PageNavigateToHistoryEntryParams,
             CdpJsonContext.Default.PageNavigateToHistoryEntryResult,
-            _pageCts.Token);
+            _pageCts.Token).ConfigureAwait(false);
 
-        await waiter;
+        await waiter.ConfigureAwait(false);
 
         IResponse? response = _networkManager?.GetLastNavigationResponse();
-        await _context.LifecycleHooks.FireAfterNavigationAsync(this, response);
+        await _context.LifecycleHooks.FireAfterNavigationAsync(this, response).ConfigureAwait(false);
         return response;
     }
 
     public async Task<IResponse?> ReloadAsync(NavigationOptions? options = null)
     {
-        await _context.LifecycleHooks.FireBeforeNavigationAsync(this, Url);
+        await _context.LifecycleHooks.FireBeforeNavigationAsync(this, Url).ConfigureAwait(false);
 
         var waitUntil = options?.WaitUntil ?? WaitUntil.Load;
         var timeout = TimeSpan.FromMilliseconds(options?.Timeout ?? 30_000);
@@ -114,12 +114,12 @@ internal sealed partial class Page
         await _session.SendAsync(
             "Page.reload",
             CdpJsonContext.Default.PageReloadResult,
-            _pageCts.Token);
+            _pageCts.Token).ConfigureAwait(false);
 
-        await waiter;
+        await waiter.ConfigureAwait(false);
 
         IResponse? response = _networkManager?.GetLastNavigationResponse();
-        await _context.LifecycleHooks.FireAfterNavigationAsync(this, response);
+        await _context.LifecycleHooks.FireAfterNavigationAsync(this, response).ConfigureAwait(false);
         return response;
     }
 
@@ -133,7 +133,7 @@ internal sealed partial class Page
             if (_networkManager is null)
                 throw new InvalidOperationException("NetworkManager is not initialized.");
             await _networkManager.WaitForNetworkIdleAsync(
-                TimeSpan.FromMilliseconds(500), TimeSpan.FromMilliseconds(timeoutMs));
+                TimeSpan.FromMilliseconds(500), TimeSpan.FromMilliseconds(timeoutMs)).ConfigureAwait(false);
             return;
         }
 
@@ -141,7 +141,7 @@ internal sealed partial class Page
             ? WaitUntil.DOMContentLoaded
             : WaitUntil.Load;
 
-        await CreateLifecycleWaiter(waitUntil, TimeSpan.FromMilliseconds(timeoutMs));
+        await CreateLifecycleWaiter(waitUntil, TimeSpan.FromMilliseconds(timeoutMs)).ConfigureAwait(false);
     }
 
     public async Task WaitForURLAsync(string urlPattern, NavigationOptions? options = null)
@@ -155,7 +155,7 @@ internal sealed partial class Page
             if (UrlMatches(Url, urlPattern))
                 return;
 
-            await Task.Delay(100, cts.Token);
+            await Task.Delay(100, cts.Token).ConfigureAwait(false);
         }
 
         throw new WaitTimeoutException(
@@ -166,7 +166,7 @@ internal sealed partial class Page
     }
 
     public async Task WaitForTimeoutAsync(double timeout) =>
-        await Task.Delay(TimeSpan.FromMilliseconds(timeout), _pageCts.Token);
+        await Task.Delay(TimeSpan.FromMilliseconds(timeout), _pageCts.Token).ConfigureAwait(false);
 
     private Task CreateLifecycleWaiter(WaitUntil waitUntil, TimeSpan timeout)
     {

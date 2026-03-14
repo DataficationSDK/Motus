@@ -29,7 +29,7 @@ internal sealed class RoleSelectorStrategy : ISelectorStrategy
             await page.Session.SendAsync(
                 "Accessibility.enable",
                 CdpJsonContext.Default.AccessibilityEnableResult,
-                ct);
+                ct).ConfigureAwait(false);
             _accessibilityEnabled = true;
         }
 
@@ -41,7 +41,7 @@ internal sealed class RoleSelectorStrategy : ISelectorStrategy
                 Role: role),
             CdpJsonContext.Default.AccessibilityQueryAXTreeParams,
             CdpJsonContext.Default.AccessibilityQueryAXTreeResult,
-            ct);
+            ct).ConfigureAwait(false);
 
         var handles = new List<IElementHandle>();
         foreach (var node in queryResult.Nodes)
@@ -50,7 +50,7 @@ internal sealed class RoleSelectorStrategy : ISelectorStrategy
                 continue;
 
             var handle = await SelectorStrategyHelpers.ResolveNodeToHandleAsync(
-                page, node.BackendDOMNodeId.Value, ct);
+                page, node.BackendDOMNodeId.Value, ct).ConfigureAwait(false);
             handles.Add(handle);
         }
 
@@ -60,12 +60,12 @@ internal sealed class RoleSelectorStrategy : ISelectorStrategy
     public async Task<string?> GenerateSelector(IElementHandle element, CancellationToken ct = default)
     {
         var role = await element.EvaluateAsync<string?>(
-            "function() { return this.getAttribute('role'); }");
+            "function() { return this.getAttribute('role'); }").ConfigureAwait(false);
         if (role is null)
             return null;
 
         var name = await element.EvaluateAsync<string?>(
-            "function() { return this.getAttribute('aria-label') || this.textContent?.trim(); }");
+            "function() { return this.getAttribute('aria-label') || this.textContent?.trim(); }").ConfigureAwait(false);
 
         if (name is not null && name.Length <= 100)
             return $"""role={role}[name="{name}"]""";

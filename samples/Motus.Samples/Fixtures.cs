@@ -7,7 +7,32 @@ namespace Motus.Samples;
 public static class Fixtures
 {
     /// <summary>
+    /// Loads inline HTML by navigating to a data URI. This triggers a real
+    /// navigation with proper lifecycle events (frameNavigated, loadEventFired),
+    /// so the page is fully laid out and elements pass actionability checks
+    /// (stable, receivesEvents) by the time GotoAsync returns.
+    /// </summary>
+    public static async Task SetPageContentAsync(IPage page, string html)
+    {
+        var base64 = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(html));
+        await page.GotoAsync($"data:text/html;base64,{base64}");
+    }
+
+    /// <summary>
+    /// Loads HTML via about:blank + SetContentAsync. Use this instead of
+    /// <see cref="SetPageContentAsync"/> when the page needs to make relative
+    /// fetch requests (e.g. network mocking tests), since data: URIs have an
+    /// opaque origin that prevents relative URL resolution.
+    /// </summary>
+    public static async Task SetPageContentViaBlankAsync(IPage page, string html)
+    {
+        await page.GotoAsync("about:blank");
+        await page.SetContentAsync(html);
+    }
+
+    /// <summary>
     /// A fully functional todo app with add, complete, clear-completed, and active count.
+    /// Buttons carry explicit role/aria-label so GetByRole selectors resolve correctly.
     /// </summary>
     public const string TodoApp = """
         <!DOCTYPE html>
@@ -17,7 +42,7 @@ public static class Fixtures
             <h1>Todo App</h1>
             <div>
                 <input id="new-todo" placeholder="What needs to be done?" aria-label="New Todo" data-testid="new-todo-input" />
-                <button id="add-btn" onclick="addTodo()">Add</button>
+                <button id="add-btn" role="button" aria-label="Add" onclick="addTodo()">Add</button>
             </div>
             <ul id="todo-list"></ul>
             <div>
@@ -33,6 +58,7 @@ public static class Fixtures
                     li.className = 'todo-item';
                     const cb = document.createElement('input');
                     cb.type = 'checkbox';
+                    cb.style.cssText = 'width:16px;height:16px;';
                     cb.onchange = function() {
                         li.classList.toggle('completed', cb.checked);
                         updateCount();
@@ -60,6 +86,8 @@ public static class Fixtures
 
     /// <summary>
     /// A login form with email, password, remember-me checkbox, role select, and validation feedback.
+    /// The checkbox is a standalone element (not wrapped in a label) so CheckAsync can click its center.
+    /// Form submission is wired via both onsubmit and an explicit Enter-key handler for reliability.
     /// </summary>
     public const string LoginForm = """
         <!DOCTYPE html>
@@ -77,7 +105,8 @@ public static class Fixtures
                     <input id="password" type="password" placeholder="Enter password" aria-label="Password" />
                 </div>
                 <div>
-                    <label><input id="remember" type="checkbox" /> Remember me</label>
+                    <input id="remember" type="checkbox" style="width:20px; height:20px;" />
+                    <label for="remember">Remember me</label>
                 </div>
                 <div>
                     <label for="role">Role</label>
@@ -99,6 +128,13 @@ public static class Fixtures
                     feedback.textContent = 'Welcome, ' + email + '!';
                     feedback.style.display = 'block';
                 }
+                // Explicit Enter-key handler so PressAsync("Enter") reliably submits
+                document.getElementById('email').addEventListener('keydown', function(e) {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleSubmit(e);
+                    }
+                });
             </script>
         </body>
         </html>
@@ -106,24 +142,25 @@ public static class Fixtures
 
     /// <summary>
     /// A dashboard with cards, nav links, toggleable sidebar, and styled elements for CSS assertions.
+    /// Elements use display:block layout with explicit margins to avoid overlap for hit-testing.
     /// </summary>
     public const string Dashboard = """
         <!DOCTYPE html>
         <html>
         <head><title>Dashboard</title></head>
-        <body>
-            <nav>
+        <body style="margin:8px;">
+            <nav style="display:block; margin-bottom:8px;">
                 <a href="/home" data-testid="nav-home">Home</a>
                 <a href="/reports" data-testid="nav-reports">Reports</a>
                 <a href="/settings" data-testid="nav-settings">Settings</a>
             </nav>
-            <h1>Dashboard</h1>
-            <button id="toggle-sidebar" onclick="toggleSidebar()">Toggle Sidebar</button>
-            <aside id="sidebar" style="display:block; background-color: rgb(240, 240, 240); padding: 16px;">
+            <h1 data-testid="main-heading">Dashboard</h1>
+            <button id="toggle-sidebar" style="display:block; margin:8px 0; padding:4px 12px;" onclick="toggleSidebar()">Toggle Sidebar</button>
+            <aside id="sidebar" style="display:block; background-color: rgb(240, 240, 240); padding: 16px; margin-top:8px;">
                 <h2>Sidebar</h2>
                 <p>Navigation panel</p>
             </aside>
-            <div class="cards">
+            <div class="cards" style="margin-top:8px;">
                 <div class="card" data-testid="card-revenue">
                     <h3>Revenue</h3>
                     <p>$12,345</p>
@@ -156,13 +193,13 @@ public static class Fixtures
         <head><title>API Demo</title></head>
         <body>
             <h1>API Demo</h1>
-            <button id="fetch-btn" onclick="fetchData()">Load Data</button>
+            <button id="fetch-btn" style="display:block; padding:4px 12px;" onclick="fetchData()">Load Data</button>
             <div id="result"></div>
             <div id="error" style="display:none; color:red;"></div>
             <script>
                 async function fetchData() {
                     try {
-                        const res = await fetch('/api/data');
+                        const res = await fetch('http://localhost/api/data');
                         if (!res.ok) {
                             document.getElementById('error').textContent = 'Error: ' + res.status;
                             document.getElementById('error').style.display = 'block';

@@ -124,13 +124,7 @@ public class LifecycleHookTests
         _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""boolean"", ""value"": true}}}}}}");
         // stable
         _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""boolean"", ""value"": true}}}}}}");
-        // receives-events: bounding box
-        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""object"", ""value"": {{""x"": 10, ""y"": 10, ""width"": 50, ""height"": 30}}}}}}}}");
-        // DOM.getNodeForLocation
-        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""backendNodeId"": 1}}}}");
-        // DOM.resolveNode
-        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""object"": {{""type"": ""object"", ""objectId"": ""r-1""}}}}}}");
-        // identity
+        // receives-events: pure JS elementFromPoint check
         _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""boolean"", ""value"": true}}}}}}");
         // bounding box for click
         _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""object"", ""value"": {{""x"": 10, ""y"": 10, ""width"": 50, ""height"": 30}}}}}}}}");

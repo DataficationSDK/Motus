@@ -31,7 +31,7 @@ internal sealed class FileChooser : IFileChooser
             foreach (var file in files)
             {
                 var tempPath = Path.Combine(Path.GetTempPath(), file.Name);
-                await File.WriteAllBytesAsync(tempPath, file.Buffer, ct);
+                await File.WriteAllBytesAsync(tempPath, file.Buffer, ct).ConfigureAwait(false);
                 tempFiles.Add(tempPath);
             }
 
@@ -41,7 +41,7 @@ internal sealed class FileChooser : IFileChooser
                 new DomSetFileInputFilesParams(Files: tempFiles.ToArray()),
                 CdpJsonContext.Default.DomSetFileInputFilesParams,
                 CdpJsonContext.Default.DomSetFileInputFilesResult,
-                ct);
+                ct).ConfigureAwait(false);
         }
         finally
         {

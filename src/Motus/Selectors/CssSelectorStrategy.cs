@@ -35,7 +35,7 @@ internal sealed class CssSelectorStrategy : ISelectorStrategy
                 """
             : $"""Array.from(document.querySelectorAll("{escaped}"))""";
 
-        return await SelectorStrategyHelpers.EvalToHandlesAsync(page, js, ct);
+        return await SelectorStrategyHelpers.EvalToHandlesAsync(page, js, ct).ConfigureAwait(false);
     }
 
     public async Task<string?> GenerateSelector(IElementHandle element, CancellationToken ct = default)
@@ -65,7 +65,7 @@ internal sealed class CssSelectorStrategy : ISelectorStrategy
                 }
                 return 'css=' + parts.join(' > ');
             }
-            """);
+            """).ConfigureAwait(false);
         return result;
     }
 }

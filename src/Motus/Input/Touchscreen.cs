@@ -22,7 +22,7 @@ internal sealed class Touchscreen : ITouchscreen
                 TouchPoints: [new InputTouchPoint(X: x, Y: y)]),
             CdpJsonContext.Default.InputDispatchTouchEventParams,
             CdpJsonContext.Default.InputDispatchTouchEventResult,
-            _ct);
+            _ct).ConfigureAwait(false);
 
         await _session.SendAsync(
             "Input.dispatchTouchEvent",
@@ -31,6 +31,6 @@ internal sealed class Touchscreen : ITouchscreen
                 TouchPoints: []),
             CdpJsonContext.Default.InputDispatchTouchEventParams,
             CdpJsonContext.Default.InputDispatchTouchEventResult,
-            _ct);
+            _ct).ConfigureAwait(false);
     }
 }

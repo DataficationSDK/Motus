@@ -12,9 +12,9 @@ internal static class FailureCapture
 
         try
         {
-            var bytes = await page.ScreenshotAsync();
+            var bytes = await page.ScreenshotAsync().ConfigureAwait(false);
             ex.Screenshot = bytes;
-            await SaveToDiskAsync(bytes, failure.ScreenshotPath ?? "test-results/failures");
+            await SaveToDiskAsync(bytes, failure.ScreenshotPath ?? "test-results/failures").ConfigureAwait(false);
         }
         catch
         {
@@ -29,7 +29,7 @@ internal static class FailureCapture
             Directory.CreateDirectory(basePath);
             var fileName = $"failure-{DateTime.UtcNow:yyyyMMdd-HHmmss-fff}.png";
             var filePath = Path.Combine(basePath, fileName);
-            await File.WriteAllBytesAsync(filePath, bytes);
+            await File.WriteAllBytesAsync(filePath, bytes).ConfigureAwait(false);
         }
         catch
         {

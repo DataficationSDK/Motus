@@ -54,12 +54,12 @@ internal sealed class TextSelectorStrategy : ISelectorStrategy
                 })()
                 """;
 
-        return await SelectorStrategyHelpers.EvalToHandlesAsync(page, js, ct);
+        return await SelectorStrategyHelpers.EvalToHandlesAsync(page, js, ct).ConfigureAwait(false);
     }
 
     public async Task<string?> GenerateSelector(IElementHandle element, CancellationToken ct = default)
     {
-        var text = await element.TextContentAsync(ct);
+        var text = await element.TextContentAsync(ct).ConfigureAwait(false);
         if (text is null || text.Length > 100)
             return null;
 

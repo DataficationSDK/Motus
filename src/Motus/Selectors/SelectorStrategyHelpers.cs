@@ -22,7 +22,7 @@ internal static class SelectorStrategyHelpers
                 AwaitPromise: false),
             CdpJsonContext.Default.RuntimeEvaluateParams,
             CdpJsonContext.Default.RuntimeEvaluateResult,
-            ct);
+            ct).ConfigureAwait(false);
 
         if (result.ExceptionDetails is not null)
             throw new InvalidOperationException(
@@ -36,7 +36,7 @@ internal static class SelectorStrategyHelpers
             new RuntimeGetPropertiesParams(result.Result.ObjectId, OwnProperties: true),
             CdpJsonContext.Default.RuntimeGetPropertiesParams,
             CdpJsonContext.Default.RuntimeGetPropertiesResult,
-            ct);
+            ct).ConfigureAwait(false);
 
         var handles = new List<IElementHandle>();
         foreach (var prop in props.Result)
@@ -59,7 +59,7 @@ internal static class SelectorStrategyHelpers
             new DomResolveNodeParams(BackendNodeId: (int)backendNodeId),
             CdpJsonContext.Default.DomResolveNodeParams,
             CdpJsonContext.Default.DomResolveNodeResult,
-            ct);
+            ct).ConfigureAwait(false);
 
         if (resolved.Object.ObjectId is null)
             throw new InvalidOperationException(

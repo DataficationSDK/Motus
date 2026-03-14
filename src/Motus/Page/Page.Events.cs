@@ -108,7 +108,7 @@ internal sealed partial class Page
     {
         try
         {
-            await foreach (var evt in _session.SubscribeAsync(eventName, typeInfo, ct))
+            await foreach (var evt in _session.SubscribeAsync(eventName, typeInfo, ct).ConfigureAwait(false))
             {
                 try
                 {
@@ -239,7 +239,7 @@ internal sealed partial class Page
                 try
                 {
                     var args = JsonSerializer.Deserialize<object?[]>(evt.Payload) ?? [];
-                    await callback(args);
+                    await callback(args).ConfigureAwait(false);
                 }
                 catch
                 {
@@ -274,7 +274,7 @@ internal sealed partial class Page
                             Password: creds.Password)),
                     CdpJsonContext.Default.FetchContinueWithAuthParams,
                     CdpJsonContext.Default.FetchContinueWithAuthResult,
-                    CancellationToken.None);
+                    CancellationToken.None).ConfigureAwait(false);
             }
             catch
             {

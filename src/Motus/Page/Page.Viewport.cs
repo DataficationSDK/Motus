@@ -19,7 +19,7 @@ internal sealed partial class Page
                 Mobile: false),
             CdpJsonContext.Default.EmulationSetDeviceMetricsOverrideParams,
             CdpJsonContext.Default.EmulationSetDeviceMetricsOverrideResult,
-            _pageCts.Token);
+            _pageCts.Token).ConfigureAwait(false);
     }
 
     // --- Locator methods ---
@@ -69,7 +69,7 @@ internal sealed partial class Page
             new RuntimeEvaluateParams(Expression: js, ReturnByValue: false, AwaitPromise: false),
             CdpJsonContext.Default.RuntimeEvaluateParams,
             CdpJsonContext.Default.RuntimeEvaluateResult,
-            _pageCts.Token);
+            _pageCts.Token).ConfigureAwait(false);
 
         if (result.Result.ObjectId is null)
             throw new InvalidOperationException("Failed to create script element.");
@@ -96,7 +96,7 @@ internal sealed partial class Page
             new RuntimeEvaluateParams(Expression: js, ReturnByValue: false, AwaitPromise: false),
             CdpJsonContext.Default.RuntimeEvaluateParams,
             CdpJsonContext.Default.RuntimeEvaluateResult,
-            _pageCts.Token);
+            _pageCts.Token).ConfigureAwait(false);
 
         if (result.Result.ObjectId is null)
             throw new InvalidOperationException("Failed to create style element.");
@@ -114,11 +114,11 @@ internal sealed partial class Page
 
         try
         {
-            await _context.ClosePageAsync(this, _targetId);
+            await _context.ClosePageAsync(this, _targetId).ConfigureAwait(false);
         }
         finally
         {
-            await DisposeAsync();
+            await DisposeAsync().ConfigureAwait(false);
         }
     }
 
@@ -127,7 +127,7 @@ internal sealed partial class Page
         await _session.SendAsync(
             "Page.bringToFront",
             CdpJsonContext.Default.PageBringToFrontResult,
-            _pageCts.Token);
+            _pageCts.Token).ConfigureAwait(false);
     }
 
     public Task PauseAsync()
@@ -144,6 +144,6 @@ internal sealed partial class Page
             new EmulationSetEmulatedMediaParams(Media: media, Features: features),
             CdpJsonContext.Default.EmulationSetEmulatedMediaParams,
             CdpJsonContext.Default.EmulationSetEmulatedMediaResult,
-            _pageCts.Token);
+            _pageCts.Token).ConfigureAwait(false);
     }
 }

@@ -32,10 +32,10 @@ internal sealed class FakeCdpSocket : ICdpSocket
         return Task.CompletedTask;
     }
 
-    public async ValueTask<int> ReceiveAsync(Memory<byte> buffer, CancellationToken ct)
+    public async ValueTask<ReadOnlyMemory<byte>> ReceiveAsync(CancellationToken ct)
     {
         if (!IsOpen)
-            return 0;
+            return ReadOnlyMemory<byte>.Empty;
 
         byte[] msg;
         try
@@ -44,11 +44,10 @@ internal sealed class FakeCdpSocket : ICdpSocket
         }
         catch (ChannelClosedException)
         {
-            return 0;
+            return ReadOnlyMemory<byte>.Empty;
         }
 
-        msg.CopyTo(buffer);
-        return msg.Length;
+        return msg;
     }
 
     /// <summary>

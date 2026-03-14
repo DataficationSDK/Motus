@@ -26,6 +26,9 @@ bld/
 [Ll]og/
 [Ll]ogs/
 
+## Local build overrides
+Directory.Build.override.targets
+
 ## Visual Studio
 .vs/
 *.rsuser

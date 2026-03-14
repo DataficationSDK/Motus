@@ -36,7 +36,7 @@ internal sealed class Mouse : IMouse
                     Y: currentY),
                 CdpJsonContext.Default.InputDispatchMouseEventParams,
                 CdpJsonContext.Default.InputDispatchMouseEventResult,
-                _ct);
+                _ct).ConfigureAwait(false);
         }
 
         _x = x;
@@ -58,7 +58,7 @@ internal sealed class Mouse : IMouse
                 ClickCount: clickCount),
             CdpJsonContext.Default.InputDispatchMouseEventParams,
             CdpJsonContext.Default.InputDispatchMouseEventResult,
-            _ct);
+            _ct).ConfigureAwait(false);
     }
 
     public async Task UpAsync(MouseButtonOptions? options = null)
@@ -76,23 +76,23 @@ internal sealed class Mouse : IMouse
                 ClickCount: clickCount),
             CdpJsonContext.Default.InputDispatchMouseEventParams,
             CdpJsonContext.Default.InputDispatchMouseEventResult,
-            _ct);
+            _ct).ConfigureAwait(false);
     }
 
     public async Task ClickAsync(double x, double y, MouseButtonOptions? options = null)
     {
-        await MoveAsync(x, y);
-        await DownAsync(options);
+        await MoveAsync(x, y).ConfigureAwait(false);
+        await DownAsync(options).ConfigureAwait(false);
 
         if (options?.Delay is > 0)
-            await Task.Delay(options.Delay.Value, _ct);
+            await Task.Delay(options.Delay.Value, _ct).ConfigureAwait(false);
 
-        await UpAsync(options);
+        await UpAsync(options).ConfigureAwait(false);
     }
 
     public async Task DblClickAsync(double x, double y, MouseButtonOptions? options = null)
     {
-        await MoveAsync(x, y);
+        await MoveAsync(x, y).ConfigureAwait(false);
 
         var button = MapButton(options?.Button ?? MouseButton.Left);
 
@@ -102,14 +102,14 @@ internal sealed class Mouse : IMouse
             new InputDispatchMouseEventParams(Type: "mousePressed", X: _x, Y: _y, Button: button, ClickCount: 1),
             CdpJsonContext.Default.InputDispatchMouseEventParams,
             CdpJsonContext.Default.InputDispatchMouseEventResult,
-            _ct);
+            _ct).ConfigureAwait(false);
 
         await _session.SendAsync(
             "Input.dispatchMouseEvent",
             new InputDispatchMouseEventParams(Type: "mouseReleased", X: _x, Y: _y, Button: button, ClickCount: 1),
             CdpJsonContext.Default.InputDispatchMouseEventParams,
             CdpJsonContext.Default.InputDispatchMouseEventResult,
-            _ct);
+            _ct).ConfigureAwait(false);
 
         // Second click
         await _session.SendAsync(
@@ -117,14 +117,14 @@ internal sealed class Mouse : IMouse
             new InputDispatchMouseEventParams(Type: "mousePressed", X: _x, Y: _y, Button: button, ClickCount: 2),
             CdpJsonContext.Default.InputDispatchMouseEventParams,
             CdpJsonContext.Default.InputDispatchMouseEventResult,
-            _ct);
+            _ct).ConfigureAwait(false);
 
         await _session.SendAsync(
             "Input.dispatchMouseEvent",
             new InputDispatchMouseEventParams(Type: "mouseReleased", X: _x, Y: _y, Button: button, ClickCount: 2),
             CdpJsonContext.Default.InputDispatchMouseEventParams,
             CdpJsonContext.Default.InputDispatchMouseEventResult,
-            _ct);
+            _ct).ConfigureAwait(false);
     }
 
     public async Task WheelAsync(double deltaX, double deltaY)
@@ -139,7 +139,7 @@ internal sealed class Mouse : IMouse
                 DeltaY: deltaY),
             CdpJsonContext.Default.InputDispatchMouseEventParams,
             CdpJsonContext.Default.InputDispatchMouseEventResult,
-            _ct);
+            _ct).ConfigureAwait(false);
     }
 
     private static string MapButton(MouseButton button) => button switch

@@ -35,7 +35,7 @@ public sealed class PageAssertions
     public Task ToHaveTitleAsync(string expected, AssertionOptions? options = null) =>
         RetryAsync(async ct =>
         {
-            var title = await _page.TitleAsync();
+            var title = await _page.TitleAsync().ConfigureAwait(false);
             return (title == expected, title);
         }, "ToHaveTitle", expected, options);
 }

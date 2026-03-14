@@ -9,7 +9,7 @@ public class AssertionsShowcaseTests : MotusTestBase
     [TestMethod]
     public async Task ToBeVisible_AndHidden()
     {
-        await Page.SetContentAsync(Fixtures.Dashboard);
+        await Fixtures.SetPageContentAsync(Page,Fixtures.Dashboard);
 
         var sidebar = Page.Locator("#sidebar");
         await Expect.That(sidebar).ToBeVisibleAsync();
@@ -22,7 +22,7 @@ public class AssertionsShowcaseTests : MotusTestBase
     [TestMethod]
     public async Task Not_Inversion()
     {
-        await Page.SetContentAsync(Fixtures.Dashboard);
+        await Fixtures.SetPageContentAsync(Page,Fixtures.Dashboard);
 
         // .Not inverts the assertion: the sidebar starts visible, so Not.ToBeHiddenAsync passes
         await Expect.That(Page.Locator("#sidebar")).Not.ToBeHiddenAsync();
@@ -31,7 +31,7 @@ public class AssertionsShowcaseTests : MotusTestBase
     [TestMethod]
     public async Task ToHaveText_ExactMatch()
     {
-        await Page.SetContentAsync(Fixtures.TodoApp);
+        await Fixtures.SetPageContentAsync(Page,Fixtures.TodoApp);
 
         // ToHaveTextAsync checks the full text content of the element
         await Expect.That(Page.GetByTestId("active-count")).ToHaveTextAsync("0 items left");
@@ -40,7 +40,7 @@ public class AssertionsShowcaseTests : MotusTestBase
     [TestMethod]
     public async Task ToContainText_PartialMatch()
     {
-        await Page.SetContentAsync(Fixtures.Dashboard);
+        await Fixtures.SetPageContentAsync(Page,Fixtures.Dashboard);
 
         // ToContainTextAsync passes when the element's text includes the substring
         await Expect.That(Page.GetByTestId("card-revenue")).ToContainTextAsync("12,345");
@@ -49,7 +49,7 @@ public class AssertionsShowcaseTests : MotusTestBase
     [TestMethod]
     public async Task ToHaveAttribute_ChecksHref()
     {
-        await Page.SetContentAsync(Fixtures.Dashboard);
+        await Fixtures.SetPageContentAsync(Page,Fixtures.Dashboard);
 
         // ToHaveAttributeAsync checks any attribute's value
         var homeLink = Page.GetByTestId("nav-home");
@@ -59,7 +59,7 @@ public class AssertionsShowcaseTests : MotusTestBase
     [TestMethod]
     public async Task ToHaveCount_AfterDynamicRender()
     {
-        await Page.SetContentAsync(Fixtures.TodoApp);
+        await Fixtures.SetPageContentAsync(Page,Fixtures.TodoApp);
 
         // Start with zero items
         await Expect.That(Page.Locator(".todo-item")).ToHaveCountAsync(0);
@@ -80,7 +80,7 @@ public class AssertionsShowcaseTests : MotusTestBase
     [TestMethod]
     public async Task CustomAssertionOptions_TimeoutAndMessage()
     {
-        await Page.SetContentAsync(Fixtures.Dashboard);
+        await Fixtures.SetPageContentAsync(Page,Fixtures.Dashboard);
 
         // AssertionOptions lets you customize timeout and the failure message
         await Expect.That(Page.GetByText("Dashboard")).ToBeVisibleAsync(

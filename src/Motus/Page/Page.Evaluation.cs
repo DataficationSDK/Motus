@@ -10,7 +10,7 @@ internal sealed partial class Page
         if (_mainFrameId is null)
             throw new InvalidOperationException("Page is not initialized.");
 
-        return await EvaluateInFrameAsync<T>(_mainFrameId, expression, arg);
+        return await EvaluateInFrameAsync<T>(_mainFrameId, expression, arg).ConfigureAwait(false);
     }
 
     public async Task<IJSHandle> EvaluateHandleAsync(string expression, object? arg = null)
@@ -28,7 +28,7 @@ internal sealed partial class Page
                 ContextId: contextId),
             CdpJsonContext.Default.RuntimeEvaluateParams,
             CdpJsonContext.Default.RuntimeEvaluateResult,
-            CancellationToken.None);
+            CancellationToken.None).ConfigureAwait(false);
 
         if (result.ExceptionDetails is not null)
             throw new InvalidOperationException(
@@ -46,6 +46,6 @@ internal sealed partial class Page
         if (_mainFrameId is null)
             throw new InvalidOperationException("Page is not initialized.");
 
-        return await WaitForFunctionInFrameAsync<T>(_mainFrameId, expression, arg, timeout);
+        return await WaitForFunctionInFrameAsync<T>(_mainFrameId, expression, arg, timeout).ConfigureAwait(false);
     }
 }

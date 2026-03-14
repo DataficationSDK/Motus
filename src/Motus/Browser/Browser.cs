@@ -62,7 +62,7 @@ internal sealed class Browser : IBrowser
         var response = await _registry.BrowserSession.SendAsync(
             "Browser.getVersion",
             CdpJsonContext.Default.BrowserGetVersionResult,
-            ct);
+            ct).ConfigureAwait(false);
 
         Version = response.Product;
         _isConnected = true;
@@ -82,7 +82,7 @@ internal sealed class Browser : IBrowser
 
         foreach (var context in contextsToClose)
         {
-            await context.CloseAsync();
+            await context.CloseAsync().ConfigureAwait(false);
         }
 
         lock (_contexts)
@@ -93,7 +93,7 @@ internal sealed class Browser : IBrowser
             await _registry.BrowserSession.SendAsync(
                 "Browser.close",
                 CdpJsonContext.Default.BrowserCloseResult,
-                CancellationToken.None);
+                CancellationToken.None).ConfigureAwait(false);
         }
         catch (CdpDisconnectedException)
         {
@@ -104,7 +104,7 @@ internal sealed class Browser : IBrowser
         {
             try
             {
-                await _process.WaitForExitAsync(new CancellationTokenSource(TimeSpan.FromSeconds(5)).Token);
+                await _process.WaitForExitAsync(new CancellationTokenSource(TimeSpan.FromSeconds(5)).Token).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -121,7 +121,7 @@ internal sealed class Browser : IBrowser
 
         _isConnected = false;
 
-        await _transport.DisposeAsync();
+        await _transport.DisposeAsync().ConfigureAwait(false);
 
         if (_process is not null)
         {
@@ -164,27 +164,27 @@ internal sealed class Browser : IBrowser
                 ProxyServer: options?.Proxy?.Server),
             CdpJsonContext.Default.TargetCreateBrowserContextParams,
             CdpJsonContext.Default.TargetCreateBrowserContextResult,
-            CancellationToken.None);
+            CancellationToken.None).ConfigureAwait(false);
 
         var context = new BrowserContext(this, _registry, result.BrowserContextId, options);
 
         var host = new PluginHost();
-        await host.LoadAsync(_launchOptions, context);
+        await host.LoadAsync(_launchOptions, context).ConfigureAwait(false);
         context.PluginHost = host;
 
         lock (_contexts)
             _contexts.Add(context);
 
         if (options?.Permissions is { Count: > 0 })
-            await context.GrantPermissionsAsync(options.Permissions);
+            await context.GrantPermissionsAsync(options.Permissions).ConfigureAwait(false);
 
         return context;
     }
 
     public async Task<IPage> NewPageAsync(ContextOptions? options = null)
     {
-        var context = await NewContextAsync(options);
-        return await context.NewPageAsync();
+        var context = await NewContextAsync(options).ConfigureAwait(false);
+        return await context.NewPageAsync().ConfigureAwait(false);
     }
 
     internal void RemoveContext(BrowserContext context)

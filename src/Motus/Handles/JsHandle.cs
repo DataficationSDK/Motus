@@ -40,7 +40,7 @@ internal class JsHandle : IJSHandle
                 AwaitPromise: true),
             CdpJsonContext.Default.RuntimeCallFunctionOnParams,
             CdpJsonContext.Default.RuntimeCallFunctionOnResult,
-            CancellationToken.None);
+            CancellationToken.None).ConfigureAwait(false);
 
         if (result.ExceptionDetails is not null)
             throw new InvalidOperationException(
@@ -63,7 +63,7 @@ internal class JsHandle : IJSHandle
                 AwaitPromise: false),
             CdpJsonContext.Default.RuntimeCallFunctionOnParams,
             CdpJsonContext.Default.RuntimeCallFunctionOnResult,
-            CancellationToken.None);
+            CancellationToken.None).ConfigureAwait(false);
 
         if (result.ExceptionDetails is not null)
             throw new InvalidOperationException(
@@ -88,7 +88,7 @@ internal class JsHandle : IJSHandle
                 AwaitPromise: false),
             CdpJsonContext.Default.RuntimeCallFunctionOnParams,
             CdpJsonContext.Default.RuntimeCallFunctionOnResult,
-            CancellationToken.None);
+            CancellationToken.None).ConfigureAwait(false);
 
         if (result.ExceptionDetails is not null)
             throw new InvalidOperationException(
@@ -110,7 +110,7 @@ internal class JsHandle : IJSHandle
                 "Runtime.releaseObject",
                 new RuntimeReleaseObjectParams(_objectId),
                 CdpJsonContext.Default.RuntimeReleaseObjectParams,
-                CancellationToken.None);
+                CancellationToken.None).ConfigureAwait(false);
         }
         catch (CdpDisconnectedException)
         {

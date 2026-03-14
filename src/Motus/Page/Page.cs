@@ -95,15 +95,21 @@ internal sealed partial class Page : IPage
 
     internal async Task InitializeAsync(CancellationToken ct)
     {
-        await _session.SendAsync("Page.enable", CdpJsonContext.Default.PageEnableResult, ct);
-        await _session.SendAsync("Runtime.enable", CdpJsonContext.Default.RuntimeEnableResult, ct);
+        // Subscribe to event channels BEFORE enabling CDP domains.
+        // Chrome fires events immediately after Page.enable / Runtime.enable,
+        // so the pump must already be listening or early events are dropped
+        // (e.g. the initial executionContextCreated that provides the main-frame context ID).
+        StartEventPump();
+
+        await _session.SendAsync("Page.enable", CdpJsonContext.Default.PageEnableResult, ct).ConfigureAwait(false);
+        await _session.SendAsync("Runtime.enable", CdpJsonContext.Default.RuntimeEnableResult, ct).ConfigureAwait(false);
 
         // Enable file chooser interception
         await _session.SendAsync(
             "Page.setInterceptFileChooserDialog",
             new PageSetInterceptFileChooserDialogParams(Enabled: true),
             CdpJsonContext.Default.PageSetInterceptFileChooserDialogParams,
-            ct);
+            ct).ConfigureAwait(false);
 
         // Apply any init scripts from the context
         foreach (var script in _context.InitScripts)
@@ -113,7 +119,7 @@ internal sealed partial class Page : IPage
                 new PageAddScriptToEvaluateOnNewDocumentParams(script),
                 CdpJsonContext.Default.PageAddScriptToEvaluateOnNewDocumentParams,
                 CdpJsonContext.Default.PageAddScriptToEvaluateOnNewDocumentResult,
-                ct);
+                ct).ConfigureAwait(false);
         }
 
         // Apply any bindings from the context
@@ -125,13 +131,11 @@ internal sealed partial class Page : IPage
                 new RuntimeAddBindingParams(name),
                 CdpJsonContext.Default.RuntimeAddBindingParams,
                 CdpJsonContext.Default.RuntimeAddBindingResult,
-                ct);
+                ct).ConfigureAwait(false);
         }
 
         // Initialize network monitoring and interception
-        await InitializeNetworkAsync(ct);
-
-        StartEventPump();
+        await InitializeNetworkAsync(ct).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -166,7 +170,7 @@ internal sealed partial class Page : IPage
                 ContextId: contextId),
             CdpJsonContext.Default.RuntimeEvaluateParams,
             CdpJsonContext.Default.RuntimeEvaluateResult,
-            CancellationToken.None);
+            CancellationToken.None).ConfigureAwait(false);
 
         if (result.ExceptionDetails is not null)
             throw new InvalidOperationException(
@@ -186,7 +190,7 @@ internal sealed partial class Page : IPage
         {
             try
             {
-                var result = await EvaluateInFrameAsync<JsonElement>(frameId, expression, arg);
+                var result = await EvaluateInFrameAsync<JsonElement>(frameId, expression, arg).ConfigureAwait(false);
 
                 if (IsTruthy(result))
                     return result.Deserialize<T>()!;
@@ -196,7 +200,7 @@ internal sealed partial class Page : IPage
                 // Evaluation failed, will retry
             }
 
-            await Task.Delay(100, cts.Token);
+            await Task.Delay(100, cts.Token).ConfigureAwait(false);
         }
 
         throw new TimeoutException(
@@ -211,7 +215,7 @@ internal sealed partial class Page : IPage
             new PageAddScriptToEvaluateOnNewDocumentParams(script),
             CdpJsonContext.Default.PageAddScriptToEvaluateOnNewDocumentParams,
             CdpJsonContext.Default.PageAddScriptToEvaluateOnNewDocumentResult,
-            CancellationToken.None);
+            CancellationToken.None).ConfigureAwait(false);
     }
 
     internal async Task ExposeBindingInternalAsync(string name, Func<object?[], Task<object?>> callback)
@@ -222,7 +226,7 @@ internal sealed partial class Page : IPage
             new RuntimeAddBindingParams(name),
             CdpJsonContext.Default.RuntimeAddBindingParams,
             CdpJsonContext.Default.RuntimeAddBindingResult,
-            CancellationToken.None);
+            CancellationToken.None).ConfigureAwait(false);
     }
 
     public ValueTask DisposeAsync()

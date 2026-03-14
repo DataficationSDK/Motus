@@ -23,7 +23,7 @@ internal static class CdpEndpointPoller
 
             try
             {
-                var json = await httpClient.GetStringAsync(url, ct);
+                var json = await httpClient.GetStringAsync(url, ct).ConfigureAwait(false);
                 using var doc = JsonDocument.Parse(json);
                 if (doc.RootElement.TryGetProperty("webSocketDebuggerUrl", out var wsProp))
                 {
@@ -37,7 +37,7 @@ internal static class CdpEndpointPoller
                 // Browser not ready yet
             }
 
-            await Task.Delay(PollInterval, ct);
+            await Task.Delay(PollInterval, ct).ConfigureAwait(false);
         }
 
         throw new MotusTimeoutException(

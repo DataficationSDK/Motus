@@ -42,12 +42,12 @@ public static class MotusLauncher
         try
         {
             var timeout = TimeSpan.FromMilliseconds(options.Timeout);
-            var wsEndpoint = await CdpEndpointPoller.WaitForEndpointAsync(port, timeout, ct);
+            var wsEndpoint = await CdpEndpointPoller.WaitForEndpointAsync(port, timeout, ct).ConfigureAwait(false);
 
             var slowMo = TimeSpan.FromMilliseconds(options.SlowMo);
             var socket = new CdpSocket();
             var transport = new CdpTransport(socket, slowMo);
-            await transport.ConnectAsync(wsEndpoint, ct);
+            await transport.ConnectAsync(wsEndpoint, ct).ConfigureAwait(false);
 
             var registry = new CdpSessionRegistry(transport);
             var browser = new Browser(
@@ -56,7 +56,7 @@ public static class MotusLauncher
                 options.HandleSIGINT, options.HandleSIGTERM,
                 options);
 
-            await browser.InitializeAsync(ct);
+            await browser.InitializeAsync(ct).ConfigureAwait(false);
             return browser;
         }
         catch
@@ -84,14 +84,14 @@ public static class MotusLauncher
     {
         var socket = new CdpSocket();
         var transport = new CdpTransport(socket);
-        await transport.ConnectAsync(new Uri(wsEndpoint), ct);
+        await transport.ConnectAsync(new Uri(wsEndpoint), ct).ConfigureAwait(false);
 
         var registry = new CdpSessionRegistry(transport);
         var browser = new Browser(
             transport, registry, process: null, tempUserDataDir: null,
             handleSigint: false, handleSigterm: false);
 
-        await browser.InitializeAsync(ct);
+        await browser.InitializeAsync(ct).ConfigureAwait(false);
         return browser;
     }
 

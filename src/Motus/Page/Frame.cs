@@ -35,20 +35,20 @@ internal sealed class Frame : IFrame
         _page.GetChildFrames(Id);
 
     public async Task<T> EvaluateAsync<T>(string expression, object? arg = null) =>
-        await _page.EvaluateInFrameAsync<T>(Id, expression, arg);
+        await _page.EvaluateInFrameAsync<T>(Id, expression, arg).ConfigureAwait(false);
 
     public async Task<T> WaitForFunctionAsync<T>(string expression, object? arg = null, double? timeout = null) =>
-        await _page.WaitForFunctionInFrameAsync<T>(Id, expression, arg, timeout);
+        await _page.WaitForFunctionInFrameAsync<T>(Id, expression, arg, timeout).ConfigureAwait(false);
 
     public async Task<string> ContentAsync() =>
-        await EvaluateAsync<string>("document.documentElement.outerHTML");
+        await EvaluateAsync<string>("document.documentElement.outerHTML").ConfigureAwait(false);
 
     public async Task SetContentAsync(string html, NavigationOptions? options = null) =>
         await EvaluateAsync<object?>(
-            $"document.open(); document.write({System.Text.Json.JsonSerializer.Serialize(html)}); document.close();");
+            $"document.open(); document.write({System.Text.Json.JsonSerializer.Serialize(html)}); document.close();").ConfigureAwait(false);
 
     public async Task<string> TitleAsync() =>
-        await EvaluateAsync<string>("document.title");
+        await EvaluateAsync<string>("document.title").ConfigureAwait(false);
 
     public Task<IResponse?> GotoAsync(string url, NavigationOptions? options = null) =>
         _page.GotoAsync(url, options);

@@ -24,6 +24,6 @@ internal sealed class BrowserLease : IBrowserLease
         if (Interlocked.CompareExchange(ref _disposed, 1, 0) != 0)
             return;
 
-        await _returnAction(Browser);
+        await _returnAction(Browser).ConfigureAwait(false);
     }
 }

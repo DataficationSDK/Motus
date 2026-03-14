@@ -43,7 +43,7 @@ public abstract class MotusTestBase
     /// </summary>
     public static async Task LaunchBrowserAsync(LaunchOptions? options = null)
     {
-        await s_fixture.InitializeAsync(options);
+        await s_fixture.InitializeAsync(options).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -52,14 +52,14 @@ public abstract class MotusTestBase
     /// </summary>
     public static async Task CloseBrowserAsync()
     {
-        await s_fixture.DisposeAsync();
+        await s_fixture.DisposeAsync().ConfigureAwait(false);
     }
 
     [TestInitialize]
     public async Task MotusTestInitialize()
     {
-        _context = await s_fixture.NewContextAsync(ContextOptions);
-        _page = await _context.NewPageAsync();
+        _context = await s_fixture.NewContextAsync(ContextOptions).ConfigureAwait(false);
+        _page = await _context.NewPageAsync().ConfigureAwait(false);
     }
 
     [TestCleanup]
@@ -67,7 +67,7 @@ public abstract class MotusTestBase
     {
         if (_context is not null)
         {
-            await _context.CloseAsync();
+            await _context.CloseAsync().ConfigureAwait(false);
             _context = null;
             _page = null;
         }

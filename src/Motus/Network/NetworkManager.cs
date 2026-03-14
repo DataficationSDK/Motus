@@ -38,12 +38,12 @@ internal sealed class NetworkManager
             new NetworkEnableParams(),
             CdpJsonContext.Default.NetworkEnableParams,
             CdpJsonContext.Default.NetworkEnableResult,
-            ct);
+            ct).ConfigureAwait(false);
 
         StartNetworkEventPump();
 
         if (hasFetchRoutes)
-            await EnableFetchAsync(ct);
+            await EnableFetchAsync(ct).ConfigureAwait(false);
     }
 
     internal async Task EnableFetchAsync(CancellationToken ct)
@@ -59,7 +59,7 @@ internal sealed class NetworkManager
                 Patterns: [new FetchRequestPattern(UrlPattern: "*", RequestStage: "Request")]),
             CdpJsonContext.Default.FetchEnableParams,
             CdpJsonContext.Default.FetchEnableResult,
-            ct);
+            ct).ConfigureAwait(false);
 
         StartFetchEventPump();
     }
@@ -78,7 +78,7 @@ internal sealed class NetworkManager
                 HandleAuthRequests: true),
             CdpJsonContext.Default.FetchEnableParams,
             CdpJsonContext.Default.FetchEnableResult,
-            ct);
+            ct).ConfigureAwait(false);
 
         StartFetchEventPump();
     }
@@ -93,7 +93,7 @@ internal sealed class NetworkManager
         await _session.SendAsync(
             "Fetch.disable",
             CdpJsonContext.Default.FetchDisableResult,
-            ct);
+            ct).ConfigureAwait(false);
     }
 
     internal IResponse? GetLastNavigationResponse() => _lastNavigationResponse;
@@ -140,7 +140,7 @@ internal sealed class NetworkManager
                 // Wait for the idle period; if a new request starts, the counter rises and we retry
                 try
                 {
-                    await Task.Delay(idlePeriod, cts.Token);
+                    await Task.Delay(idlePeriod, cts.Token).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException)
                 {
@@ -160,7 +160,7 @@ internal sealed class NetworkManager
                 using var reg = cts.Token.Register(() => tcs.TrySetCanceled());
                 try
                 {
-                    await tcs.Task;
+                    await tcs.Task.ConfigureAwait(false);
                 }
                 catch (OperationCanceledException)
                 {
@@ -206,7 +206,7 @@ internal sealed class NetworkManager
     {
         try
         {
-            await foreach (var evt in _session.SubscribeAsync(eventName, typeInfo, ct))
+            await foreach (var evt in _session.SubscribeAsync(eventName, typeInfo, ct).ConfigureAwait(false))
             {
                 try { handler(evt); }
                 catch { /* swallow handler errors to keep pump alive */ }
@@ -307,14 +307,14 @@ internal sealed class NetworkManager
                     frame);
 
                 var route = new MotusRoute(request, _session, evt.RequestId);
-                await handler(route);
+                await handler(route).ConfigureAwait(false);
 
                 if (!route.IsHandled)
-                    await AutoContinueAsync(evt.RequestId);
+                    await AutoContinueAsync(evt.RequestId).ConfigureAwait(false);
             }
             catch
             {
-                await AutoContinueAsync(evt.RequestId);
+                await AutoContinueAsync(evt.RequestId).ConfigureAwait(false);
             }
         });
     }
@@ -328,7 +328,7 @@ internal sealed class NetworkManager
                 new FetchContinueRequestParams(requestId),
                 CdpJsonContext.Default.FetchContinueRequestParams,
                 CdpJsonContext.Default.FetchContinueRequestResult,
-                CancellationToken.None);
+                CancellationToken.None).ConfigureAwait(false);
         }
         catch { /* session may be gone */ }
     }

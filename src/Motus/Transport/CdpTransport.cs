@@ -1,4 +1,3 @@
-using System.Buffers;
 using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Threading.Channels;
@@ -16,8 +15,6 @@ internal readonly record struct RawCdpEvent(JsonElement Params, string? SessionI
 /// </summary>
 internal sealed class CdpTransport : IAsyncDisposable
 {
-    private const int InitialBufferSize = 16 * 1024;
-
     private readonly ICdpSocket _socket;
     private readonly TimeSpan _slowMo;
     private readonly CancellationTokenSource _cts = new();
@@ -44,7 +41,7 @@ internal sealed class CdpTransport : IAsyncDisposable
     /// </summary>
     internal async Task ConnectAsync(Uri endpointUri, CancellationToken ct)
     {
-        await _socket.ConnectAsync(endpointUri, ct);
+        await _socket.ConnectAsync(endpointUri, ct).ConfigureAwait(false);
         _receiveLoop = RunReceiveLoopAsync(_cts.Token);
     }
 
@@ -63,15 +60,15 @@ internal sealed class CdpTransport : IAsyncDisposable
         try
         {
             if (_slowMo > TimeSpan.Zero)
-                await Task.Delay(_slowMo, ct);
+                await Task.Delay(_slowMo, ct).ConfigureAwait(false);
 
             var envelope = new CdpCommandEnvelope(id, method, paramsElement, sessionId);
             var bytes = JsonSerializer.SerializeToUtf8Bytes(envelope, CdpJsonContext.Default.CdpCommandEnvelope);
-            await _socket.SendAsync(bytes, ct);
+            await _socket.SendAsync(bytes, ct).ConfigureAwait(false);
 
             // Link caller cancellation to the pending TCS
             await using var reg = ct.Register(() => tcs.TrySetCanceled(ct));
-            return await tcs.Task;
+            return await tcs.Task.ConfigureAwait(false);
         }
         finally
         {
@@ -95,26 +92,13 @@ internal sealed class CdpTransport : IAsyncDisposable
 
     private async Task RunReceiveLoopAsync(CancellationToken ct)
     {
-        var buffer = ArrayPool<byte>.Shared.Rent(InitialBufferSize);
-
         try
         {
             while (!ct.IsCancellationRequested)
             {
-                int bytesRead;
-                try
-                {
-                    bytesRead = await _socket.ReceiveAsync(buffer, ct);
-                }
-                catch (MessageTooLargeException ex)
-                {
-                    // Grow the buffer and retry
-                    ArrayPool<byte>.Shared.Return(buffer);
-                    buffer = ArrayPool<byte>.Shared.Rent(ex.RequiredSize);
-                    continue;
-                }
+                var message = await _socket.ReceiveAsync(ct).ConfigureAwait(false);
 
-                if (bytesRead == 0)
+                if (message.IsEmpty)
                 {
                     // Clean disconnect
                     FaultAllPending(new CdpDisconnectedException());
@@ -126,7 +110,7 @@ internal sealed class CdpTransport : IAsyncDisposable
                 try
                 {
                     var envelope = JsonSerializer.Deserialize(
-                        buffer.AsSpan(0, bytesRead),
+                        message.Span,
                         CdpJsonContext.Default.CdpInboundEnvelope);
 
                     if (envelope is not null)
@@ -148,10 +132,6 @@ internal sealed class CdpTransport : IAsyncDisposable
             FaultAllPending(new CdpDisconnectedException(ex));
             CompleteAllChannels();
             Disconnected?.Invoke(ex);
-        }
-        finally
-        {
-            ArrayPool<byte>.Shared.Return(buffer);
         }
     }
 
@@ -224,18 +204,18 @@ internal sealed class CdpTransport : IAsyncDisposable
         if (_disposed) return;
         _disposed = true;
 
-        await _cts.CancelAsync();
+        await _cts.CancelAsync().ConfigureAwait(false);
 
         if (_receiveLoop is not null)
         {
-            try { await _receiveLoop; }
+            try { await _receiveLoop.ConfigureAwait(false); }
             catch { /* Swallow; loop already handled cleanup */ }
         }
 
         FaultAllPending(new ObjectDisposedException(nameof(CdpTransport)));
         CompleteAllChannels();
 
-        await _socket.DisposeAsync();
+        await _socket.DisposeAsync().ConfigureAwait(false);
         _cts.Dispose();
     }
 }

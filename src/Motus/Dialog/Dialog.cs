@@ -30,7 +30,7 @@ internal sealed class Dialog : IDialog
             "Page.handleJavaScriptDialog",
             command,
             CdpJsonContext.Default.PageHandleJavaScriptDialogParams,
-            CancellationToken.None);
+            CancellationToken.None).ConfigureAwait(false);
     }
 
     public async Task DismissAsync()
@@ -40,6 +40,6 @@ internal sealed class Dialog : IDialog
             "Page.handleJavaScriptDialog",
             command,
             CdpJsonContext.Default.PageHandleJavaScriptDialogParams,
-            CancellationToken.None);
+            CancellationToken.None).ConfigureAwait(false);
     }
 }

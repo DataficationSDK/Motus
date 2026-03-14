@@ -40,7 +40,7 @@ internal sealed class CdpSession
         try
         {
             var paramsElement = JsonSerializer.SerializeToElement(command, paramsTypeInfo);
-            var resultElement = await _transport.SendRawAsync(method, paramsElement, SessionId, ct);
+            var resultElement = await _transport.SendRawAsync(method, paramsElement, SessionId, ct).ConfigureAwait(false);
             return JsonSerializer.Deserialize(resultElement, responseTypeInfo)
                    ?? throw new CdpProtocolException($"Null result for {method}");
         }
@@ -69,7 +69,7 @@ internal sealed class CdpSession
         try
         {
             var emptyParams = EmptyJsonElement();
-            var resultElement = await _transport.SendRawAsync(method, emptyParams, SessionId, ct);
+            var resultElement = await _transport.SendRawAsync(method, emptyParams, SessionId, ct).ConfigureAwait(false);
             return JsonSerializer.Deserialize(resultElement, responseTypeInfo)
                    ?? throw new CdpProtocolException($"Null result for {method}");
         }
@@ -99,7 +99,7 @@ internal sealed class CdpSession
         try
         {
             var paramsElement = JsonSerializer.SerializeToElement(command, paramsTypeInfo);
-            await _transport.SendRawAsync(method, paramsElement, SessionId, ct);
+            await _transport.SendRawAsync(method, paramsElement, SessionId, ct).ConfigureAwait(false);
         }
         catch (CdpProtocolException cdpEx)
         {
@@ -136,7 +136,7 @@ internal sealed class CdpSession
         JsonTypeInfo<TEvent> typeInfo,
         [EnumeratorCancellation] CancellationToken ct)
     {
-        await foreach (var raw in reader.ReadAllAsync(ct))
+        await foreach (var raw in reader.ReadAllAsync(ct).ConfigureAwait(false))
         {
             var deserialized = JsonSerializer.Deserialize(raw.Params, typeInfo);
             if (deserialized is not null)
