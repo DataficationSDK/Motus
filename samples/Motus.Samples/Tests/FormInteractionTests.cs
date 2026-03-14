@@ -1,7 +1,7 @@
 namespace Motus.Samples.Tests;
 
 /// <summary>
-/// Phase 1C: Form interactions including fill, type, press, check, select, and clear.
+/// Form interactions including fill, type, press, check, select, and clear.
 /// </summary>
 [TestClass]
 public class FormInteractionTests : MotusTestBase

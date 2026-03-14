@@ -1,7 +1,7 @@
 namespace Motus.Samples.Tests;
 
 /// <summary>
-/// Phase 1A/1B: Navigation, locator factories, and locator chaining.
+/// Navigation, locator factories, and locator chaining.
 /// Demonstrates every built-in locator strategy and how to compose them.
 /// </summary>
 [TestClass]

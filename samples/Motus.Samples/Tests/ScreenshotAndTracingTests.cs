@@ -1,7 +1,7 @@
 namespace Motus.Samples.Tests;
 
 /// <summary>
-/// Phase 2E/3D: Screenshots (page and element level) and tracing.
+/// Screenshots (page and element level) and tracing.
 /// </summary>
 [TestClass]
 public class ScreenshotAndTracingTests : MotusTestBase

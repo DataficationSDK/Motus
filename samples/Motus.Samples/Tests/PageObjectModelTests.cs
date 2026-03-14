@@ -3,7 +3,7 @@ using Motus.Samples.PageObjects;
 namespace Motus.Samples.Tests;
 
 /// <summary>
-/// Phase 3E: Page Object Model pattern using TodoAppPage.
+/// Page Object Model pattern using TodoAppPage.
 /// Demonstrates the same POM structure that <c>dotnet motus codegen</c> produces.
 /// </summary>
 [TestClass]

@@ -1,7 +1,7 @@
 namespace Motus.Samples.Tests;
 
 /// <summary>
-/// Phase 2C: Network interception with RouteAsync, FulfillAsync, AbortAsync, and WaitForResponseAsync.
+/// Network interception with RouteAsync, FulfillAsync, AbortAsync, and WaitForResponseAsync.
 /// Routes are set up before loading page content so the Fetch domain intercepts from the start.
 /// Note: FulfillAsync tests require a route-capable origin; they are tagged Integration
 /// because about:blank and data: URIs have opaque origins that limit Fetch domain interception.

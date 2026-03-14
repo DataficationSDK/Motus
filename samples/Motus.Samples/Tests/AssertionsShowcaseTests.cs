@@ -1,7 +1,7 @@
 namespace Motus.Samples.Tests;
 
 /// <summary>
-/// Phase 2B: Assertion showcase covering Expect.That, .Not, custom options, and various matchers.
+/// Assertion showcase covering Expect.That, .Not, custom options, and various matchers.
 /// </summary>
 [TestClass]
 public class AssertionsShowcaseTests : MotusTestBase
