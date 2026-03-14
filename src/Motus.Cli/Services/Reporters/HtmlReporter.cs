@@ -1,22 +1,26 @@
 using System.Text;
 using System.Web;
+using Motus.Abstractions;
 
 namespace Motus.Cli.Services.Reporters;
 
-public sealed class HtmlReporter(string outputPath) : ITestReporter
+public sealed class HtmlReporter(string outputPath) : IReporter
 {
-    private readonly List<TestResult> _results = [];
+    private readonly List<Abstractions.TestResult> _results = [];
 
-    public Task OnRunStartedAsync(int total) => Task.CompletedTask;
+    public Task OnTestRunStartAsync(TestSuiteInfo suite) => Task.CompletedTask;
 
-    public Task OnTestCompletedAsync(TestResult result)
+    public Task OnTestStartAsync(TestInfo test) => Task.CompletedTask;
+
+    public Task OnTestEndAsync(TestInfo test, Abstractions.TestResult result)
     {
         _results.Add(result);
         return Task.CompletedTask;
     }
 
-    public async Task OnRunCompletedAsync(TestRunResult runResult)
+    public async Task OnTestRunEndAsync(TestRunSummary summary)
     {
+        var total = summary.Passed + summary.Failed + summary.Skipped;
         var sb = new StringBuilder();
         sb.AppendLine("<!DOCTYPE html>");
         sb.AppendLine("<html><head><meta charset=\"utf-8\"><title>Motus Test Report</title>");
@@ -28,7 +32,7 @@ public sealed class HtmlReporter(string outputPath) : ITestReporter
         sb.AppendLine(".pass { color: #22863a; } .fail { color: #cb2431; }");
         sb.AppendLine("</style></head><body>");
         sb.AppendLine($"<h1>Motus Test Report</h1>");
-        sb.AppendLine($"<p>{runResult.Passed} passed, {runResult.Failed} failed, {runResult.Total} total ({runResult.Duration.TotalSeconds:F1}s)</p>");
+        sb.AppendLine($"<p>{summary.Passed} passed, {summary.Failed} failed, {total} total ({summary.TotalDurationMs / 1000:F1}s)</p>");
         sb.AppendLine("<table><thead><tr><th>Status</th><th>Test</th><th>Duration</th><th>Error</th></tr></thead><tbody>");
 
         foreach (var r in _results)
@@ -36,7 +40,7 @@ public sealed class HtmlReporter(string outputPath) : ITestReporter
             var cls = r.Passed ? "pass" : "fail";
             var status = r.Passed ? "PASS" : "FAIL";
             var error = r.ErrorMessage is not null ? HttpUtility.HtmlEncode(r.ErrorMessage) : "";
-            sb.AppendLine($"<tr><td class=\"{cls}\">{status}</td><td>{HttpUtility.HtmlEncode(r.FullName)}</td><td>{r.Duration.TotalMilliseconds:F0}ms</td><td>{error}</td></tr>");
+            sb.AppendLine($"<tr><td class=\"{cls}\">{status}</td><td>{HttpUtility.HtmlEncode(r.TestName)}</td><td>{r.DurationMs:F0}ms</td><td>{error}</td></tr>");
         }
 
         sb.AppendLine("</tbody></table></body></html>");

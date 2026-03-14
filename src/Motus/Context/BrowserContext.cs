@@ -21,6 +21,7 @@ internal sealed class BrowserContext : IBrowserContext
     private readonly ConcurrentDictionary<string, Func<object?[], Task<object?>>> _bindings = new();
     private readonly List<string> _initScripts = [];
     private readonly LifecycleHookCollection _lifecycleHooks = new();
+    private readonly ReporterCollection _reporters = new();
     private readonly Dictionary<string, Abstractions.IWaitCondition> _waitConditions = new();
     private readonly SelectorStrategyRegistry _selectorStrategies = new();
     private readonly List<(string Pattern, Func<IRoute, Task> Handler)> _contextRoutes = [];
@@ -71,6 +72,8 @@ internal sealed class BrowserContext : IBrowserContext
     internal string? BaseURL => _options?.BaseURL;
 
     internal LifecycleHookCollection LifecycleHooks => _lifecycleHooks;
+
+    internal ReporterCollection Reporters => _reporters;
 
     internal SelectorStrategyRegistry SelectorStrategies => _selectorStrategies;
 

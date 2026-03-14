@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using Motus;
 using Motus.Runner.Services.Models;
 using Motus.Runner.Services.Timeline;
 
@@ -26,6 +27,7 @@ public sealed class TestSessionService : ITestSessionService
     public bool IsRunning => _running != 0;
     public string? RunningTestName { get; private set; }
     public string? FilterText { get; private set; }
+    public ReporterCollection? Reporters { get; set; }
     public event Action? StateChanged;
 
     public Task LoadAssembliesAsync(string[] paths, string? filter)
@@ -56,7 +58,7 @@ public sealed class TestSessionService : ITestSessionService
             ResetAllToPending();
             NotifyStateChanged();
 
-            await _executor.ExecuteAsync(_discoveredTests, UpdateTestState, _runCts.Token);
+            await _executor.ExecuteAsync(_discoveredTests, UpdateTestState, _runCts.Token, Reporters);
         }
         finally
         {
@@ -83,7 +85,7 @@ public sealed class TestSessionService : ITestSessionService
             _states[fullName] = new TestNodeState(fullName, TestStatus.Pending, null, null, null);
             NotifyStateChanged();
 
-            await _executor.ExecuteAsync([test], UpdateTestState, _runCts.Token);
+            await _executor.ExecuteAsync([test], UpdateTestState, _runCts.Token, Reporters);
         }
         finally
         {
@@ -111,7 +113,7 @@ public sealed class TestSessionService : ITestSessionService
             }
             NotifyStateChanged();
 
-            await _executor.ExecuteAsync(tests, UpdateTestState, _runCts.Token);
+            await _executor.ExecuteAsync(tests, UpdateTestState, _runCts.Token, Reporters);
         }
         finally
         {

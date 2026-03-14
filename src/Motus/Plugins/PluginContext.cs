@@ -18,7 +18,7 @@ internal sealed class PluginContext : IPluginContext
         _context.SelectorStrategies.Register(strategy);
 
     public void RegisterReporter(IReporter reporter) =>
-        throw new NotImplementedException("Phase 5A.");
+        _context.Reporters.Add(reporter);
 
     public IMotusLogger CreateLogger(string categoryName) => NullMotusLogger.Instance;
 }

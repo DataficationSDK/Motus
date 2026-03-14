@@ -1,6 +1,8 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Reflection;
+using Motus;
+using Motus.Abstractions;
 using Motus.Runner.Services.Models;
 
 namespace Motus.Runner.Services;
@@ -17,8 +19,16 @@ public sealed class TestExecutionService(ILogger<TestExecutionService> logger)
     public async Task ExecuteAsync(
         List<DiscoveredTest> tests,
         Action<TestNodeState> onStateChanged,
-        CancellationToken ct)
+        CancellationToken ct,
+        ReporterCollection? reporters = null)
     {
+        var suiteName = tests.Count > 0
+            ? tests[0].TestClass.Assembly.GetName().Name ?? "Motus Tests"
+            : "Motus Tests";
+
+        if (reporters is not null)
+            await reporters.FireOnTestRunStartAsync(new TestSuiteInfo(suiteName, tests.Count));
+
         // Run [AssemblyInitialize] for each assembly represented in this batch
         var assemblies = tests.Select(t => t.TestClass.Assembly).Distinct().ToList();
         foreach (var assembly in assemblies)
@@ -44,7 +54,9 @@ public sealed class TestExecutionService(ILogger<TestExecutionService> logger)
             }
         }
 
+        var sw = reporters is not null ? Stopwatch.StartNew() : null;
         var semaphore = new SemaphoreSlim(MaxWorkers);
+        int passedCount = 0, failedCount = 0, skippedCount = 0;
 
         var tasks = tests.Select(async test =>
         {
@@ -55,12 +67,31 @@ public sealed class TestExecutionService(ILogger<TestExecutionService> logger)
 
                 onStateChanged(new TestNodeState(test.FullName, TestStatus.Running, null, null, null));
 
+                if (reporters is not null)
+                    await reporters.FireOnTestStartAsync(new TestInfo(test.FullName, suiteName));
+
                 var result = await ExecuteTestAsync(test, logger);
                 onStateChanged(result);
+
+                if (reporters is not null)
+                {
+                    var passed = result.Status == TestStatus.Passed;
+                    var durationMs = result.Duration?.TotalMilliseconds ?? 0;
+                    var testInfo = new TestInfo(test.FullName, suiteName);
+                    var testResult = new Abstractions.TestResult(
+                        test.FullName, passed, durationMs,
+                        result.ErrorMessage, result.StackTrace);
+                    await reporters.FireOnTestEndAsync(testInfo, testResult);
+
+                    if (result.Status == TestStatus.Passed) Interlocked.Increment(ref passedCount);
+                    else if (result.Status == TestStatus.Failed) Interlocked.Increment(ref failedCount);
+                    else Interlocked.Increment(ref skippedCount);
+                }
             }
             catch (OperationCanceledException)
             {
                 onStateChanged(new TestNodeState(test.FullName, TestStatus.Skipped, null, "Cancelled", null));
+                if (reporters is not null) Interlocked.Increment(ref skippedCount);
             }
             finally
             {
@@ -75,6 +106,13 @@ public sealed class TestExecutionService(ILogger<TestExecutionService> logger)
         catch (OperationCanceledException)
         {
             logger.LogInformation("Test run cancelled");
+        }
+
+        if (reporters is not null)
+        {
+            sw!.Stop();
+            await reporters.FireOnTestRunEndAsync(
+                new TestRunSummary(suiteName, passedCount, failedCount, skippedCount, sw.Elapsed.TotalMilliseconds));
         }
     }
 

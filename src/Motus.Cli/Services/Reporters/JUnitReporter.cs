@@ -1,32 +1,36 @@
 using System.Xml.Linq;
+using Motus.Abstractions;
 
 namespace Motus.Cli.Services.Reporters;
 
-public sealed class JUnitReporter(string outputPath) : ITestReporter
+public sealed class JUnitReporter(string outputPath) : IReporter
 {
-    private readonly List<TestResult> _results = [];
+    private readonly List<Abstractions.TestResult> _results = [];
 
-    public Task OnRunStartedAsync(int total) => Task.CompletedTask;
+    public Task OnTestRunStartAsync(TestSuiteInfo suite) => Task.CompletedTask;
 
-    public Task OnTestCompletedAsync(TestResult result)
+    public Task OnTestStartAsync(TestInfo test) => Task.CompletedTask;
+
+    public Task OnTestEndAsync(TestInfo test, Abstractions.TestResult result)
     {
         _results.Add(result);
         return Task.CompletedTask;
     }
 
-    public async Task OnRunCompletedAsync(TestRunResult runResult)
+    public async Task OnTestRunEndAsync(TestRunSummary summary)
     {
+        var total = summary.Passed + summary.Failed + summary.Skipped;
         var testSuite = new XElement("testsuite",
-            new XAttribute("name", "Motus Tests"),
-            new XAttribute("tests", runResult.Total),
-            new XAttribute("failures", runResult.Failed),
-            new XAttribute("time", runResult.Duration.TotalSeconds.ToString("F3")));
+            new XAttribute("name", summary.SuiteName),
+            new XAttribute("tests", total),
+            new XAttribute("failures", summary.Failed),
+            new XAttribute("time", (summary.TotalDurationMs / 1000).ToString("F3")));
 
         foreach (var result in _results)
         {
             var testCase = new XElement("testcase",
-                new XAttribute("name", result.FullName),
-                new XAttribute("time", result.Duration.TotalSeconds.ToString("F3")));
+                new XAttribute("name", result.TestName),
+                new XAttribute("time", (result.DurationMs / 1000).ToString("F3")));
 
             if (!result.Passed)
             {

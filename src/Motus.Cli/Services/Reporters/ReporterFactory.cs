@@ -1,8 +1,16 @@
+using Motus.Abstractions;
+
 namespace Motus.Cli.Services.Reporters;
 
 public static class ReporterFactory
 {
-    public static ITestReporter Create(string spec)
+    public static IReporter Create(string[] specs)
+    {
+        var reporters = specs.Select(CreateSingle).ToList();
+        return reporters.Count == 1 ? reporters[0] : new CompositeReporter(reporters);
+    }
+
+    private static IReporter CreateSingle(string spec)
     {
         var colonIdx = spec.IndexOf(':');
         if (colonIdx < 0)

@@ -15,7 +15,12 @@ public static class RunCommand
             Arity = ArgumentArity.ZeroOrMore,
         };
         var filterOpt = new Option<string?>("--filter") { Description = "Filter tests by name substring" };
-        var reporterOpt = new Option<string>("--reporter") { Description = "Reporter format (console, junit:path.xml, html:path.html)", DefaultValueFactory = _ => "console" };
+        var reporterOpt = new Option<string[]>("--reporter")
+        {
+            Description = "Reporter format (console, junit:path.xml, html:path.html)",
+            Arity = ArgumentArity.ZeroOrMore,
+            DefaultValueFactory = _ => new[] { "console" },
+        };
         var workersOpt = new Option<string>("--workers") { Description = "Number of parallel workers (or 'auto')", DefaultValueFactory = _ => "auto" };
         var visualOpt = new Option<bool>("--visual") { Description = "Launch visual test runner" };
 
@@ -32,7 +37,7 @@ public static class RunCommand
         {
             var assemblies = parseResult.GetValue(assembliesArg)!;
             var filter = parseResult.GetValue(filterOpt);
-            var reporterSpec = parseResult.GetValue(reporterOpt)!;
+            var reporterSpecs = parseResult.GetValue(reporterOpt)!;
             var workersSpec = parseResult.GetValue(workersOpt)!;
             var visual = parseResult.GetValue(visualOpt);
 
@@ -52,7 +57,7 @@ public static class RunCommand
                 ? Environment.ProcessorCount
                 : int.Parse(workersSpec);
 
-            var reporter = ReporterFactory.Create(reporterSpec);
+            var reporter = ReporterFactory.Create(reporterSpecs);
             var discovery = new TestDiscovery();
             var tests = discovery.Discover(assemblies, filter);
 
