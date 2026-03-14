@@ -12,11 +12,29 @@ public sealed class BrowserFixture : IAsyncDisposable
     private IBrowser? _browser;
 
     /// <summary>
-    /// Launches a browser instance with the given options.
+    /// Maximum number of launch attempts before giving up.
+    /// Browser startup can fail transiently on CI runners or when antivirus
+    /// delays process creation, so retrying avoids flaky test runs.
+    /// </summary>
+    private const int MaxLaunchAttempts = 3;
+
+    /// <summary>
+    /// Launches a browser instance with the given options, retrying on transient failures.
     /// </summary>
     public async Task InitializeAsync(LaunchOptions? options = null)
     {
-        _browser = await MotusLauncher.LaunchAsync(options);
+        for (int attempt = 1; attempt <= MaxLaunchAttempts; attempt++)
+        {
+            try
+            {
+                _browser = await MotusLauncher.LaunchAsync(options).ConfigureAwait(false);
+                return;
+            }
+            catch when (attempt < MaxLaunchAttempts)
+            {
+                await Task.Delay(1000 * attempt).ConfigureAwait(false);
+            }
+        }
     }
 
     /// <summary>
