@@ -1,0 +1,104 @@
+@inject ITimelineService Timeline
+@inject ITestSessionService Session
+@implements IDisposable
+
+@if (Timeline.SelectedTestName is { } testName && Session.States.TryGetValue(testName, out var state))
+{
+    <div class="test-console">
+        <div class="console-header">
+            <span class="console-test-name">@GetShortName(testName)</span>
+            <span class="console-status console-status-@state.Status.ToString().ToLowerInvariant()">@state.Status</span>
+            @if (state.Duration is not null)
+            {
+                <span class="console-duration">@($"{state.Duration.Value.TotalMilliseconds:F0}ms")</span>
+            }
+        </div>
+
+        @if (state.Status == TestStatus.Failed && state.ErrorMessage is not null)
+        {
+            <div class="console-section">
+                <div class="console-section-header">Error</div>
+                <pre class="console-error">@state.ErrorMessage</pre>
+            </div>
+        }
+
+        @if (state.StackTrace is not null)
+        {
+            <div class="console-section">
+                <div class="console-section-header">Stack Trace</div>
+                <pre class="console-stacktrace">@state.StackTrace</pre>
+            </div>
+        }
+
+        @if (state.Status == TestStatus.Passed && state.ErrorMessage is null)
+        {
+            <div class="console-success-message">Test passed with no errors.</div>
+        }
+
+        @{
+            var testEntries = Timeline.Entries.Where(e => e.TestName == testName).ToList();
+            var consoleMessages = testEntries.SelectMany(e => e.ConsoleMessages).ToList();
+            var failedNetwork = testEntries.SelectMany(e => e.NetworkRequests).Where(n => n.Failed).ToList();
+        }
+
+        @if (consoleMessages.Count > 0)
+        {
+            <div class="console-section">
+                <div class="console-section-header">Browser Console (@consoleMessages.Count)</div>
+                <div class="console-messages">
+                    @foreach (var msg in consoleMessages)
+                    {
+                        <div class="console-msg console-msg-@msg.Type">[@msg.Type] @msg.Text</div>
+                    }
+                </div>
+            </div>
+        }
+
+        @if (failedNetwork.Count > 0)
+        {
+            <div class="console-section">
+                <div class="console-section-header">Failed Requests (@failedNetwork.Count)</div>
+                <div class="console-messages">
+                    @foreach (var req in failedNetwork)
+                    {
+                        <div class="console-msg console-msg-error">@req.Method @req.Url</div>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+}
+else
+{
+    <div class="console-empty">Click a test name in the timeline to view its output</div>
+}
+
+@code {
+    private static string GetShortName(string fullName)
+    {
+        var parts = fullName.Split('.');
+        return parts.Length >= 2 ? $"{parts[^2]}.{parts[^1]}" : fullName;
+    }
+
+    protected override void OnInitialized()
+    {
+        Timeline.TestSelected += OnTestSelected;
+        Session.StateChanged += OnSessionChanged;
+    }
+
+    private async void OnTestSelected()
+    {
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async void OnSessionChanged()
+    {
+        await InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        Timeline.TestSelected -= OnTestSelected;
+        Session.StateChanged -= OnSessionChanged;
+    }
+}

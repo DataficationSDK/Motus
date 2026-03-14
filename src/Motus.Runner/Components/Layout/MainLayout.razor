@@ -7,9 +7,10 @@
     <div class="runner-toolbar">
         <RunnerToolbar />
     </div>
-    <div class="runner-sidebar">
+    <div class="runner-sidebar" id="runner-sidebar">
         <TestExplorer />
     </div>
+    <div class="sidebar-resize-handle" id="sidebar-resize-handle"></div>
     <div class="runner-main">
         <div class="main-tabs">
             <button class="main-tab @(activeTab == "browser" ? "tab-active" : "")"
@@ -24,6 +25,10 @@
                     @onclick='() => activeTab = "vr"'>
                 Visual Regression
             </button>
+            <button class="main-tab @(activeTab == "console" ? "tab-active" : "")"
+                    @onclick='() => activeTab = "console"'>
+                Test Console
+            </button>
         </div>
         <div class="main-content">
             @switch (activeTab)
@@ -37,6 +42,9 @@
                 case "vr":
                     <VisualRegressionPanel />
                     break;
+                case "console":
+                    <TestConsolePanel />
+                    break;
             }
         </div>
     </div>
@@ -48,29 +56,58 @@
 
 <script suppress-error="BL9992">
     (function() {
+        // Bottom panel resize
         const handle = document.getElementById('resize-handle');
         const bottom = document.getElementById('runner-bottom');
-        if (!handle || !bottom) return;
-        let startY, startH;
-        handle.addEventListener('pointerdown', e => {
-            startY = e.clientY;
-            startH = bottom.offsetHeight;
-            handle.setPointerCapture(e.pointerId);
-            document.body.style.userSelect = 'none';
-            document.body.style.cursor = 'row-resize';
-        });
-        handle.addEventListener('pointermove', e => {
-            if (startY == null) return;
-            const delta = startY - e.clientY;
-            const h = Math.max(48, Math.min(window.innerHeight * 0.4, startH + delta));
-            bottom.style.height = h + 'px';
-        });
-        handle.addEventListener('pointerup', e => {
-            startY = null;
-            handle.releasePointerCapture(e.pointerId);
-            document.body.style.userSelect = '';
-            document.body.style.cursor = '';
-        });
+        if (handle && bottom) {
+            let startY, startH;
+            handle.addEventListener('pointerdown', e => {
+                startY = e.clientY;
+                startH = bottom.offsetHeight;
+                handle.setPointerCapture(e.pointerId);
+                document.body.style.userSelect = 'none';
+                document.body.style.cursor = 'row-resize';
+            });
+            handle.addEventListener('pointermove', e => {
+                if (startY == null) return;
+                const delta = startY - e.clientY;
+                const h = Math.max(36, Math.min(window.innerHeight * 0.5, startH + delta));
+                bottom.style.height = h + 'px';
+            });
+            handle.addEventListener('pointerup', e => {
+                startY = null;
+                handle.releasePointerCapture(e.pointerId);
+                document.body.style.userSelect = '';
+                document.body.style.cursor = '';
+            });
+        }
+
+        // Sidebar resize
+        const sideHandle = document.getElementById('sidebar-resize-handle');
+        const sidebar = document.getElementById('runner-sidebar');
+        const shell = document.getElementById('runner-shell');
+        if (sideHandle && sidebar && shell) {
+            let startX, startW;
+            sideHandle.addEventListener('pointerdown', e => {
+                startX = e.clientX;
+                startW = sidebar.offsetWidth;
+                sideHandle.setPointerCapture(e.pointerId);
+                document.body.style.userSelect = 'none';
+                document.body.style.cursor = 'col-resize';
+            });
+            sideHandle.addEventListener('pointermove', e => {
+                if (startX == null) return;
+                const delta = e.clientX - startX;
+                const w = Math.max(150, Math.min(window.innerWidth * 0.5, startW + delta));
+                shell.style.gridTemplateColumns = w + 'px auto 1fr';
+            });
+            sideHandle.addEventListener('pointerup', e => {
+                startX = null;
+                sideHandle.releasePointerCapture(e.pointerId);
+                document.body.style.userSelect = '';
+                document.body.style.cursor = '';
+            });
+        }
     })();
 </script>
 
@@ -82,6 +119,7 @@
     {
         Session.StateChanged += OnStateChanged;
         Timeline.TimelineChanged += OnTimelineChanged;
+        Timeline.TestSelected += OnTestSelected;
     }
 
     private async void OnStateChanged()
@@ -102,9 +140,16 @@
         await InvokeAsync(StateHasChanged);
     }
 
+    private async void OnTestSelected()
+    {
+        activeTab = "console";
+        await InvokeAsync(StateHasChanged);
+    }
+
     public void Dispose()
     {
         Session.StateChanged -= OnStateChanged;
         Timeline.TimelineChanged -= OnTimelineChanged;
+        Timeline.TestSelected -= OnTestSelected;
     }
 }

@@ -7,7 +7,9 @@ namespace Motus.Runner.Services;
 
 public sealed class TestExecutionService(ILogger<TestExecutionService> logger)
 {
-    private const int MaxWorkers = 4;
+    // Browser automation tests must run sequentially to avoid contention
+    // on the shared browser process and screenshot capture pipeline
+    private const int MaxWorkers = 1;
 
     // Track which assemblies have had [AssemblyInitialize] run
     private readonly ConcurrentDictionary<Assembly, bool> _initializedAssemblies = new();

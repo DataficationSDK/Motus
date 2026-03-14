@@ -67,7 +67,6 @@ public static class RunnerHost
 
             if (page is not null)
             {
-                timeline.Clear();
                 var hook = new TimelineRecorderHook(timeline, stepDebug);
                 page.Context.GetPluginContext().RegisterLifecycleHook(hook);
             }
@@ -82,7 +81,6 @@ public static class RunnerHost
                 catch { /* best-effort */ }
             });
 
-            timeline.Clear();
             var hook = new TimelineRecorderHook(timeline, stepDebug);
             page.Context.GetPluginContext().RegisterLifecycleHook(hook);
         };

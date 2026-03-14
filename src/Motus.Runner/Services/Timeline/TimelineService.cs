@@ -5,6 +5,9 @@ internal sealed class TimelineService : ITimelineService
     private readonly List<TimelineEntry> _entries = [];
     private int? _selectedIndex;
 
+    public string? CurrentTestName { get; set; }
+    public string? SelectedTestName { get; private set; }
+
     public IReadOnlyList<TimelineEntry> Entries
     {
         get
@@ -35,6 +38,7 @@ internal sealed class TimelineService : ITimelineService
     }
 
     public event Action? TimelineChanged;
+    public event Action? TestSelected;
 
     public void Clear()
     {
@@ -43,6 +47,7 @@ internal sealed class TimelineService : ITimelineService
             _entries.Clear();
             _selectedIndex = null;
         }
+        SelectedTestName = null;
         TimelineChanged?.Invoke();
     }
 
@@ -68,5 +73,11 @@ internal sealed class TimelineService : ITimelineService
         lock (_entries)
             _selectedIndex = null;
         TimelineChanged?.Invoke();
+    }
+
+    public void SelectTest(string fullName)
+    {
+        SelectedTestName = fullName;
+        TestSelected?.Invoke();
     }
 }

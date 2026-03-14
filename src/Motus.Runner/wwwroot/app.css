@@ -149,12 +149,12 @@ input {
 }
 
 .class-header {
-    padding-left: 20px;
+    padding-left: 36px;
 }
 
 .chevron {
-    width: 14px;
-    font-size: 10px;
+    width: 16px;
+    font-size: 14px;
     color: var(--vsc-fg-dim);
     flex-shrink: 0;
 }
@@ -196,7 +196,7 @@ input {
     display: flex;
     align-items: center;
     gap: 4px;
-    padding: 2px 8px 2px 36px;
+    padding: 2px 8px 2px 72px;
     cursor: pointer;
 }
 

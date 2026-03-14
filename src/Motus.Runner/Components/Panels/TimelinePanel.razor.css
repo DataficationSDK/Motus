@@ -1,18 +1,76 @@
-.timeline-bar {
+.timeline-panel {
     display: flex;
     flex-direction: column;
     height: 100%;
-    padding: 4px 8px;
-    gap: 4px;
+    padding: 4px 0;
 }
+
+.timeline-rows {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    min-height: 0;
+}
+
+.timeline-grid {
+    display: grid;
+    grid-template-columns: max-content auto 1fr;
+    align-items: center;
+    row-gap: 1px;
+}
+
+.timeline-test-label {
+    font-size: 11px;
+    color: var(--vsc-fg-dim);
+    font-family: var(--vsc-font-mono);
+    white-space: nowrap;
+    padding: 2px 8px;
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    cursor: pointer;
+    text-align: left;
+    transition: color 0.15s;
+}
+
+.timeline-test-label:hover {
+    color: var(--vsc-fg-bright);
+}
+
+.timeline-grid > .timeline-test-label,
+.timeline-grid > .timeline-status-icon,
+.timeline-grid > .timeline-markers {
+    padding-top: 3px;
+    padding-bottom: 3px;
+}
+
+.timeline-grid > .timeline-test-label:hover,
+.timeline-grid > .timeline-status-icon:hover,
+.timeline-grid > .timeline-markers:hover {
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.timeline-status-icon {
+    padding: 2px 4px;
+    font-size: 12px;
+    text-align: center;
+    border-right: 1px solid var(--vsc-border);
+    padding-right: 8px;
+}
+
+.status-passed { color: var(--vsc-green); }
+.status-failed { color: var(--vsc-red); }
+.status-running { color: var(--vsc-green); animation: pulse 1.5s ease-in-out infinite; }
+.status-skipped { color: var(--vsc-fg-dim); }
+.status-pending { color: var(--vsc-fg-dim); font-size: 8px; }
 
 .timeline-markers {
     display: flex;
     gap: 3px;
-    overflow-x: auto;
     align-items: center;
-    flex: 1;
-    min-height: 24px;
+    overflow-x: auto;
+    min-height: 16px;
+    padding-left: 8px;
 }
 
 .timeline-marker {
@@ -48,13 +106,16 @@
     background: var(--vsc-accent);
 }
 
-.timeline-scrubber {
+.timeline-footer {
     display: flex;
     align-items: center;
     gap: 8px;
+    padding: 4px 8px 8px;
+    border-top: 1px solid var(--vsc-border);
+    flex-shrink: 0;
 }
 
-.timeline-scrubber input[type="range"] {
+.timeline-footer input[type="range"] {
     flex: 1;
     accent-color: var(--vsc-accent);
     height: 4px;
@@ -74,4 +135,9 @@
     align-items: center;
     justify-content: center;
     height: 100%;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
 }

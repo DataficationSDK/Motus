@@ -1,21 +1,34 @@
 @inject ITimelineService Timeline
+@inject ITestSessionService Session
 @implements IDisposable
 
-<div class="timeline-bar">
-    <div class="timeline-markers" @ref="_markersRef">
-        @foreach (var entry in Timeline.Entries)
-        {
-            var idx = entry.Index;
-            var cssClass = GetMarkerClass(entry);
-            <button class="timeline-marker @cssClass @(Timeline.SelectedIndex == idx ? "active" : "")"
-                    @onclick="() => SelectEntry(idx)"
-                    title="@entry.ActionType @(entry.Selector ?? "")">
-            </button>
-        }
-    </div>
-    @if (Timeline.Entries.Count > 0)
+<div class="timeline-panel">
+    @if (TestGroups.Count > 0)
     {
-        <div class="timeline-scrubber">
+        <div class="timeline-rows" @ref="_rowsRef">
+            <div class="timeline-grid">
+                @foreach (var group in TestGroups)
+                {
+                    <button class="timeline-test-label" title="@group.FullName"
+                            @onclick="() => Timeline.SelectTest(group.FullName)">
+                        @group.ShortName
+                    </button>
+                    <span class="timeline-status-icon">@GetStatusIcon(group.FullName)</span>
+                    <div class="timeline-markers">
+                        @foreach (var entry in group.Entries)
+                        {
+                            var idx = entry.Index;
+                            var cssClass = GetMarkerClass(entry);
+                            <button class="timeline-marker @cssClass @(Timeline.SelectedIndex == idx ? "active" : "")"
+                                    @onclick="() => SelectEntry(idx)"
+                                    title="@GetMarkerTooltip(entry)">
+                            </button>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+        <div class="timeline-footer">
             <input type="range"
                    min="0"
                    max="@(Timeline.Entries.Count - 1)"
@@ -31,14 +44,74 @@
 </div>
 
 @code {
-    private ElementReference _markersRef;
+    private ElementReference _rowsRef;
+
+    private record TestGroup(string FullName, string ShortName, List<TimelineEntry> Entries);
+
+    private List<TestGroup> TestGroups
+    {
+        get
+        {
+            var groups = new List<TestGroup>();
+            string? currentTest = null;
+            List<TimelineEntry>? currentEntries = null;
+
+            foreach (var entry in Timeline.Entries)
+            {
+                var testName = entry.TestName ?? "(unknown)";
+                if (testName != currentTest)
+                {
+                    currentTest = testName;
+                    currentEntries = [];
+                    var parts = testName.Split('.');
+                    var shortName = parts.Length > 0 ? parts[^1] : testName;
+                    groups.Add(new TestGroup(testName, shortName, currentEntries));
+                }
+                currentEntries!.Add(entry);
+            }
+
+            return groups;
+        }
+    }
+
+    private MarkupString GetStatusIcon(string fullName)
+    {
+        if (Session.States.TryGetValue(fullName, out var state))
+        {
+            return state.Status switch
+            {
+                TestStatus.Passed => (MarkupString)"<span class='status-passed' title='Passed'>&#10003;</span>",
+                TestStatus.Failed => (MarkupString)"<span class='status-failed' title='Failed'>&#10007;</span>",
+                TestStatus.Running => (MarkupString)"<span class='status-running' title='Running'>&#9654;</span>",
+                TestStatus.Skipped => (MarkupString)"<span class='status-skipped' title='Skipped'>&#9644;</span>",
+                _ => (MarkupString)"<span class='status-pending' title='Pending'>&#9679;</span>",
+            };
+        }
+        return (MarkupString)"<span class='status-pending'>&#9679;</span>";
+    }
 
     protected override void OnInitialized()
     {
         Timeline.TimelineChanged += OnTimelineChanged;
+        Session.StateChanged += OnSessionChanged;
     }
 
-    private string GetMarkerClass(TimelineEntry entry)
+    private static string GetMarkerTooltip(TimelineEntry entry)
+    {
+        if (entry.Selector is null)
+            return entry.ActionType;
+
+        // Truncate data: URIs and long selectors
+        var selector = entry.Selector;
+        if (selector.StartsWith("data:", StringComparison.Ordinal))
+            selector = "data:...";
+        else if (selector.Length > 80)
+            selector = selector[..77] + "...";
+
+        return $"{entry.ActionType} {selector}";
+    }
+
+    private static string GetMarkerClass(TimelineEntry entry)
     {
         if (entry.HasError) return "marker-error";
         if (entry.ActionType == "navigate") return "marker-navigate";
@@ -61,8 +134,14 @@
         await InvokeAsync(StateHasChanged);
     }
 
+    private async void OnSessionChanged()
+    {
+        await InvokeAsync(StateHasChanged);
+    }
+
     public void Dispose()
     {
         Timeline.TimelineChanged -= OnTimelineChanged;
+        Session.StateChanged -= OnSessionChanged;
     }
 }

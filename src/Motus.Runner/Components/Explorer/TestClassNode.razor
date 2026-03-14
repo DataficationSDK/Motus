@@ -1,4 +1,5 @@
 @inject ITestSessionService Session
+@implements IDisposable
 
 <div class="class-node">
     <div class="class-header" @onclick="Toggle">
@@ -12,7 +13,7 @@
     {
         @foreach (var test in Tests)
         {
-            <TestMethodNode Test="@test" State="@GetState(test.FullName)" />
+            <TestMethodNode Test="@test" />
         }
     }
 </div>
@@ -21,19 +22,30 @@
     [Parameter, EditorRequired] public string ClassName { get; set; } = "";
     [Parameter, EditorRequired] public string DisplayName { get; set; } = "";
     [Parameter, EditorRequired] public List<DiscoveredTest> Tests { get; set; } = [];
-    [Parameter, EditorRequired] public IReadOnlyDictionary<string, TestNodeState> States { get; set; } = null!;
 
     private bool Expanded { get; set; } = true;
 
-    private TestStatus AggregateStatus => TestSuiteNode.GetAggregateStatus(Tests, States);
+    private TestStatus AggregateStatus => TestSuiteNode.GetAggregateStatus(Tests, Session.States);
+
+    protected override void OnInitialized()
+    {
+        Session.StateChanged += OnStateChanged;
+    }
 
     private void Toggle() => Expanded = !Expanded;
-
-    private TestNodeState? GetState(string fullName)
-        => States.TryGetValue(fullName, out var state) ? state : null;
 
     private async Task RunClass()
     {
         await Session.RunClassAsync(ClassName);
+    }
+
+    private async void OnStateChanged()
+    {
+        await InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        Session.StateChanged -= OnStateChanged;
     }
 }

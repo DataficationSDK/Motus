@@ -1,12 +1,12 @@
 .runner-shell {
     display: grid;
-    grid-template-columns: var(--vsc-sidebar-width) 1fr;
+    grid-template-columns: var(--vsc-sidebar-width) auto 1fr;
     grid-template-rows: var(--vsc-toolbar-height) 1fr auto auto;
     grid-template-areas:
-        "toolbar  toolbar"
-        "sidebar  main"
-        "resize   resize"
-        "bottom   bottom";
+        "toolbar    toolbar    toolbar"
+        "sidebar    sidehandle main"
+        "resize     resize     resize"
+        "bottom     bottom     bottom";
     height: 100vh;
     width: 100vw;
     overflow: hidden;
@@ -25,6 +25,20 @@
     background: var(--vsc-bg-secondary);
     border-right: 1px solid var(--vsc-border);
     overflow-y: auto;
+}
+
+.sidebar-resize-handle {
+    grid-area: sidehandle;
+    width: 5px;
+    cursor: col-resize;
+    background: var(--vsc-border);
+    transition: background 0.15s;
+    touch-action: none;
+}
+
+.sidebar-resize-handle:hover,
+.sidebar-resize-handle:active {
+    background: var(--vsc-accent);
 }
 
 .runner-main {
@@ -86,7 +100,7 @@
 .runner-bottom {
     grid-area: bottom;
     background: var(--vsc-bg-secondary);
-    height: 64px;
-    min-height: 48px;
-    overflow: auto;
+    min-height: 36px;
+    max-height: 30vh;
+    overflow: hidden;
 }

@@ -12,8 +12,7 @@
         @foreach (var assemblyGroup in FilteredTests.GroupBy(t => t.AssemblyName))
         {
             <TestSuiteNode AssemblyName="@assemblyGroup.Key"
-                           Tests="@assemblyGroup.ToList()"
-                           States="@Session.States" />
+                           Tests="@assemblyGroup.ToList()" />
         }
     }
 </div>

@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Motus.Runner.Services.Models;
+using Motus.Runner.Services.Timeline;
 
 namespace Motus.Runner.Services;
 
@@ -7,20 +8,23 @@ public sealed class TestSessionService : ITestSessionService
 {
     private readonly TestDiscovery _discovery;
     private readonly TestExecutionService _executor;
+    private readonly ITimelineService _timeline;
     private List<DiscoveredTest> _discoveredTests = [];
     private readonly ConcurrentDictionary<string, TestNodeState> _states = new();
     private CancellationTokenSource? _runCts;
     private int _running;
 
-    public TestSessionService(TestDiscovery discovery, TestExecutionService executor)
+    public TestSessionService(TestDiscovery discovery, TestExecutionService executor, ITimelineService timeline)
     {
         _discovery = discovery;
         _executor = executor;
+        _timeline = timeline;
     }
 
     public IReadOnlyList<DiscoveredTest> DiscoveredTests => _discoveredTests;
     public IReadOnlyDictionary<string, TestNodeState> States => _states;
     public bool IsRunning => _running != 0;
+    public string? RunningTestName { get; private set; }
     public string? FilterText { get; private set; }
     public event Action? StateChanged;
 
@@ -48,6 +52,7 @@ public sealed class TestSessionService : ITestSessionService
 
         try
         {
+            _timeline.Clear();
             ResetAllToPending();
             NotifyStateChanged();
 
@@ -74,6 +79,7 @@ public sealed class TestSessionService : ITestSessionService
             var test = _discoveredTests.Find(t => t.FullName == fullName);
             if (test is null) return;
 
+            _timeline.Clear();
             _states[fullName] = new TestNodeState(fullName, TestStatus.Pending, null, null, null);
             NotifyStateChanged();
 
@@ -97,6 +103,7 @@ public sealed class TestSessionService : ITestSessionService
 
         try
         {
+            _timeline.Clear();
             var tests = _discoveredTests.Where(t => t.TestClass.FullName == className).ToList();
             foreach (var test in tests)
             {
@@ -126,6 +133,17 @@ public sealed class TestSessionService : ITestSessionService
         _runCts?.Cancel();
     }
 
+    public void Reset()
+    {
+        if (IsRunning) return;
+
+        ResetAllToPending();
+        RunningTestName = null;
+        _timeline.CurrentTestName = null;
+        _timeline.Clear();
+        NotifyStateChanged();
+    }
+
     private void ResetAllToPending()
     {
         foreach (var test in _discoveredTests)
@@ -137,6 +155,20 @@ public sealed class TestSessionService : ITestSessionService
     private void UpdateTestState(TestNodeState state)
     {
         _states[state.FullName] = state;
+
+        if (state.Status == TestStatus.Running)
+        {
+            // Extract just the method name for display (last segment of FullName)
+            var parts = state.FullName.Split('.');
+            RunningTestName = parts.Length > 0 ? parts[^1] : state.FullName;
+            _timeline.CurrentTestName = state.FullName;
+        }
+        else if (state.Status is TestStatus.Passed or TestStatus.Failed or TestStatus.Skipped)
+        {
+            RunningTestName = null;
+            _timeline.CurrentTestName = null;
+        }
+
         NotifyStateChanged();
     }
 

@@ -75,7 +75,8 @@ internal sealed class TimelineRecorderHook : ILifecycleHook
             HasError: result.Error is not null,
             ErrorMessage: result.Error?.Message,
             NetworkRequests: network,
-            ConsoleMessages: console);
+            ConsoleMessages: console,
+            TestName: _timeline.CurrentTestName);
 
         _timeline.AddEntry(entry);
         _screenshotBefore = null;
@@ -151,7 +152,8 @@ internal sealed class TimelineRecorderHook : ILifecycleHook
             HasError: response is not null && !response.Ok,
             ErrorMessage: response is not null && !response.Ok ? $"HTTP {response.Status}" : null,
             NetworkRequests: network,
-            ConsoleMessages: console);
+            ConsoleMessages: console,
+            TestName: _timeline.CurrentTestName);
 
         _timeline.AddEntry(entry);
         _screenshotBefore = null;

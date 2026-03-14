@@ -1,4 +1,5 @@
 @inject ITestSessionService Session
+@implements IDisposable
 
 <div class="suite-node">
     <div class="suite-header" @onclick="Toggle">
@@ -13,8 +14,7 @@
         {
             <TestClassNode ClassName="@classGroup.Key"
                            DisplayName="@classGroup.First().TestClass.Name"
-                           Tests="@classGroup.ToList()"
-                           States="@States" />
+                           Tests="@classGroup.ToList()" />
         }
     }
 </div>
@@ -22,13 +22,27 @@
 @code {
     [Parameter, EditorRequired] public string AssemblyName { get; set; } = "";
     [Parameter, EditorRequired] public List<DiscoveredTest> Tests { get; set; } = [];
-    [Parameter, EditorRequired] public IReadOnlyDictionary<string, TestNodeState> States { get; set; } = null!;
 
     private bool Expanded { get; set; } = true;
 
-    private TestStatus AggregateStatus => GetAggregateStatus(Tests, States);
+    private TestStatus AggregateStatus => GetAggregateStatus(Tests, Session.States);
+
+    protected override void OnInitialized()
+    {
+        Session.StateChanged += OnStateChanged;
+    }
 
     private void Toggle() => Expanded = !Expanded;
+
+    private async void OnStateChanged()
+    {
+        await InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        Session.StateChanged -= OnStateChanged;
+    }
 
     internal static TestStatus GetAggregateStatus(List<DiscoveredTest> tests, IReadOnlyDictionary<string, TestNodeState> states)
     {

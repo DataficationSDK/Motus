@@ -4,6 +4,10 @@
 @if (Timeline.SelectedEntry is { } entry)
 {
     <div class="step-detail">
+        @if (entry.TestName is not null)
+        {
+            <div class="step-test-name" title="@entry.TestName">@GetShortTestName(entry.TestName)</div>
+        }
         <div class="step-header">
             <span class="step-badge @(entry.HasError ? "badge-error" : "badge-success")">@entry.ActionType</span>
             @if (entry.Selector is not null)
@@ -78,6 +82,13 @@ else
 }
 
 @code {
+    private static string GetShortTestName(string fullName)
+    {
+        var parts = fullName.Split('.');
+        // Show ClassName.MethodName
+        return parts.Length >= 2 ? $"{parts[^2]}.{parts[^1]}" : fullName;
+    }
+
     protected override void OnInitialized()
     {
         Timeline.TimelineChanged += OnTimelineChanged;

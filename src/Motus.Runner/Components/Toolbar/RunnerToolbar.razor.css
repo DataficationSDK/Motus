@@ -32,6 +32,14 @@
     color: var(--vsc-red);
 }
 
+.reset-btn {
+    color: var(--vsc-fg-dim);
+}
+
+.reset-btn:hover:not(:disabled) {
+    color: var(--vsc-fg-bright);
+}
+
 .toolbar-separator {
     width: 1px;
     height: 20px;
@@ -99,4 +107,18 @@
 @keyframes pulse {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.5; }
+}
+
+.running-indicator {
+    font-size: 11px;
+    color: var(--vsc-green);
+    font-family: var(--vsc-font-mono);
+    padding: 2px 8px;
+    background: rgba(75, 175, 80, 0.12);
+    border-radius: 3px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 240px;
+    animation: pulse 1.5s ease-in-out infinite;
 }

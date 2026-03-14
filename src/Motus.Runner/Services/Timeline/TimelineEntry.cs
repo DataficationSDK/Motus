@@ -11,4 +11,5 @@ public sealed record TimelineEntry(
     bool HasError,
     string? ErrorMessage,
     IReadOnlyList<NetworkCapture> NetworkRequests,
-    IReadOnlyList<ConsoleCapture> ConsoleMessages);
+    IReadOnlyList<ConsoleCapture> ConsoleMessages,
+    string? TestName = null);
