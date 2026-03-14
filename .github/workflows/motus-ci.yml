@@ -127,7 +127,6 @@ jobs:
         run: >-
           dotnet run --project src/Motus.Cli/Motus.Cli.csproj --configuration Release --framework net10.0 --no-build --
           run samples/Motus.Samples/bin/Release/net10.0/Motus.Samples.dll
-          --filter "TestCategory!=Integration"
           --reporter console
           --reporter junit:TestResults/motus-junit.xml
           --reporter html:TestResults/motus-report.html
