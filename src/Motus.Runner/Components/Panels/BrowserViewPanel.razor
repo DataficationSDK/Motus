@@ -39,6 +39,7 @@
 
     protected override void OnInitialized()
     {
+        _wasStreaming = Screencast.IsStreaming;
         Screencast.FrameReceived += OnFrameReceived;
         Screencast.HighlightChanged += OnHighlightChanged;
     }
@@ -58,10 +59,21 @@
         }
     }
 
+    private bool _wasStreaming;
+
     private async void OnFrameReceived(string base64)
     {
         try
         {
+            if (!_wasStreaming)
+            {
+                // Streaming just started; re-render to swap placeholder for the <img> element
+                _wasStreaming = true;
+                await InvokeAsync(StateHasChanged);
+                // Wait for the render to complete so the <img> element exists
+                await Task.Yield();
+            }
+
             await JS.InvokeVoidAsync("motus.updateFrame", base64);
         }
         catch (JSDisconnectedException)

@@ -118,12 +118,19 @@
     protected override void OnInitialized()
     {
         Session.StateChanged += OnStateChanged;
+        Session.RunStarted += OnRunStarted;
         Timeline.TimelineChanged += OnTimelineChanged;
         Timeline.TestSelected += OnTestSelected;
     }
 
     private async void OnStateChanged()
     {
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async void OnRunStarted()
+    {
+        activeTab = "browser";
         await InvokeAsync(StateHasChanged);
     }
 
@@ -142,13 +149,17 @@
 
     private async void OnTestSelected()
     {
-        activeTab = "console";
+        // Don't switch away from Browser View while tests are running;
+        // the auto-selection is for tracking the active test, not changing tabs
+        if (!Session.IsRunning)
+            activeTab = "console";
         await InvokeAsync(StateHasChanged);
     }
 
     public void Dispose()
     {
         Session.StateChanged -= OnStateChanged;
+        Session.RunStarted -= OnRunStarted;
         Timeline.TimelineChanged -= OnTimelineChanged;
         Timeline.TestSelected -= OnTestSelected;
     }

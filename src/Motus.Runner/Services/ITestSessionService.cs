@@ -11,6 +11,7 @@ public interface ITestSessionService
     string? FilterText { get; }
     IReadOnlySet<string> LastRunTests { get; }
     event Action? StateChanged;
+    event Action? RunStarted;
 
     Task LoadAssembliesAsync(string[] paths, string? filter);
     Task RunAllAsync(CancellationToken ct = default);

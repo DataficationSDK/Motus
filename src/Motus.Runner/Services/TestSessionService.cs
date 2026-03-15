@@ -31,6 +31,7 @@ public sealed class TestSessionService : ITestSessionService
     public IReadOnlySet<string> LastRunTests => _lastRunTests;
     public ReporterCollection? Reporters { get; set; }
     public event Action? StateChanged;
+    public event Action? RunStarted;
 
     public Task LoadAssembliesAsync(string[] paths, string? filter)
     {
@@ -63,6 +64,7 @@ public sealed class TestSessionService : ITestSessionService
             _lastRunTests = new HashSet<string>(_discoveredTests.Select(t => t.FullName));
             _timeline.CurrentTestName = "[Assembly Setup]";
             NotifyStateChanged();
+            RunStarted?.Invoke();
 
             await _executor.ExecuteAsync(_discoveredTests, UpdateTestState, _runCts.Token, Reporters);
         }
@@ -92,6 +94,7 @@ public sealed class TestSessionService : ITestSessionService
             _states[fullName] = new TestNodeState(fullName, TestStatus.Pending, null, null, null);
             _timeline.CurrentTestName = "[Assembly Setup]";
             NotifyStateChanged();
+            RunStarted?.Invoke();
 
             await _executor.ExecuteAsync([test], UpdateTestState, _runCts.Token, Reporters);
         }
@@ -122,6 +125,7 @@ public sealed class TestSessionService : ITestSessionService
             }
             _timeline.CurrentTestName = "[Assembly Setup]";
             NotifyStateChanged();
+            RunStarted?.Invoke();
 
             await _executor.ExecuteAsync(tests, UpdateTestState, _runCts.Token, Reporters);
         }
@@ -177,6 +181,7 @@ public sealed class TestSessionService : ITestSessionService
             var parts = state.FullName.Split('.');
             RunningTestName = parts.Length > 0 ? parts[^1] : state.FullName;
             _timeline.CurrentTestName = state.FullName;
+            _timeline.SelectTest(state.FullName);
         }
         else if (state.Status is TestStatus.Passed or TestStatus.Failed or TestStatus.Skipped)
         {
