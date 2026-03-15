@@ -121,10 +121,14 @@ internal class JsHandle : IJSHandle
     protected static T DeserializeValue<T>(RuntimeRemoteObject remoteObject)
     {
         if (remoteObject.Value is JsonElement element)
+        {
+            if (element.ValueKind == JsonValueKind.Null)
+                return default!;
             return element.Deserialize<T>()
                    ?? throw new InvalidOperationException("Deserialization returned null.");
+        }
 
-        if (remoteObject.Type == "undefined")
+        if (remoteObject.Type == "undefined" || remoteObject.Subtype == "null")
             return default!;
 
         throw new InvalidOperationException(

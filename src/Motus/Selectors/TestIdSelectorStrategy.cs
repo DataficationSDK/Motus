@@ -24,7 +24,9 @@ internal sealed class TestIdSelectorStrategy : ISelectorStrategy
     {
         var page = SelectorStrategyHelpers.GetPage(frame);
         var escapedAttr = JsonEncodedText.Encode(_attributeName).ToString();
-        var escapedVal = JsonEncodedText.Encode(selector).ToString();
+        var prefix = _attributeName + "=";
+        var selectorValue = selector.StartsWith(prefix, StringComparison.Ordinal) ? selector[prefix.Length..] : selector;
+        var escapedVal = JsonEncodedText.Encode(selectorValue).ToString();
         var cssSelector = $"""[{escapedAttr}="{escapedVal}"]""";
 
         var js = pierceShadow

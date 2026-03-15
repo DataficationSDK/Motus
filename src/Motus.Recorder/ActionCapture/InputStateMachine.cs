@@ -23,6 +23,7 @@ internal sealed class InputStateMachine
     private string? _activeFillPageUrl;
     private double? _activeFillX;
     private double? _activeFillY;
+    private int? _activeFillTargetId;
     private string _currentFillValue = string.Empty;
     private long _fillStartTime;
     private IDisposable? _fillTimer;
@@ -30,6 +31,8 @@ internal sealed class InputStateMachine
     // Scroll state
     private double _lastScrollX;
     private double _lastScrollY;
+    private double? _scrollMouseX;
+    private double? _scrollMouseY;
     private string? _scrollPageUrl;
     private long _scrollStartTime;
     private IDisposable? _scrollTimer;
@@ -129,7 +132,7 @@ internal sealed class InputStateMachine
             Button: _pendingMouseDown.Button ?? "left",
             ClickCount: _pendingMouseDown.ClickCount ?? 1,
             Modifiers: _pendingMouseDown.Modifiers ?? 0
-        );
+        ) { TargetId = _pendingMouseDown.TargetId };
 
         _writer.TryWrite(action);
         _pendingMouseDown = null;
@@ -143,6 +146,7 @@ internal sealed class InputStateMachine
             _activeFillPageUrl = _lastPageUrl;
             _activeFillX = evt.X;
             _activeFillY = evt.Y;
+            _activeFillTargetId = evt.TargetId;
         }
 
         _currentFillValue = evt.Value ?? string.Empty;
@@ -190,7 +194,7 @@ internal sealed class InputStateMachine
                 X: evt.X,
                 Y: evt.Y,
                 SelectedValues: evt.SelectedValues ?? []
-            );
+            ) { TargetId = evt.TargetId };
             _writer.TryWrite(action);
         }
         else if (inputType is "checkbox" or "radio")
@@ -202,7 +206,7 @@ internal sealed class InputStateMachine
                 X: evt.X,
                 Y: evt.Y,
                 Checked: evt.Checked ?? false
-            );
+            ) { TargetId = evt.TargetId };
             _writer.TryWrite(action);
         }
     }
@@ -210,7 +214,11 @@ internal sealed class InputStateMachine
     private void HandleScroll(DomEventPayload evt)
     {
         if (_scrollPageUrl is null)
+        {
             _scrollStartTime = _clock();
+            _scrollMouseX = evt.MouseX;
+            _scrollMouseY = evt.MouseY;
+        }
 
         _scrollPageUrl = _lastPageUrl;
         _lastScrollX = evt.ScrollX ?? 0;
@@ -233,13 +241,14 @@ internal sealed class InputStateMachine
             X: _activeFillX,
             Y: _activeFillY,
             Value: _currentFillValue
-        );
+        ) { TargetId = _activeFillTargetId };
 
         _writer.TryWrite(action);
         _activeFillPageUrl = null;
         _currentFillValue = string.Empty;
         _activeFillX = null;
         _activeFillY = null;
+        _activeFillTargetId = null;
     }
 
     private void FlushScroll()
@@ -254,14 +263,16 @@ internal sealed class InputStateMachine
             Timestamp: DateTimeOffset.FromUnixTimeMilliseconds(_scrollStartTime),
             PageUrl: _scrollPageUrl,
             BackendNodeId: null,
-            X: null,
-            Y: null,
+            X: _scrollMouseX,
+            Y: _scrollMouseY,
             ScrollX: _lastScrollX,
             ScrollY: _lastScrollY
         );
 
         _writer.TryWrite(action);
         _scrollPageUrl = null;
+        _scrollMouseX = null;
+        _scrollMouseY = null;
     }
 
     private void ResetFillTimer()

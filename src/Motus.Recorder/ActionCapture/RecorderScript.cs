@@ -18,6 +18,21 @@ internal static class RecorderScript
         const binding = window['{{bindingName}}'];
         if (!binding) return;
 
+        const targetMap = new Map();
+        let targetSeq = 0;
+
+        function captureTarget(el) {
+            const id = ++targetSeq;
+            targetMap.set(id, el);
+            return id;
+        }
+
+        window.__motus_get_target__ = (id) => {
+            const el = targetMap.get(id);
+            targetMap.delete(id);
+            return el || null;
+        };
+
         function getModifiers(e) {
             return (e.altKey ? 1 : 0) | (e.ctrlKey ? 2 : 0) | (e.metaKey ? 4 : 0) | (e.shiftKey ? 8 : 0);
         }
@@ -38,6 +53,7 @@ internal static class RecorderScript
                 button: e.button === 0 ? 'left' : e.button === 1 ? 'middle' : 'right',
                 clickCount: e.detail,
                 modifiers: getModifiers(e),
+                targetId: captureTarget(e.target),
                 pageUrl: location.href,
                 ...getElementInfo(e.target)
             }));
@@ -63,6 +79,7 @@ internal static class RecorderScript
                 x: e.target.getBoundingClientRect?.()?.x,
                 y: e.target.getBoundingClientRect?.()?.y,
                 value: e.target.value ?? '',
+                targetId: captureTarget(e.target),
                 pageUrl: location.href,
                 ...getElementInfo(e.target)
             }));
@@ -86,6 +103,7 @@ internal static class RecorderScript
                 timestamp: Date.now(),
                 x: e.target.getBoundingClientRect?.()?.x,
                 y: e.target.getBoundingClientRect?.()?.y,
+                targetId: captureTarget(e.target),
                 pageUrl: location.href,
                 ...getElementInfo(e.target)
             };
@@ -99,6 +117,12 @@ internal static class RecorderScript
             binding(JSON.stringify(payload));
         }, true);
 
+        let lastMouseX = 0, lastMouseY = 0;
+        document.addEventListener('mousemove', (e) => {
+            lastMouseX = e.clientX;
+            lastMouseY = e.clientY;
+        }, true);
+
         let scrollTimeout;
         document.addEventListener('scroll', () => {
             clearTimeout(scrollTimeout);
@@ -108,6 +132,8 @@ internal static class RecorderScript
                     timestamp: Date.now(),
                     scrollX: window.scrollX,
                     scrollY: window.scrollY,
+                    mouseX: lastMouseX,
+                    mouseY: lastMouseY,
                     pageUrl: location.href
                 }));
             }, 50);

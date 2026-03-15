@@ -9,4 +9,10 @@ public abstract record ActionRecord(
     int? BackendNodeId,
     double? X,
     double? Y
-);
+)
+{
+    /// <summary>
+    /// JS-side target element ID captured at event time, used for deferred selector inference.
+    /// </summary>
+    public int? TargetId { get; init; }
+}

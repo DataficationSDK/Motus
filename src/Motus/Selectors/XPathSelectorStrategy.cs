@@ -17,7 +17,8 @@ internal sealed class XPathSelectorStrategy : ISelectorStrategy
         string selector, IFrame frame, bool pierceShadow = true, CancellationToken ct = default)
     {
         var page = SelectorStrategyHelpers.GetPage(frame);
-        var escaped = JsonEncodedText.Encode(selector).ToString();
+        var xpathExpr = selector.StartsWith("xpath=", StringComparison.Ordinal) ? selector[6..] : selector;
+        var escaped = JsonEncodedText.Encode(xpathExpr).ToString();
         var js = $$"""
             (()=>{
                 var r=document.evaluate("{{escaped}}",document,null,XPathResult.ORDERED_NODE_SNAPSHOT_TYPE,null);

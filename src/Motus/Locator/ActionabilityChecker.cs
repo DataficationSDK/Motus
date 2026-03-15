@@ -27,6 +27,7 @@ internal static class ActionabilityChecker
         CancellationToken ct)
     {
         string lastCheckName = "resolve";
+        string? lastCheckDetail = null;
 
         try
         {
@@ -34,6 +35,7 @@ internal static class ActionabilityChecker
             {
                 ct.ThrowIfCancellationRequested();
                 lastCheckName = "resolve";
+                lastCheckDetail = null;
 
                 string objectId;
                 try
@@ -53,38 +55,57 @@ internal static class ActionabilityChecker
                         return objectId;
 
                     lastCheckName = "visible";
+                    lastCheckDetail = null;
                     if (flags.HasFlag(ActionabilityFlags.Visible) && !await IsVisibleAsync(page, objectId, ct).ConfigureAwait(false))
                     {
+                        lastCheckDetail = "element was found but is not visible (display:none, visibility:hidden, zero size, or opacity:0)";
                         await Task.Delay(PollingIntervalMs, ct).ConfigureAwait(false);
                         continue;
                     }
 
                     lastCheckName = "enabled";
+                    lastCheckDetail = null;
                     if (flags.HasFlag(ActionabilityFlags.Enabled) && !await IsEnabledAsync(page, objectId, ct).ConfigureAwait(false))
                     {
+                        lastCheckDetail = "element was found but is disabled";
                         await Task.Delay(PollingIntervalMs, ct).ConfigureAwait(false);
                         continue;
                     }
 
                     lastCheckName = "editable";
+                    lastCheckDetail = null;
                     if (flags.HasFlag(ActionabilityFlags.Editable) && !await IsEditableAsync(page, objectId, ct).ConfigureAwait(false))
                     {
+                        lastCheckDetail = "element was found but is not editable";
                         await Task.Delay(PollingIntervalMs, ct).ConfigureAwait(false);
                         continue;
                     }
 
                     lastCheckName = "stable";
-                    if (flags.HasFlag(ActionabilityFlags.Stable) && !await IsStableAsync(page, objectId, ct).ConfigureAwait(false))
+                    lastCheckDetail = null;
+                    if (flags.HasFlag(ActionabilityFlags.Stable))
                     {
-                        await Task.Delay(PollingIntervalMs, ct).ConfigureAwait(false);
-                        continue;
+                        var stableResult = await MeasureStabilityAsync(page, objectId, ct).ConfigureAwait(false);
+                        if (!stableResult.IsStable)
+                        {
+                            lastCheckDetail = $"element was located but kept drifting (last measured drift: {stableResult.Drift:F1}px across x/y/width/height over 50ms)";
+                            await Task.Delay(PollingIntervalMs, ct).ConfigureAwait(false);
+                            continue;
+                        }
                     }
 
                     lastCheckName = "receivesEvents";
-                    if (flags.HasFlag(ActionabilityFlags.ReceivesEvents) && !await ReceivesEventsAsync(page, objectId, ct).ConfigureAwait(false))
+                    lastCheckDetail = null;
+                    if (flags.HasFlag(ActionabilityFlags.ReceivesEvents))
                     {
-                        await Task.Delay(PollingIntervalMs, ct).ConfigureAwait(false);
-                        continue;
+                        var hitsTarget = await ReceivesEventsAsync(page, objectId, ct).ConfigureAwait(false);
+                        if (!hitsTarget)
+                        {
+                            var coveringTag = await GetCoveringElementInfoAsync(page, objectId, ct).ConfigureAwait(false);
+                            lastCheckDetail = $"element was found but is covered at its center point by <{coveringTag}> which intercepts pointer events";
+                            await Task.Delay(PollingIntervalMs, ct).ConfigureAwait(false);
+                            continue;
+                        }
                     }
 
                     return objectId;
@@ -99,10 +120,14 @@ internal static class ActionabilityChecker
         }
         catch (OperationCanceledException)
         {
+            var message = $"Actionability check '{lastCheckName}' timed out for selector '{selector}'.";
+            if (lastCheckDetail is not null)
+                message += $" {lastCheckDetail}";
+
             throw new ActionTimeoutException(
-                selector, lastCheckName, elementState: null, pageUrl: page.Url,
+                selector, lastCheckName, elementState: lastCheckDetail, pageUrl: page.Url,
                 timeoutDuration: TimeSpan.FromMilliseconds(DefaultTimeoutMs),
-                message: $"Actionability check '{lastCheckName}' timed out for selector '{selector}'.");
+                message: message);
         }
     }
 
@@ -143,37 +168,57 @@ internal static class ActionabilityChecker
             """, ct).ConfigureAwait(false);
     }
 
-    private static async Task<bool> IsStableAsync(Page page, string objectId, CancellationToken ct)
+    private readonly record struct StabilityResult(bool IsStable, double Drift);
+
+    private static async Task<StabilityResult> MeasureStabilityAsync(Page page, string objectId, CancellationToken ct)
     {
         // Use two measurements separated by a short delay instead of requestAnimationFrame.
         // In headless Chromium, requestAnimationFrame may stall on data: URIs or after DOM
         // mutations when the browser stops scheduling animation frames, causing a 30s hang.
-        return await EvalBoolAsync(page, objectId,
-            """
-            function() {
-                var r1 = this.getBoundingClientRect();
-                var self = this;
-                return new Promise(function(resolve) {
-                    setTimeout(function() {
-                        var r2 = self.getBoundingClientRect();
-                        resolve(
-                            r1.x === r2.x && r1.y === r2.y &&
-                            r1.width === r2.width && r1.height === r2.height
-                        );
-                    }, 50);
-                });
-            }
-            """, ct, awaitPromise: true).ConfigureAwait(false);
+        // Returns the total drift in px across x, y, width, and height.
+        var result = await page.Session.SendAsync(
+            "Runtime.callFunctionOn",
+            new RuntimeCallFunctionOnParams(
+                FunctionDeclaration: """
+                    function() {
+                        var r1 = this.getBoundingClientRect();
+                        var self = this;
+                        return new Promise(function(resolve) {
+                            setTimeout(function() {
+                                var r2 = self.getBoundingClientRect();
+                                var d = Math.abs(r1.x-r2.x) + Math.abs(r1.y-r2.y) +
+                                        Math.abs(r1.width-r2.width) + Math.abs(r1.height-r2.height);
+                                resolve(d);
+                            }, 50);
+                        });
+                    }
+                    """,
+                ObjectId: objectId,
+                ReturnByValue: true,
+                AwaitPromise: true),
+            CdpJsonContext.Default.RuntimeCallFunctionOnParams,
+            CdpJsonContext.Default.RuntimeCallFunctionOnResult,
+            ct).ConfigureAwait(false);
+
+        if (result.ExceptionDetails is not null)
+            throw new InvalidOperationException(
+                $"Actionability check failed: {result.ExceptionDetails.Text}");
+
+        var drift = result.Result.Value is JsonElement el && el.ValueKind == JsonValueKind.Number
+            ? el.GetDouble()
+            : 0;
+
+        return new StabilityResult(drift < 2, drift);
     }
 
     private static async Task<bool> ReceivesEventsAsync(Page page, string objectId, CancellationToken ct)
     {
         // Pure JS hit-test using document.elementFromPoint at the element's center.
-        // This avoids the CDP DOM domain (DOM.getNodeForLocation + DOM.resolveNode)
-        // which fails for elements with text children because DOM.resolveNode returns
-        // a null objectId for text nodes, causing the check to always return false.
-        // elementFromPoint returns the nearest Element (not text node), making
-        // this.contains(top) work correctly for buttons, links, and other text-bearing elements.
+        // Checks multiple conditions for whether the click will reach our target:
+        // 1. The topmost element IS our target or a child of it (standard case)
+        // 2. The covering element has pointer-events:none (clicks pass through)
+        // 3. The covering element is a descendant of our target's parent that would
+        //    bubble the event up to a shared interactive ancestor
         return await EvalBoolAsync(page, objectId,
             """
             function() {
@@ -181,9 +226,74 @@ internal static class ActionabilityChecker
                 var cx = r.x + r.width / 2;
                 var cy = r.y + r.height / 2;
                 var top = document.elementFromPoint(cx, cy);
-                return top !== null && (this === top || this.contains(top));
+                if (top === null) return false;
+                // Direct hit or child of target
+                if (this === top || this.contains(top)) return true;
+                // Covering element has pointer-events:none (transparent to clicks)
+                var style = window.getComputedStyle(top);
+                if (style.pointerEvents === 'none') return true;
+                // Walk up from the covering element; if our target is an ancestor,
+                // the event will bubble up to it
+                var el = top;
+                while (el) {
+                    if (el === this) return true;
+                    el = el.parentElement;
+                }
+                // Check if the covering element and target share a common parent.
+                // In complex widgets, a label sibling may cover the target but the
+                // click bubbles to the shared parent where the real event handler lives.
+                var targetParent = this.parentElement;
+                if (targetParent) {
+                    el = top;
+                    while (el) {
+                        if (el === targetParent) return true;
+                        el = el.parentElement;
+                    }
+                }
+                return false;
             }
             """, ct).ConfigureAwait(false);
+    }
+
+    private static async Task<string> GetCoveringElementInfoAsync(Page page, string objectId, CancellationToken ct)
+    {
+        try
+        {
+            var result = await page.Session.SendAsync(
+                "Runtime.callFunctionOn",
+                new RuntimeCallFunctionOnParams(
+                    FunctionDeclaration: """
+                        function() {
+                            var r = this.getBoundingClientRect();
+                            var cx = r.x + r.width / 2;
+                            var cy = r.y + r.height / 2;
+                            var top = document.elementFromPoint(cx, cy);
+                            if (!top) return 'unknown';
+                            var tag = top.tagName.toLowerCase();
+                            if (top.id) tag += '#' + top.id;
+                            else if (top.className && typeof top.className === 'string') {
+                                var cls = top.className.trim().split(/\s+/).slice(0, 2).join('.');
+                                if (cls) tag += '.' + cls;
+                            }
+                            return tag;
+                        }
+                        """,
+                    ObjectId: objectId,
+                    ReturnByValue: true,
+                    AwaitPromise: false),
+                CdpJsonContext.Default.RuntimeCallFunctionOnParams,
+                CdpJsonContext.Default.RuntimeCallFunctionOnResult,
+                ct).ConfigureAwait(false);
+
+            if (result.Result.Value is JsonElement el && el.ValueKind == JsonValueKind.String)
+                return el.GetString() ?? "unknown";
+        }
+        catch
+        {
+            // Best-effort diagnostic
+        }
+
+        return "unknown";
     }
 
     private static async Task<bool> EvalBoolAsync(

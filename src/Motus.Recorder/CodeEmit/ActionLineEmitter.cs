@@ -23,7 +23,7 @@ internal static class ActionLineEmitter
             CheckAction check => EmitCheck(check, selector, indent),
             FileUploadAction upload => EmitFileUpload(upload, selector, indent),
             DialogAction dialog => EmitDialog(dialog, indent),
-            ScrollAction scroll => $"{indent}await page.Mouse.WheelAsync({scroll.ScrollX}, {scroll.ScrollY});",
+            ScrollAction scroll => EmitScroll(scroll, indent),
             _ => $"{indent}// Unknown action type: {action.GetType().Name}"
         };
     }
@@ -78,6 +78,15 @@ internal static class ActionLineEmitter
 
         var files = string.Join(", ", upload.FileNames.Select(Escape));
         return $"{indent}await page.Locator({Escape(selector)}).SetInputFilesAsync(new[] {{ {files} }});";
+    }
+
+    private static string EmitScroll(ScrollAction scroll, string indent)
+    {
+        if (scroll.X is not null && scroll.Y is not null)
+            return $"{indent}await page.Mouse.MoveAsync({scroll.X.Value}, {scroll.Y.Value});\n" +
+                   $"{indent}await page.Mouse.WheelAsync({scroll.ScrollX}, {scroll.ScrollY});";
+
+        return $"{indent}await page.Mouse.WheelAsync({scroll.ScrollX}, {scroll.ScrollY});";
     }
 
     private static string EmitDialog(DialogAction dialog, string indent)

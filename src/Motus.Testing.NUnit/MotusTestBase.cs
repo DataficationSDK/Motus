@@ -21,8 +21,12 @@ public abstract class MotusTestBase
 
     /// <summary>
     /// Override to customize per-test context options.
+    /// Default viewport is 1024x768.
     /// </summary>
-    protected virtual ContextOptions? ContextOptions => null;
+    protected virtual ContextOptions? ContextOptions => new()
+    {
+        Viewport = new ViewportSize(1024, 768),
+    };
 
     /// <summary>
     /// The browser instance for this test fixture.

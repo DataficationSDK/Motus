@@ -18,8 +18,9 @@ internal sealed class TextSelectorStrategy : ISelectorStrategy
     {
         var page = SelectorStrategyHelpers.GetPage(frame);
 
-        var isExact = selector.Length >= 2 && selector[0] == '"' && selector[^1] == '"';
-        var text = isExact ? selector[1..^1] : selector;
+        var rawSelector = selector.StartsWith("text=", StringComparison.Ordinal) ? selector[5..] : selector;
+        var isExact = rawSelector.Length >= 2 && rawSelector[0] == '"' && rawSelector[^1] == '"';
+        var text = isExact ? rawSelector[1..^1] : rawSelector;
         var escaped = JsonEncodedText.Encode(text).ToString();
         var matchExpr = isExact
             ? $"""el.textContent&&el.textContent.trim()==="{escaped}" """

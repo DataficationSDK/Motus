@@ -238,7 +238,16 @@ internal sealed partial class Page
             {
                 try
                 {
-                    var args = JsonSerializer.Deserialize<object?[]>(evt.Payload) ?? [];
+                    object?[] args;
+                    try
+                    {
+                        args = JsonSerializer.Deserialize<object?[]>(evt.Payload) ?? [];
+                    }
+                    catch (JsonException)
+                    {
+                        // Payload is a single value (e.g. a JSON object string), not an array
+                        args = [JsonSerializer.Deserialize<JsonElement>(evt.Payload)];
+                    }
                     await callback(args).ConfigureAwait(false);
                 }
                 catch

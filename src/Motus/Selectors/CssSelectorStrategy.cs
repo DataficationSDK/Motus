@@ -16,7 +16,8 @@ internal sealed class CssSelectorStrategy : ISelectorStrategy
         string selector, IFrame frame, bool pierceShadow = true, CancellationToken ct = default)
     {
         var page = SelectorStrategyHelpers.GetPage(frame);
-        var escaped = JsonEncodedText.Encode(selector).ToString();
+        var cssSelector = selector.StartsWith("css=", StringComparison.Ordinal) ? selector[4..] : selector;
+        var escaped = JsonEncodedText.Encode(cssSelector).ToString();
 
         var js = pierceShadow
             ? $$"""

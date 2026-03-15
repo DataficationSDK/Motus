@@ -56,6 +56,15 @@ internal sealed record DomEventPayload
     [JsonPropertyName("scrollY")]
     public double? ScrollY { get; init; }
 
+    [JsonPropertyName("mouseX")]
+    public double? MouseX { get; init; }
+
+    [JsonPropertyName("mouseY")]
+    public double? MouseY { get; init; }
+
+    [JsonPropertyName("targetId")]
+    public int? TargetId { get; init; }
+
     [JsonPropertyName("pageUrl")]
     public string? PageUrl { get; init; }
 }

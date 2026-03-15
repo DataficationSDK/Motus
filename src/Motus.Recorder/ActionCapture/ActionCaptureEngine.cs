@@ -195,7 +195,7 @@ public sealed class ActionCaptureEngine : IActionCaptureEngine
                     try
                     {
                         selector = await _inferenceEngine!.InferAsync(
-                            action.X.Value, action.Y.Value, ct);
+                            action.X.Value, action.Y.Value, action.TargetId, ct);
                     }
                     catch (OperationCanceledException)
                     {

@@ -78,6 +78,10 @@ internal sealed class RoleSelectorStrategy : ISelectorStrategy
     /// </summary>
     internal static (string role, string? name) ParseRoleSelector(ReadOnlySpan<char> selector)
     {
+        // Strip the "role=" prefix if present
+        if (selector.StartsWith("role="))
+            selector = selector["role=".Length..];
+
         var bracketStart = selector.IndexOf('[');
         if (bracketStart < 0)
             return (selector.ToString(), null);

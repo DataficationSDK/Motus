@@ -9,6 +9,7 @@ public static class RecordCommand
 {
     public static Command Build()
     {
+        var urlOpt = new Option<string?>("--url") { Description = "Starting URL to navigate to" };
         var outputOpt = new Option<string>("--output") { Description = "Output file path", DefaultValueFactory = _ => "recorded-test.cs" };
         var frameworkOpt = new Option<string>("--framework") { Description = "Test framework (mstest, xunit, nunit)", DefaultValueFactory = _ => "mstest" };
         var connectOpt = new Option<string?>("--connect") { Description = "WebSocket endpoint to connect to an existing browser" };
@@ -19,6 +20,7 @@ public static class RecordCommand
 
         var cmd = new Command("record", "Record browser interactions and generate test code")
         {
+            urlOpt,
             outputOpt,
             frameworkOpt,
             connectOpt,
@@ -30,6 +32,7 @@ public static class RecordCommand
 
         cmd.SetAction(async (parseResult, ct) =>
         {
+            var url = parseResult.GetValue(urlOpt);
             var output = parseResult.GetValue(outputOpt)!;
             var framework = parseResult.GetValue(frameworkOpt)!;
             var connect = parseResult.GetValue(connectOpt);
@@ -48,32 +51,28 @@ public static class RecordCommand
                 {
                     Headless = false,
                     ExecutablePath = BrowserPathHelper.Resolve(),
+                    HandleSIGINT = false,
                 };
                 browser = await MotusLauncher.LaunchAsync(launchOptions, ct);
             }
 
             try
             {
-                var page = await browser.NewPageAsync();
+                var page = await browser.NewPageAsync(new ContextOptions
+                {
+                    Viewport = new ViewportSize(1024, 768),
+                });
                 var engine = new ActionCaptureEngine();
                 await engine.StartAsync(page, ct);
 
-                Console.WriteLine("Recording... Press Ctrl+C to stop.");
-
-                using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                Console.CancelKeyPress += (_, e) =>
+                if (url is not null)
                 {
-                    e.Cancel = true;
-                    cts.Cancel();
-                };
-
-                try
-                {
-                    await Task.Delay(Timeout.Infinite, cts.Token);
+                    await page.GotoAsync(url);
                 }
-                catch (OperationCanceledException)
-                {
-                }
+
+                Console.WriteLine("Recording... Press Enter to stop and generate test code.");
+
+                await Task.Run(() => Console.ReadLine(), ct);
 
                 await engine.StopAsync();
 

@@ -46,6 +46,7 @@ internal static class ChromiumArgs
         }
         else
         {
+            args.Add("--no-startup-window");
             args.Add("--disable-blink-features=AutomationControlled");
         }
 
