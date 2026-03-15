@@ -173,6 +173,18 @@ namespace Motus;
 [JsonSerializable(typeof(AccessibilityEnableResult))]
 [JsonSerializable(typeof(AccessibilityQueryAXTreeParams))]
 [JsonSerializable(typeof(AccessibilityQueryAXTreeResult))]
+// --- Tracing domain ---
+[JsonSerializable(typeof(TracingStartParams))]
+[JsonSerializable(typeof(TracingStartResult))]
+[JsonSerializable(typeof(TracingEndResult))]
+[JsonSerializable(typeof(TracingTraceConfig))]
+[JsonSerializable(typeof(TracingDataCollectedEvent))]
+[JsonSerializable(typeof(TracingTracingCompleteEvent))]
+// --- IO domain ---
+[JsonSerializable(typeof(IoReadParams))]
+[JsonSerializable(typeof(IoReadResult))]
+[JsonSerializable(typeof(IoCloseParams))]
+[JsonSerializable(typeof(IoCloseResult))]
 // --- Abstractions type registration ---
 [JsonSerializable(typeof(Motus.Abstractions.BoundingBox))]
 [JsonSourceGenerationOptions(
@@ -886,3 +898,50 @@ internal sealed record DomBoxModel(
     double Height);
 
 internal sealed record DomGetBoxModelResult(DomBoxModel Model);
+
+// ============================================================================
+// Tracing domain
+// ============================================================================
+
+internal sealed record TracingTraceConfig(
+    string? RecordMode = null,
+    string[]? IncludedCategories = null,
+    string[]? ExcludedCategories = null);
+
+internal sealed record TracingStartParams(
+    string? Categories = null,
+    string? TransferMode = null,
+    string? StreamFormat = null,
+    string? StreamCompression = null,
+    double? BufferUsageReportingInterval = null,
+    TracingTraceConfig? TraceConfig = null);
+
+internal sealed record TracingStartResult();
+
+internal sealed record TracingEndResult();
+
+internal sealed record TracingDataCollectedEvent(JsonElement[] Value);
+
+internal sealed record TracingTracingCompleteEvent(
+    bool DataLossOccurred,
+    string? Stream = null,
+    string? TraceFormat = null,
+    string? StreamCompression = null);
+
+// ============================================================================
+// IO domain
+// ============================================================================
+
+internal sealed record IoReadParams(
+    string Handle,
+    int? Offset = null,
+    int? Size = null);
+
+internal sealed record IoReadResult(
+    string Data,
+    bool Base64Encoded,
+    bool Eof);
+
+internal sealed record IoCloseParams(string Handle);
+
+internal sealed record IoCloseResult();

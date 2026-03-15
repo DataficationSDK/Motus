@@ -24,6 +24,8 @@ internal sealed class NetworkManager
     private MotusResponse? _lastNavigationResponse;
     private bool _fetchEnabled;
 
+    internal HarRecorder? HarRecorder { get; set; }
+
     internal NetworkManager(CdpSession session, Page page, CancellationToken ct)
     {
         _session = session;
@@ -231,6 +233,8 @@ internal sealed class NetworkManager
         _requests[evt.RequestId] = request;
         Interlocked.Increment(ref _activeRequests);
 
+        HarRecorder?.OnRequestWillBeSent(evt);
+
         _page.FireRequest(request);
         NotifyRequestWaiters(request);
     }
@@ -259,12 +263,16 @@ internal sealed class NetworkManager
         if (request.IsNavigationRequest)
             _lastNavigationResponse = response;
 
+        HarRecorder?.OnResponseReceived(evt);
+
         _page.FireResponse(response);
         NotifyResponseWaiters(response);
     }
 
     private void OnLoadingFinished(NetworkLoadingFinishedEvent evt)
     {
+        HarRecorder?.OnLoadingFinished(evt);
+
         if (_requests.TryGetValue(evt.RequestId, out var request))
         {
             _page.FireRequestFinished(request);
@@ -274,6 +282,8 @@ internal sealed class NetworkManager
 
     private void OnLoadingFailed(NetworkLoadingFailedEvent evt)
     {
+        HarRecorder?.OnLoadingFailed(evt);
+
         if (_requests.TryGetValue(evt.RequestId, out var request))
         {
             _page.FireRequestFailed(request);

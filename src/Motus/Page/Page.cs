@@ -28,6 +28,7 @@ internal sealed partial class Page : IPage
     private string? _mainFrameId;
     private ViewportSize? _viewportSize;
     private volatile bool _isClosed;
+    private VideoRecorder? _videoRecorder;
 
     internal Page(CdpSession session, BrowserContext context, string targetId)
     {
@@ -56,7 +57,7 @@ internal sealed partial class Page : IPage
 
     public ViewportSize? ViewportSize => _viewportSize;
 
-    public IVideo? Video => null;
+    public IVideo? Video => _videoRecorder?.Video;
 
     public IKeyboard Keyboard => _keyboard;
 
@@ -92,6 +93,8 @@ internal sealed partial class Page : IPage
     internal Mouse MouseInternal => _mouse;
 
     internal Touchscreen TouchscreenInternal => _touchscreen;
+
+    internal void SetVideoRecorder(VideoRecorder recorder) => _videoRecorder = recorder;
 
     internal async Task InitializeAsync(CancellationToken ct)
     {
@@ -229,18 +232,24 @@ internal sealed partial class Page : IPage
             CancellationToken.None).ConfigureAwait(false);
     }
 
-    public ValueTask DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
         if (_isClosed)
-            return ValueTask.CompletedTask;
+            return;
 
         _isClosed = true;
+
+        if (_videoRecorder is not null)
+        {
+            try { await _videoRecorder.StopAndFinalizeAsync().ConfigureAwait(false); }
+            catch { /* best-effort */ }
+        }
+
         Close?.Invoke(this, EventArgs.Empty);
         _pageCts.Cancel();
         // Do not dispose _pageCts here; fire-and-forget handlers triggered by Close
         // may still reference the token (e.g. ScreencastService.StopAsync).
         // The CTS will be collected once all references are released.
-        return ValueTask.CompletedTask;
     }
 
     private static string WrapExpression(string expression, object? arg)

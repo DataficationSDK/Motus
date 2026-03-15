@@ -112,6 +112,12 @@ internal sealed partial class Page
         if (_isClosed)
             return;
 
+        if (_videoRecorder is not null)
+        {
+            try { await _videoRecorder.StopAndFinalizeAsync().ConfigureAwait(false); }
+            catch { /* best-effort */ }
+        }
+
         try
         {
             await _context.ClosePageAsync(this, _targetId).ConfigureAwait(false);

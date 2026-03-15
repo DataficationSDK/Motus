@@ -32,7 +32,6 @@ public class ScreenshotAndTracingTests : MotusTestBase
     }
 
     [TestMethod]
-    [Ignore("Tracing is not yet implemented (NullTracing stub)")]
     public async Task Tracing_ProducesZipFile()
     {
         var tracePath = Path.Combine(Path.GetTempPath(), $"motus-trace-{Guid.NewGuid()}.zip");

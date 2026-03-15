@@ -32,12 +32,15 @@ internal sealed class BrowserContext : IBrowserContext
     private int _closed;
     private int _storageStateRestored;
 
+    private readonly Tracing _tracing;
+
     internal BrowserContext(Browser browser, CdpSessionRegistry registry, string browserContextId, ContextOptions? options = null)
     {
         _browser = browser;
         _registry = registry;
         _browserContextId = browserContextId;
         _options = options;
+        _tracing = new Tracing(registry.BrowserSession);
 
         if (_options?.ExtraHttpHeaders is not null)
         {
@@ -63,7 +66,7 @@ internal sealed class BrowserContext : IBrowserContext
         }
     }
 
-    public ITracing Tracing => NullTracing.Instance;
+    public ITracing Tracing => _tracing;
 
     internal string BrowserContextId => _browserContextId;
 
@@ -188,6 +191,16 @@ internal sealed class BrowserContext : IBrowserContext
             }
         }
 
+        // Start video recording if configured
+        if (_options?.RecordVideo is { } videoOpts)
+        {
+            var size = videoOpts.Size ?? DeriveVideoSize(_options.Viewport);
+            var path = Path.Combine(videoOpts.Dir, $"video-{Guid.NewGuid():N}.avi");
+            var recorder = new VideoRecorder(page, path, size.Width, size.Height);
+            await recorder.StartAsync(CancellationToken.None).ConfigureAwait(false);
+            page.SetVideoRecorder(recorder);
+        }
+
         lock (_pages)
             _pages.Add(page);
 
@@ -196,6 +209,19 @@ internal sealed class BrowserContext : IBrowserContext
         GlobalPageCreated?.Invoke(page);
 
         return page;
+    }
+
+    private static ViewportSize DeriveVideoSize(ViewportSize? viewport)
+    {
+        if (viewport is null)
+            return new ViewportSize(800, 600);
+
+        // Scale down to fit within 800x800
+        var scale = Math.Min(800.0 / viewport.Width, 800.0 / viewport.Height);
+        if (scale >= 1.0)
+            return viewport;
+
+        return new ViewportSize((int)(viewport.Width * scale), (int)(viewport.Height * scale));
     }
 
     internal async Task ClosePageAsync(Page page, string targetId)

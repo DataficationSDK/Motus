@@ -13,6 +13,7 @@ public static class RunnerHost
         string[]? assemblyPaths = null,
         string? filter = null,
         int port = 5100,
+        string? traceFilePath = null,
         CancellationToken ct = default)
     {
         var runnerAssembly = typeof(RunnerHost).Assembly;
@@ -100,6 +101,12 @@ public static class RunnerHost
         {
             var session = app.Services.GetRequiredService<ITestSessionService>();
             await session.LoadAssembliesAsync(assemblyPaths, filter);
+        }
+
+        if (traceFilePath is not null)
+        {
+            var traceViewer = new TraceViewerService(timeline);
+            await traceViewer.LoadFromFileAsync(traceFilePath);
         }
 
         var url = $"http://localhost:{port}";

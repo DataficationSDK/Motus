@@ -177,13 +177,15 @@ public class BrowserContextOptionsTests
     {
         var options = new ContextOptions
         {
-            RecordVideo = new RecordVideoOptions { Dir = "/tmp/videos" }
+            RecordVideo = new RecordVideoOptions { Dir = Path.Combine(Path.GetTempPath(), "motus-video-test") }
         };
-        QueueContextAndPageResponses(extraEmulationCount: 0);
+        // Extra response for Page.startScreencast
+        QueueContextAndPageResponses(extraEmulationCount: 1);
 
         // Should not throw
         var page = await CreatePageWithOptions(options);
         Assert.IsNotNull(page);
+        Assert.IsNotNull(page.Video);
     }
 
     [TestMethod]
@@ -195,9 +197,19 @@ public class BrowserContextOptionsTests
         var tracing = page.Context.Tracing;
         Assert.IsNotNull(tracing);
 
-        // StartAsync and StopAsync should be no-ops
+        // Tracing.start sends a command on the browser session.
+        // The sent message count tells us the exact id (id = count + 1 since ids are 1-based sequential).
+        var startId = _socket.SentMessages.Count + 1;
+        _socket.QueueResponse($@"{{""id"": {startId}, ""result"": {{}}}}");
         await tracing.StartAsync();
-        await tracing.StopAsync();
+
+        // Queue response for Tracing.end
+        var endId = _socket.SentMessages.Count + 1;
+        _socket.QueueResponse($@"{{""id"": {endId}, ""result"": {{}}}}");
+        var stopTask = tracing.StopAsync();
+        await Task.Delay(50);
+        _socket.Enqueue("""{"method":"Tracing.tracingComplete","params":{"dataLossOccurred":false}}""");
+        await stopTask;
     }
 
     [TestMethod]
