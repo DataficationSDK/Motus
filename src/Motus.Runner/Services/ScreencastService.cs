@@ -30,6 +30,9 @@ internal sealed class ScreencastService : IScreencastService, IAsyncDisposable
         _page = internalPage;
         _pumpCts = new CancellationTokenSource();
 
+        // Stop the screencast before the page is disposed to avoid orphaned encoding
+        _page.Close += OnPageClose;
+
         await _page.StartScreencastAsync(
             format: "jpeg",
             quality: 75,
@@ -39,6 +42,11 @@ internal sealed class ScreencastService : IScreencastService, IAsyncDisposable
             ct).ConfigureAwait(false);
 
         _pumpTask = PumpFramesAsync(_pumpCts.Token);
+    }
+
+    private void OnPageClose(object? sender, EventArgs e)
+    {
+        _ = StopAsync();
     }
 
     public async Task HighlightElementAsync(string? objectId, CancellationToken ct = default)
@@ -127,6 +135,7 @@ internal sealed class ScreencastService : IScreencastService, IAsyncDisposable
 
         if (_page is not null)
         {
+            _page.Close -= OnPageClose;
             try { await _page.StopScreencastAsync().ConfigureAwait(false); }
             catch { /* Page may already be closed */ }
             _page = null;

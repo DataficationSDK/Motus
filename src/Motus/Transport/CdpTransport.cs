@@ -21,6 +21,12 @@ internal sealed class CdpTransport : IAsyncDisposable
     private Task? _receiveLoop;
     private bool _disposed;
 
+    /// <summary>
+    /// Maximum time to wait for a CDP response before treating the browser as unresponsive.
+    /// Prevents indefinite hangs when Chrome freezes without closing the WebSocket.
+    /// </summary>
+    private static readonly TimeSpan CommandTimeout = TimeSpan.FromSeconds(60);
+
     private readonly ConcurrentDictionary<int, TaskCompletionSource<JsonElement>> _pending = new();
     private readonly ConcurrentDictionary<string, Channel<RawCdpEvent>> _eventChannels = new();
     private int _nextId;
@@ -57,17 +63,23 @@ internal sealed class CdpTransport : IAsyncDisposable
         var tcs = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
         _pending[id] = tcs;
 
+        // Ensure commands always have a timeout, even if the caller passes CancellationToken.None.
+        // This prevents indefinite hangs when Chrome becomes unresponsive without disconnecting.
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeoutCts.CancelAfter(CommandTimeout);
+        var effectiveCt = timeoutCts.Token;
+
         try
         {
             if (_slowMo > TimeSpan.Zero)
-                await Task.Delay(_slowMo, ct).ConfigureAwait(false);
+                await Task.Delay(_slowMo, effectiveCt).ConfigureAwait(false);
 
             var envelope = new CdpCommandEnvelope(id, method, paramsElement, sessionId);
             var bytes = JsonSerializer.SerializeToUtf8Bytes(envelope, CdpJsonContext.Default.CdpCommandEnvelope);
-            await _socket.SendAsync(bytes, ct).ConfigureAwait(false);
+            await _socket.SendAsync(bytes, effectiveCt).ConfigureAwait(false);
 
-            // Link caller cancellation to the pending TCS
-            await using var reg = ct.Register(() => tcs.TrySetCanceled(ct));
+            // Link cancellation (caller + timeout) to the pending TCS
+            await using var reg = effectiveCt.Register(() => tcs.TrySetCanceled(effectiveCt));
             return await tcs.Task.ConfigureAwait(false);
         }
         finally
@@ -88,6 +100,23 @@ internal sealed class CdpTransport : IAsyncDisposable
                 SingleReader = false,
                 SingleWriter = true
             }));
+    }
+
+    /// <summary>
+    /// Removes and completes all event channels associated with the given session ID.
+    /// Called when a page/session is disposed to prevent unbounded channel accumulation.
+    /// </summary>
+    internal void RemoveChannelsForSession(string sessionId)
+    {
+        var suffix = $"|{sessionId}";
+        foreach (var key in _eventChannels.Keys)
+        {
+            if (key.EndsWith(suffix, StringComparison.Ordinal) &&
+                _eventChannels.TryRemove(key, out var channel))
+            {
+                channel.Writer.TryComplete();
+            }
+        }
     }
 
     private async Task RunReceiveLoopAsync(CancellationToken ct)

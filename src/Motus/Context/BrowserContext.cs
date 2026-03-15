@@ -200,6 +200,8 @@ internal sealed class BrowserContext : IBrowserContext
 
     internal async Task ClosePageAsync(Page page, string targetId)
     {
+        var sessionId = page.Session.SessionId;
+
         lock (_pages)
             _pages.Remove(page);
 
@@ -215,6 +217,13 @@ internal sealed class BrowserContext : IBrowserContext
         catch (CdpDisconnectedException)
         {
             // Target already gone
+        }
+
+        // Clean up CDP session and event channels
+        if (sessionId is not null)
+        {
+            _registry.RemoveSession(sessionId);
+            page.Session.Transport.RemoveChannelsForSession(sessionId);
         }
     }
 
@@ -235,11 +244,21 @@ internal sealed class BrowserContext : IBrowserContext
         foreach (var page in pagesToClose)
         {
             await _lifecycleHooks.FireOnPageClosedAsync(page).ConfigureAwait(false);
+            var sessionId = page.Session.SessionId;
             await page.DisposeAsync().ConfigureAwait(false);
+
+            // Clean up CDP session and event channels to prevent resource accumulation
+            if (sessionId is not null)
+            {
+                _registry.RemoveSession(sessionId);
+                page.Session.Transport.RemoveChannelsForSession(sessionId);
+            }
         }
 
         lock (_pages)
             _pages.Clear();
+
+        _browser.RemoveContext(this);
 
         // Dispose the browser context
         try

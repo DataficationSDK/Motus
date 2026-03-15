@@ -19,6 +19,8 @@ internal sealed class CdpSession
     /// </summary>
     internal string? SessionId { get; }
 
+    internal CdpTransport Transport => _transport;
+
     internal CdpSession(CdpTransport transport, string? sessionId = null)
     {
         _transport = transport;

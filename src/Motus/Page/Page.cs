@@ -235,9 +235,11 @@ internal sealed partial class Page : IPage
             return ValueTask.CompletedTask;
 
         _isClosed = true;
-        _pageCts.Cancel();
-        _pageCts.Dispose();
         Close?.Invoke(this, EventArgs.Empty);
+        _pageCts.Cancel();
+        // Do not dispose _pageCts here; fire-and-forget handlers triggered by Close
+        // may still reference the token (e.g. ScreencastService.StopAsync).
+        // The CTS will be collected once all references are released.
         return ValueTask.CompletedTask;
     }
 
