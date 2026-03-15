@@ -123,19 +123,27 @@ internal static class RecorderScript
             lastMouseY = e.clientY;
         }, true);
 
+        let scrollDeltaX = 0, scrollDeltaY = 0;
+        let scrollMouseX = 0, scrollMouseY = 0;
         let scrollTimeout;
-        document.addEventListener('scroll', () => {
+        document.addEventListener('wheel', (e) => {
+            scrollDeltaX += e.deltaX;
+            scrollDeltaY += e.deltaY;
+            scrollMouseX = e.clientX;
+            scrollMouseY = e.clientY;
             clearTimeout(scrollTimeout);
             scrollTimeout = setTimeout(() => {
                 binding(JSON.stringify({
                     type: 'scroll',
                     timestamp: Date.now(),
-                    scrollX: window.scrollX,
-                    scrollY: window.scrollY,
-                    mouseX: lastMouseX,
-                    mouseY: lastMouseY,
+                    scrollX: scrollDeltaX,
+                    scrollY: scrollDeltaY,
+                    mouseX: scrollMouseX,
+                    mouseY: scrollMouseY,
                     pageUrl: location.href
                 }));
+                scrollDeltaX = 0;
+                scrollDeltaY = 0;
             }, 50);
         }, true);
 

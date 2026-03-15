@@ -16,4 +16,10 @@ public sealed class CodeEmitOptions
 
     /// <summary>Namespace for the generated code.</summary>
     public string Namespace { get; init; } = "Motus.Generated";
+
+    /// <summary>When true, emit Task.Delay calls between actions matching the original user timing.</summary>
+    public bool PreserveTiming { get; init; }
+
+    /// <summary>Minimum delay in milliseconds to emit. Shorter gaps are omitted to reduce noise.</summary>
+    public int MinDelayMs { get; init; } = 250;
 }

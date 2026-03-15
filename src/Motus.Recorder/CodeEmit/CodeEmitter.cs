@@ -22,6 +22,14 @@ public sealed class CodeEmitter
 
         for (var i = 0; i < actions.Count; i++)
         {
+            if (options.PreserveTiming && i > 0)
+            {
+                var delay = actions[i].Source.Timestamp - actions[i - 1].Source.Timestamp;
+                var ms = (int)delay.TotalMilliseconds;
+                if (ms >= options.MinDelayMs)
+                    sb.AppendLine($"{indent}await Task.Delay({ms});");
+            }
+
             sb.AppendLine(ActionLineEmitter.Emit(actions[i], indent));
         }
 

@@ -17,6 +17,7 @@ public static class RecordCommand
         var classNameOpt = new Option<string>("--class-name") { Description = "Generated test class name", DefaultValueFactory = _ => "RecordedTest" };
         var methodNameOpt = new Option<string>("--method-name") { Description = "Generated test method name", DefaultValueFactory = _ => "RecordedScenario" };
         var namespaceOpt = new Option<string>("--namespace") { Description = "Generated test namespace", DefaultValueFactory = _ => "Motus.Generated" };
+        var preserveTimingOpt = new Option<bool>("--preserve-timing") { Description = "Emit delays between actions matching the original user timing" };
 
         var cmd = new Command("record", "Record browser interactions and generate test code")
         {
@@ -28,6 +29,7 @@ public static class RecordCommand
             classNameOpt,
             methodNameOpt,
             namespaceOpt,
+            preserveTimingOpt,
         };
 
         cmd.SetAction(async (parseResult, ct) =>
@@ -39,6 +41,7 @@ public static class RecordCommand
             var className = parseResult.GetValue(classNameOpt)!;
             var methodName = parseResult.GetValue(methodNameOpt)!;
             var ns = parseResult.GetValue(namespaceOpt)!;
+            var preserveTiming = parseResult.GetValue(preserveTimingOpt);
 
             IBrowser browser;
             if (connect is not null)
@@ -82,6 +85,7 @@ public static class RecordCommand
                     TestClassName = className,
                     TestMethodName = methodName,
                     Namespace = ns,
+                    PreserveTiming = preserveTiming,
                 };
 
                 var emitter = new CodeEmitter();
