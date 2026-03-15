@@ -115,6 +115,22 @@ public sealed class TestExecutionService(ILogger<TestExecutionService> logger)
             logger.LogInformation("Test run cancelled");
         }
 
+        // Run [AssemblyCleanup] for each initialized assembly to close browsers
+        foreach (var assembly in assemblies)
+        {
+            if (_initializedAssemblies.TryRemove(assembly, out _))
+            {
+                try
+                {
+                    await RunAssemblyCleanupAsync(assembly);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "AssemblyCleanup failed for {Assembly}", assembly.GetName().Name);
+                }
+            }
+        }
+
         if (reporters is not null)
         {
             sw!.Stop();
@@ -162,6 +178,22 @@ public sealed class TestExecutionService(ILogger<TestExecutionService> logger)
                 // MSTest [AssemblyInitialize] takes a TestContext parameter
                 object?[] args = parameters.Length > 0 ? [null] : [];
                 var result = method.Invoke(null, args);
+                if (result is Task task)
+                    await task;
+            }
+        }
+    }
+
+    private static async Task RunAssemblyCleanupAsync(Assembly assembly)
+    {
+        foreach (var type in assembly.GetExportedTypes())
+        {
+            var methods = type.GetMethods(BindingFlags.Public | BindingFlags.Static)
+                .Where(m => m.GetCustomAttributes(true).Any(a => a.GetType().Name == "AssemblyCleanupAttribute"));
+
+            foreach (var method in methods)
+            {
+                var result = method.Invoke(null, null);
                 if (result is Task task)
                     await task;
             }
