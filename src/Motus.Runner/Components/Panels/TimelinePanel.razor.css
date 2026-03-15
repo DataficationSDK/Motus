@@ -61,7 +61,7 @@
 .status-passed { color: var(--vsc-green); }
 .status-failed { color: var(--vsc-red); }
 .status-running { color: var(--vsc-green); animation: pulse 1.5s ease-in-out infinite; }
-.status-skipped { color: var(--vsc-fg-dim); }
+.status-skipped { color: var(--vsc-warning); }
 .status-pending { color: var(--vsc-fg-dim); font-size: 8px; }
 
 .timeline-markers {

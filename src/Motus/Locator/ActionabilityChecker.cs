@@ -145,18 +145,22 @@ internal static class ActionabilityChecker
 
     private static async Task<bool> IsStableAsync(Page page, string objectId, CancellationToken ct)
     {
+        // Use two measurements separated by a short delay instead of requestAnimationFrame.
+        // In headless Chromium, requestAnimationFrame may stall on data: URIs or after DOM
+        // mutations when the browser stops scheduling animation frames, causing a 30s hang.
         return await EvalBoolAsync(page, objectId,
             """
             function() {
-                return new Promise(resolve => {
-                    var r1 = this.getBoundingClientRect();
-                    requestAnimationFrame(() => {
-                        var r2 = this.getBoundingClientRect();
+                var r1 = this.getBoundingClientRect();
+                var self = this;
+                return new Promise(function(resolve) {
+                    setTimeout(function() {
+                        var r2 = self.getBoundingClientRect();
                         resolve(
                             r1.x === r2.x && r1.y === r2.y &&
                             r1.width === r2.width && r1.height === r2.height
                         );
-                    });
+                    }, 50);
                 });
             }
             """, ct, awaitPromise: true).ConfigureAwait(false);

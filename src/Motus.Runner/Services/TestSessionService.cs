@@ -12,6 +12,7 @@ public sealed class TestSessionService : ITestSessionService
     private readonly ITimelineService _timeline;
     private List<DiscoveredTest> _discoveredTests = [];
     private readonly ConcurrentDictionary<string, TestNodeState> _states = new();
+    private HashSet<string> _lastRunTests = [];
     private CancellationTokenSource? _runCts;
     private int _running;
 
@@ -27,6 +28,7 @@ public sealed class TestSessionService : ITestSessionService
     public bool IsRunning => _running != 0;
     public string? RunningTestName { get; private set; }
     public string? FilterText { get; private set; }
+    public IReadOnlySet<string> LastRunTests => _lastRunTests;
     public ReporterCollection? Reporters { get; set; }
     public event Action? StateChanged;
 
@@ -38,7 +40,9 @@ public sealed class TestSessionService : ITestSessionService
 
         foreach (var test in tests)
         {
-            _states[test.FullName] = new TestNodeState(test.FullName, TestStatus.Pending, null, null, null);
+            _states[test.FullName] = test.IsIgnored
+                ? new TestNodeState(test.FullName, TestStatus.Skipped, null, test.IgnoreReason ?? "Ignored", null)
+                : new TestNodeState(test.FullName, TestStatus.Pending, null, null, null);
         }
 
         NotifyStateChanged();
@@ -56,6 +60,8 @@ public sealed class TestSessionService : ITestSessionService
         {
             _timeline.Clear();
             ResetAllToPending();
+            _lastRunTests = new HashSet<string>(_discoveredTests.Select(t => t.FullName));
+            _timeline.CurrentTestName = "[Assembly Setup]";
             NotifyStateChanged();
 
             await _executor.ExecuteAsync(_discoveredTests, UpdateTestState, _runCts.Token, Reporters);
@@ -82,7 +88,9 @@ public sealed class TestSessionService : ITestSessionService
             if (test is null) return;
 
             _timeline.Clear();
+            _lastRunTests = [fullName];
             _states[fullName] = new TestNodeState(fullName, TestStatus.Pending, null, null, null);
+            _timeline.CurrentTestName = "[Assembly Setup]";
             NotifyStateChanged();
 
             await _executor.ExecuteAsync([test], UpdateTestState, _runCts.Token, Reporters);
@@ -107,10 +115,12 @@ public sealed class TestSessionService : ITestSessionService
         {
             _timeline.Clear();
             var tests = _discoveredTests.Where(t => t.TestClass.FullName == className).ToList();
+            _lastRunTests = new HashSet<string>(tests.Select(t => t.FullName));
             foreach (var test in tests)
             {
                 _states[test.FullName] = new TestNodeState(test.FullName, TestStatus.Pending, null, null, null);
             }
+            _timeline.CurrentTestName = "[Assembly Setup]";
             NotifyStateChanged();
 
             await _executor.ExecuteAsync(tests, UpdateTestState, _runCts.Token, Reporters);
@@ -140,6 +150,7 @@ public sealed class TestSessionService : ITestSessionService
         if (IsRunning) return;
 
         ResetAllToPending();
+        _lastRunTests = [];
         RunningTestName = null;
         _timeline.CurrentTestName = null;
         _timeline.Clear();
@@ -150,7 +161,9 @@ public sealed class TestSessionService : ITestSessionService
     {
         foreach (var test in _discoveredTests)
         {
-            _states[test.FullName] = new TestNodeState(test.FullName, TestStatus.Pending, null, null, null);
+            _states[test.FullName] = test.IsIgnored
+                ? new TestNodeState(test.FullName, TestStatus.Skipped, null, test.IgnoreReason ?? "Ignored", null)
+                : new TestNodeState(test.FullName, TestStatus.Pending, null, null, null);
         }
     }
 
@@ -168,7 +181,7 @@ public sealed class TestSessionService : ITestSessionService
         else if (state.Status is TestStatus.Passed or TestStatus.Failed or TestStatus.Skipped)
         {
             RunningTestName = null;
-            _timeline.CurrentTestName = null;
+            _timeline.CurrentTestName = "[Assembly Setup]";
         }
 
         NotifyStateChanged();

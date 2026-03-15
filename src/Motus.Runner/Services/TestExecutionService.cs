@@ -60,6 +60,13 @@ public sealed class TestExecutionService(ILogger<TestExecutionService> logger)
 
         var tasks = tests.Select(async test =>
         {
+            if (test.IsIgnored)
+            {
+                onStateChanged(new TestNodeState(test.FullName, TestStatus.Skipped, null, test.IgnoreReason ?? "Ignored", null));
+                if (reporters is not null) Interlocked.Increment(ref skippedCount);
+                return;
+            }
+
             await semaphore.WaitAsync(ct);
             try
             {
@@ -118,11 +125,19 @@ public sealed class TestExecutionService(ILogger<TestExecutionService> logger)
 
     private static async Task ExecuteLifecycleMethodAsync(object instance, Type testClass, string attributeName)
     {
-        // Search the full hierarchy (BindingFlags include inherited, but GetCustomAttributes(true) ensures
-        // attributes on base class methods are found even if not overridden)
-        var methods = testClass.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.FlattenHierarchy)
-            .Where(m => m.GetCustomAttributes(true).Any(a => a.GetType().Name == attributeName))
-            .ToList();
+        // Walk the hierarchy bottom-up, then reverse so base-class methods run first.
+        // GetMethods with FlattenHierarchy does not guarantee ordering, and running a
+        // derived [TestInitialize] before the base (e.g. MotusTestBase.MotusTestInitialize)
+        // causes null-reference failures when the derived method accesses Page/Context.
+        var methods = new List<MethodInfo>();
+        var type = testClass;
+        while (type is not null && type != typeof(object))
+        {
+            var declared = type.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+                .Where(m => m.GetCustomAttributes(true).Any(a => a.GetType().Name == attributeName));
+            methods.InsertRange(0, declared);
+            type = type.BaseType;
+        }
 
         foreach (var method in methods)
         {

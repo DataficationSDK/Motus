@@ -18,6 +18,11 @@ public sealed class TestDiscovery(ILogger<TestDiscovery> logger)
         "FactAttribute",
     };
 
+    private static readonly HashSet<string> IgnoreAttributes = new(StringComparer.Ordinal)
+    {
+        "IgnoreAttribute",  // MSTest + NUnit
+    };
+
     public List<DiscoveredTest> Discover(string[] assemblyPaths, string? filter)
     {
         var tests = new List<DiscoveredTest>();
@@ -43,6 +48,8 @@ public sealed class TestDiscovery(ILogger<TestDiscovery> logger)
                 if (!IsTestClass(type))
                     continue;
 
+                var (classIgnored, classReason) = GetIgnoreInfo(type.GetCustomAttributes(true));
+
                 foreach (var method in type.GetMethods(BindingFlags.Public | BindingFlags.Instance))
                 {
                     if (!IsTestMethod(method))
@@ -53,7 +60,10 @@ public sealed class TestDiscovery(ILogger<TestDiscovery> logger)
                     if (filter is not null && !fullName.Contains(filter, StringComparison.OrdinalIgnoreCase))
                         continue;
 
-                    tests.Add(new DiscoveredTest(type, method, fullName, assemblyName));
+                    var (methodIgnored, methodReason) = GetIgnoreInfo(method.GetCustomAttributes(true));
+                    var isIgnored = classIgnored || methodIgnored;
+                    var reason = classIgnored ? classReason : methodReason;
+                    tests.Add(new DiscoveredTest(type, method, fullName, assemblyName, isIgnored, reason));
                 }
             }
         }
@@ -74,5 +84,29 @@ public sealed class TestDiscovery(ILogger<TestDiscovery> logger)
     {
         return method.GetCustomAttributes(true)
             .Any(a => MethodAttributes.Contains(a.GetType().Name));
+    }
+
+    private static (bool IsIgnored, string? Reason) GetIgnoreInfo(object[] attrs)
+    {
+        // MSTest [Ignore] / [Ignore("reason")] / NUnit [Ignore("reason")]
+        var ignoreAttr = attrs.FirstOrDefault(a => IgnoreAttributes.Contains(a.GetType().Name));
+        if (ignoreAttr is not null)
+        {
+            // MSTest uses IgnoreMessage; NUnit uses Reason
+            var msg = ignoreAttr.GetType().GetProperty("IgnoreMessage")?.GetValue(ignoreAttr) as string
+                   ?? ignoreAttr.GetType().GetProperty("Reason")?.GetValue(ignoreAttr) as string;
+            return (true, msg);
+        }
+
+        // xUnit [Fact(Skip = "reason")]
+        var factAttr = attrs.FirstOrDefault(a => a.GetType().Name == "FactAttribute");
+        if (factAttr is not null)
+        {
+            var skip = factAttr.GetType().GetProperty("Skip")?.GetValue(factAttr) as string;
+            if (skip is not null)
+                return (true, skip);
+        }
+
+        return (false, null);
     }
 }

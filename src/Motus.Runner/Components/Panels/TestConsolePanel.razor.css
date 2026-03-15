@@ -46,7 +46,11 @@
     color: #fff;
 }
 
-.console-status-skipped,
+.console-status-skipped {
+    background: var(--vsc-warning);
+    color: #fff;
+}
+
 .console-status-pending {
     background: var(--vsc-bg-tertiary);
     color: var(--vsc-fg-dim);
@@ -95,6 +99,18 @@
     line-height: 1.5;
     max-height: 300px;
     overflow-y: auto;
+}
+
+.console-skip-reason {
+    padding: 8px 10px;
+    background: rgba(204, 167, 0, 0.08);
+    border-left: 3px solid var(--vsc-warning);
+    color: var(--vsc-warning);
+    white-space: pre-wrap;
+    word-break: break-word;
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.5;
 }
 
 .console-success-message {

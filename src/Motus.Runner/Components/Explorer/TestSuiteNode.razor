@@ -49,6 +49,8 @@
         var hasRunning = false;
         var hasFailed = false;
         var hasPassed = false;
+        var hasSkipped = false;
+        var hasPending = false;
 
         foreach (var test in tests)
         {
@@ -59,14 +61,20 @@
                     case TestStatus.Failed: hasFailed = true; break;
                     case TestStatus.Running: hasRunning = true; break;
                     case TestStatus.Passed: hasPassed = true; break;
+                    case TestStatus.Skipped: hasSkipped = true; break;
+                    default: hasPending = true; break;
                 }
+            }
+            else
+            {
+                hasPending = true;
             }
         }
 
         if (hasFailed) return TestStatus.Failed;
         if (hasRunning) return TestStatus.Running;
-        if (hasPassed && !tests.Any(t => states.TryGetValue(t.FullName, out var s) && s.Status == TestStatus.Pending))
-            return TestStatus.Passed;
+        if (hasPassed && !hasPending) return TestStatus.Passed;
+        if (hasSkipped && !hasPassed && !hasFailed && !hasPending) return TestStatus.Skipped;
         return TestStatus.Pending;
     }
 }

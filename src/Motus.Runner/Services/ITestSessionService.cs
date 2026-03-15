@@ -9,6 +9,7 @@ public interface ITestSessionService
     bool IsRunning { get; }
     string? RunningTestName { get; }
     string? FilterText { get; }
+    IReadOnlySet<string> LastRunTests { get; }
     event Action? StateChanged;
 
     Task LoadAssembliesAsync(string[] paths, string? filter);

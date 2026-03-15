@@ -140,8 +140,8 @@ public class ActionabilityTests
             .Select(i => _socket.GetSentJson(i))
             .ToList();
 
-        Assert.IsTrue(allSent.Any(s => s.Contains("requestAnimationFrame")),
-            "Stability check should include requestAnimationFrame in the JS function.");
+        Assert.IsTrue(allSent.Any(s => s.Contains("setTimeout")),
+            "Stability check should include setTimeout in the JS function.");
     }
 
     [TestMethod]

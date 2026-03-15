@@ -15,6 +15,7 @@
     --vsc-green: #4ec9b0;
     --vsc-red: #f44747;
     --vsc-amber: #dcdcaa;
+    --vsc-warning: #cca700;
     --vsc-blue: #569cd6;
     --vsc-sidebar-width: 280px;
     --vsc-toolbar-height: 40px;
@@ -238,10 +239,8 @@ input {
     animation: pulse 1s ease-in-out infinite;
 }
 
-.status-skipped,
-.status-pending {
-    color: var(--vsc-fg-dim);
-}
+.status-skipped { color: var(--vsc-warning); }
+.status-pending { color: var(--vsc-fg-dim); }
 
 @keyframes pulse {
     0%, 100% { opacity: 1; }

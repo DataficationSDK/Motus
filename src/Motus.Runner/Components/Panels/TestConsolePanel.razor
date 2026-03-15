@@ -22,6 +22,14 @@
             </div>
         }
 
+        @if (state.Status == TestStatus.Skipped && state.ErrorMessage is not null)
+        {
+            <div class="console-section">
+                <div class="console-section-header">Skip Reason</div>
+                <pre class="console-skip-reason">@state.ErrorMessage</pre>
+            </div>
+        }
+
         @if (state.StackTrace is not null)
         {
             <div class="console-section">

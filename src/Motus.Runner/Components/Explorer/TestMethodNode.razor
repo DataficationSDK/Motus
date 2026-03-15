@@ -1,7 +1,7 @@
 @inject ITestSessionService Session
 @implements IDisposable
 
-<div class="method-node" @onclick="RunTest" title="@Test.FullName">
+<div class="method-node" @onclick="RunTest" title="@Tooltip">
     <TestStatusBadge Status="@CurrentStatus" />
     <span class="method-name">@Test.TestMethod.Name</span>
     @if (CurrentState?.Duration is not null)
@@ -18,6 +18,10 @@
 
     private TestStatus CurrentStatus => CurrentState?.Status ?? TestStatus.Pending;
 
+    private string Tooltip => CurrentStatus == TestStatus.Skipped && CurrentState?.ErrorMessage is not null
+        ? $"{Test.FullName}\n{CurrentState.ErrorMessage}"
+        : Test.FullName;
+
     protected override void OnInitialized()
     {
         Session.StateChanged += OnStateChanged;
@@ -25,7 +29,7 @@
 
     private async Task RunTest()
     {
-        if (!Session.IsRunning)
+        if (!Session.IsRunning && !Test.IsIgnored)
         {
             await Session.RunTestAsync(Test.FullName);
         }

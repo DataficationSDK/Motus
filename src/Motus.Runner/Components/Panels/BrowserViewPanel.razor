@@ -43,6 +43,21 @@
         Screencast.HighlightChanged += OnHighlightChanged;
     }
 
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && Screencast.IsStreaming && Screencast.LatestFrameBase64 is { } frame)
+        {
+            try
+            {
+                await JS.InvokeVoidAsync("motus.updateFrame", frame);
+            }
+            catch (JSDisconnectedException)
+            {
+                // Circuit disconnected
+            }
+        }
+    }
+
     private async void OnFrameReceived(string base64)
     {
         try

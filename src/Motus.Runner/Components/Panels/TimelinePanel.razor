@@ -52,22 +52,40 @@
     {
         get
         {
-            var groups = new List<TestGroup>();
-            string? currentTest = null;
-            List<TimelineEntry>? currentEntries = null;
+            // Don't show anything until a run has produced timeline entries
+            if (Timeline.Entries.Count == 0)
+                return [];
 
+            // Group timeline entries by test name
+            var entriesByTest = new Dictionary<string, List<TimelineEntry>>();
             foreach (var entry in Timeline.Entries)
             {
-                var testName = entry.TestName ?? "(unknown)";
-                if (testName != currentTest)
+                var testName = entry.TestName;
+                if (testName is null) continue;
+                if (!entriesByTest.TryGetValue(testName, out var list))
                 {
-                    currentTest = testName;
-                    currentEntries = [];
-                    var parts = testName.Split('.');
-                    var shortName = parts.Length > 0 ? parts[^1] : testName;
-                    groups.Add(new TestGroup(testName, shortName, currentEntries));
+                    list = [];
+                    entriesByTest[testName] = list;
                 }
-                currentEntries!.Add(entry);
+                list.Add(entry);
+            }
+
+            // Build groups in discovery order so tests appear alongside their classmates
+            var groups = new List<TestGroup>();
+            var seen = new HashSet<string>();
+            foreach (var test in Session.DiscoveredTests)
+            {
+                if (!seen.Add(test.FullName)) continue;
+
+                // Only include tests that have timeline entries or were part of the last run
+                var hasEntries = entriesByTest.TryGetValue(test.FullName, out var entries);
+                var wasInLastRun = Session.LastRunTests.Contains(test.FullName);
+
+                if (!hasEntries && !wasInLastRun) continue;
+
+                var parts = test.FullName.Split('.');
+                var shortName = parts.Length > 0 ? parts[^1] : test.FullName;
+                groups.Add(new TestGroup(test.FullName, shortName, entries ?? []));
             }
 
             return groups;
@@ -83,7 +101,7 @@
                 TestStatus.Passed => (MarkupString)"<span class='status-passed' title='Passed'>&#10003;</span>",
                 TestStatus.Failed => (MarkupString)"<span class='status-failed' title='Failed'>&#10007;</span>",
                 TestStatus.Running => (MarkupString)"<span class='status-running' title='Running'>&#9654;</span>",
-                TestStatus.Skipped => (MarkupString)"<span class='status-skipped' title='Skipped'>&#9644;</span>",
+                TestStatus.Skipped => (MarkupString)$"<span class='status-skipped' title='{System.Net.WebUtility.HtmlEncode(state.ErrorMessage ?? "Skipped")}'>&#9888;</span>",
                 _ => (MarkupString)"<span class='status-pending' title='Pending'>&#9679;</span>",
             };
         }
