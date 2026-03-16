@@ -32,12 +32,19 @@ public static class CodegenCommand
             Description = "Comma-separated selector strategy priority (e.g. testid,role,text,css)"
         };
 
+        var timeoutOpt = new Option<double>("--timeout")
+        {
+            Description = "Navigation timeout in milliseconds",
+            DefaultValueFactory = _ => 30_000
+        };
+
         var cmd = new Command("codegen", "Generate page object models from live web pages")
         {
             urlArg,
             outputOpt,
             namespaceOpt,
             selectorPriorityOpt,
+            timeoutOpt,
         };
 
         cmd.SetAction(async (parseResult, ct) =>
@@ -46,6 +53,7 @@ public static class CodegenCommand
             var outputDir = parseResult.GetValue(outputOpt)!;
             var ns = parseResult.GetValue(namespaceOpt)!;
             var selectorPriorityRaw = parseResult.GetValue(selectorPriorityOpt);
+            var timeoutMs = parseResult.GetValue(timeoutOpt);
 
             IReadOnlyList<string>? selectorPriority = null;
             if (!string.IsNullOrWhiteSpace(selectorPriorityRaw))
@@ -80,8 +88,8 @@ public static class CodegenCommand
                 foreach (var url in urls)
                 {
                     Console.WriteLine($"Analyzing {url}...");
-                    await page.GotoAsync(url);
-                    await page.WaitForLoadStateAsync();
+                    await page.GotoAsync(url, new NavigationOptions { Timeout = (int)timeoutMs });
+                    await page.WaitForLoadStateAsync(LoadState.NetworkIdle, timeoutMs);
 
                     var elements = await engine.AnalyzeAsync(page, ct);
                     var className = PageClassNameDeriver.Derive(url);
