@@ -6,6 +6,9 @@ namespace Motus.Testing.xUnit;
 /// <summary>
 /// xUnit class fixture that creates an isolated browser context and page per test class.
 /// Requires <see cref="SharedBrowserFixture"/> via collection fixture injection.
+/// Note: Automatic failure tracing is not supported for xUnit class fixtures because
+/// xUnit does not expose per-test outcome in <c>DisposeAsync</c>. Use
+/// <c>Context.Tracing.StartAsync</c> / <c>StopAsync</c> manually for per-test traces.
 /// </summary>
 public class BrowserContextFixture : IAsyncLifetime
 {

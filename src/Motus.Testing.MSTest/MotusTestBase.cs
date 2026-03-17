@@ -14,6 +14,7 @@ public abstract class MotusTestBase
 
     private IBrowserContext? _context;
     private IPage? _page;
+    private FailureTracing? _failureTracing;
 
     /// <summary>
     /// Override to customize browser launch options.
@@ -42,6 +43,11 @@ public abstract class MotusTestBase
         "Page not available. Ensure [TestInitialize] has run.");
 
     /// <summary>
+    /// MSTest test context, used to detect test outcome for failure tracing.
+    /// </summary>
+    public TestContext TestContext { get; set; } = null!;
+
+    /// <summary>
     /// Launches the shared browser. Apply <c>[AssemblyInitialize]</c> in your test assembly
     /// to call this method.
     /// </summary>
@@ -64,6 +70,9 @@ public abstract class MotusTestBase
     {
         _context = await s_fixture.NewContextAsync(ContextOptions).ConfigureAwait(false);
         _page = await _context.NewPageAsync().ConfigureAwait(false);
+
+        _failureTracing = new FailureTracing();
+        await _failureTracing.StartIfEnabledAsync(_context).ConfigureAwait(false);
     }
 
     [TestCleanup]
@@ -71,6 +80,10 @@ public abstract class MotusTestBase
     {
         if (_context is not null)
         {
+            var testFailed = TestContext.CurrentTestOutcome != UnitTestOutcome.Passed;
+            if (_failureTracing is not null)
+                await _failureTracing.StopAsync(_context, testFailed).ConfigureAwait(false);
+
             await _context.CloseAsync().ConfigureAwait(false);
             _context = null;
             _page = null;

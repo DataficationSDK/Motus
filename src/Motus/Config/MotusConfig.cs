@@ -5,7 +5,8 @@ namespace Motus;
 internal sealed record MotusFailureConfig(
     bool? Screenshot = null,
     string? ScreenshotPath = null,
-    bool? Trace = null);
+    bool? Trace = null,
+    string? TracePath = null);
 
 internal sealed record MotusAssertionsConfig(
     int? Timeout = null);
@@ -154,6 +155,9 @@ internal static class MotusConfigLoader
 
         if (TryParseBool(envReader("MOTUS_FAILURES_TRACE"), out var trace))
         { failure = failure with { Trace = trace }; failureChanged = true; }
+
+        if (envReader("MOTUS_FAILURES_TRACE_PATH") is { Length: > 0 } tracePath)
+        { failure = failure with { TracePath = tracePath }; failureChanged = true; }
 
         return config with
         {

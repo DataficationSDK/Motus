@@ -13,6 +13,7 @@ public abstract class MotusTestBase
     private readonly BrowserFixture _fixture = new();
     private IBrowserContext? _context;
     private IPage? _page;
+    private FailureTracing? _failureTracing;
 
     /// <summary>
     /// Override to customize browser launch options.
@@ -62,6 +63,9 @@ public abstract class MotusTestBase
     {
         _context = await _fixture.NewContextAsync(ContextOptions);
         _page = await _context.NewPageAsync();
+
+        _failureTracing = new FailureTracing();
+        await _failureTracing.StartIfEnabledAsync(_context);
     }
 
     [TearDown]
@@ -69,6 +73,10 @@ public abstract class MotusTestBase
     {
         if (_context is not null)
         {
+            var testFailed = TestContext.CurrentContext.Result.Outcome.Status == global::NUnit.Framework.Interfaces.TestStatus.Failed;
+            if (_failureTracing is not null)
+                await _failureTracing.StopAsync(_context, testFailed);
+
             await _context.CloseAsync();
             _context = null;
             _page = null;

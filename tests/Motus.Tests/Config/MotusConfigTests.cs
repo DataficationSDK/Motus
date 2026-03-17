@@ -19,7 +19,7 @@ public class MotusConfigTests
             "reporter": { "default": ["html"], "ci": ["junit"] },
             "assertions": { "timeout": 15000 },
             "recorder": { "output": "./recordings", "framework": "mstest", "selectorPriority": ["data-testid"] },
-            "failure": { "screenshot": true, "screenshotPath": "artifacts/screenshots", "trace": true }
+            "failure": { "screenshot": true, "screenshotPath": "artifacts/screenshots", "trace": true, "tracePath": "artifacts/traces" }
         }
         """;
 
@@ -54,6 +54,7 @@ public class MotusConfigTests
         Assert.AreEqual(true, config.Failure!.Screenshot);
         Assert.AreEqual("artifacts/screenshots", config.Failure.ScreenshotPath);
         Assert.AreEqual(true, config.Failure.Trace);
+        Assert.AreEqual("artifacts/traces", config.Failure.TracePath);
     }
 
     [TestMethod]
@@ -192,6 +193,7 @@ public class MotusConfigTests
             "MOTUS_FAILURES_SCREENSHOT" => "true",
             "MOTUS_FAILURES_SCREENSHOT_PATH" => "/tmp/shots",
             "MOTUS_FAILURES_TRACE" => "true",
+            "MOTUS_FAILURES_TRACE_PATH" => "/tmp/traces",
             _ => null
         });
 
@@ -207,6 +209,14 @@ public class MotusConfigTests
         Assert.AreEqual(true, config.Failure!.Screenshot);
         Assert.AreEqual("/tmp/shots", config.Failure.ScreenshotPath);
         Assert.AreEqual(true, config.Failure.Trace);
+        Assert.AreEqual("/tmp/traces", config.Failure.TracePath);
+    }
+
+    [TestMethod]
+    public void EnvVar_TracePath_StringPassthrough()
+    {
+        var config = MotusConfigLoader.LoadFrom(null, name => name == "MOTUS_FAILURES_TRACE_PATH" ? "custom/traces" : null);
+        Assert.AreEqual("custom/traces", config.Failure!.TracePath);
     }
 
     // ── Group 3: ConfigMerge (code options layer) ──
