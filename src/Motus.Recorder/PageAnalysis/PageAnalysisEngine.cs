@@ -48,27 +48,46 @@ public sealed class PageAnalysisEngine
         var elementsJson = await page.EvaluateAsync<JsonElement>(DomCrawlScript);
         var elements = DeserializeElements(elementsJson);
 
-        if (elements.Count == 0)
+        // Listener pass: discover elements with directly-attached JS event handlers
+        var allElements = new List<PageElementInfo>(elements);
+
+        if (_options.DetectEventListeners)
+        {
+            try
+            {
+                var listenerElements = await DiscoverListenerElementsAsync(page, linkedCt);
+                allElements.AddRange(listenerElements);
+            }
+            catch (OperationCanceledException) { }
+            catch { /* Listener pass failed; proceed with semantic results only */ }
+        }
+
+        if (allElements.Count == 0)
             return [];
 
         // Derive member names
-        var names = MemberNameDeriver.DeriveNames(elements);
+        var names = MemberNameDeriver.DeriveNames(allElements);
 
         // Reorder strategies based on priority override
         var orderedStrategies = SelectorStrategyOrdering.Reorder(
             _strategies, _options.SelectorPriority);
 
         // Per-element: resolve handle, infer selector
-        var results = new List<DiscoveredElement>(elements.Count);
-        for (var i = 0; i < elements.Count; i++)
+        var results = new List<DiscoveredElement>(allElements.Count);
+        for (var i = 0; i < allElements.Count; i++)
         {
-            var info = elements[i];
+            var info = allElements[i];
             string? selector = null;
+
+            // Elements from listener pass have negative ElementIndex as a sentinel
+            var handleJs = info.ElementIndex >= 0
+                ? $"document.querySelectorAll('{InteractiveSelector}')[{info.ElementIndex}]"
+                : $"window.__mtusCandidates[{-(info.ElementIndex + 1)}]";
 
             try
             {
                 selector = await InferSelectorForElement(
-                    page, info.ElementIndex, orderedStrategies, linkedCt);
+                    page, handleJs, orderedStrategies, linkedCt);
             }
             catch (OperationCanceledException)
             {
@@ -87,13 +106,11 @@ public sealed class PageAnalysisEngine
 
     private async Task<string?> InferSelectorForElement(
         IPage page,
-        int elementIndex,
+        string handleJs,
         IReadOnlyList<ISelectorStrategy> strategies,
         CancellationToken ct)
     {
-        // Resolve handle via positional querySelectorAll index
         var internalPage = (Page)page;
-        var handleJs = $"document.querySelectorAll('{InteractiveSelector}')[{elementIndex}]";
         var handles = await SelectorStrategyHelpers.EvalToHandlesAsync(internalPage, handleJs, ct);
 
         if (handles.Count == 0)
@@ -163,6 +180,58 @@ public sealed class PageAnalysisEngine
         return null;
     }
 
+    private static readonly HashSet<string> InteractionEventTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "click", "pointerdown", "pointerup", "mousedown", "mouseup",
+        "keydown", "keyup", "change", "input", "submit", "touchstart"
+    };
+
+    private async Task<IReadOnlyList<PageElementInfo>> DiscoverListenerElementsAsync(
+        IPage page, CancellationToken ct)
+    {
+        var candidatesJson = await page.EvaluateAsync<JsonElement>(EventListenerCandidateScript);
+        var candidates = DeserializeElements(candidatesJson);
+
+        if (candidates.Count == 0)
+            return [];
+
+        var internalPage = (Page)page;
+        var surviving = new List<PageElementInfo>();
+
+        for (var i = 0; i < candidates.Count; i++)
+        {
+            var handleJs = $"[window.__mtusCandidates[{i}]]";
+            var handles = await SelectorStrategyHelpers.EvalToHandlesAsync(internalPage, handleJs, ct);
+
+            if (handles.Count == 0)
+                continue;
+
+            var objectId = ((ElementHandle)handles[0]).ObjectId;
+            var listeners = await GetEventListenersAsync(internalPage, objectId, ct);
+
+            if (listeners.Any(l => InteractionEventTypes.Contains(l.Type)))
+            {
+                // Use negative index as sentinel: -(candidateIndex + 1)
+                surviving.Add(candidates[i] with { ElementIndex = -(i + 1) });
+            }
+        }
+
+        return surviving;
+    }
+
+    private static async Task<DomDebuggerEventListener[]> GetEventListenersAsync(
+        Page page, string objectId, CancellationToken ct)
+    {
+        var result = await page.Session.SendAsync(
+            "DOMDebugger.getEventListeners",
+            new DomDebuggerGetEventListenersParams(objectId, Depth: 0, Pierce: false),
+            CdpJsonContext.Default.DomDebuggerGetEventListenersParams,
+            CdpJsonContext.Default.DomDebuggerGetEventListenersResult,
+            ct).ConfigureAwait(false);
+
+        return result.Listeners;
+    }
+
     private const string InteractiveSelector =
         "input:not([type=\\\"hidden\\\"]):not([disabled])," +
         "button:not([disabled])," +
@@ -202,6 +271,62 @@ public sealed class PageAnalysisEngine
                     role: el.getAttribute('role'),
                     dataTestId: el.getAttribute('data-testid'),
                     formIndex: formIndex
+                };
+            });
+        })()
+        """;
+
+    private const string EventListenerCandidateScript = """
+        (() => {
+            const semanticSelector = 'input:not([type="hidden"]):not([disabled]),' +
+                'button:not([disabled]),' +
+                'select:not([disabled]),' +
+                'textarea:not([disabled]),' +
+                'a[href],' +
+                '[role="button"]:not([disabled])';
+            const semanticSet = new Set(document.querySelectorAll(semanticSelector));
+
+            const all = document.querySelectorAll('*');
+            const candidates = [];
+            for (const el of all) {
+                if (semanticSet.has(el)) continue;
+                const rect = el.getBoundingClientRect();
+                if (rect.width === 0 || rect.height === 0) continue;
+                const style = getComputedStyle(el);
+                if (style.display === 'none' || style.visibility === 'hidden') continue;
+                const hasPointer = style.cursor === 'pointer';
+                const hasTabindex = el.hasAttribute('tabindex');
+                if (!hasPointer && !hasTabindex) continue;
+                candidates.push(el);
+            }
+
+            // Parent/child dedup: if a candidate's parent is also a candidate, drop the child
+            const candidateSet = new Set(candidates);
+            const surviving = candidates.filter(el => {
+                let parent = el.parentElement;
+                while (parent) {
+                    if (candidateSet.has(parent)) return false;
+                    parent = parent.parentElement;
+                }
+                return true;
+            });
+
+            window.__mtusCandidates = surviving;
+
+            return surviving.map(el => {
+                const text = (el.textContent || '').trim().substring(0, 50);
+                return {
+                    tag: el.tagName.toLowerCase(),
+                    type: el.getAttribute('type'),
+                    id: el.id || null,
+                    name: el.getAttribute('name'),
+                    ariaLabel: el.getAttribute('aria-label'),
+                    placeholder: el.getAttribute('placeholder'),
+                    text: text || null,
+                    href: el.getAttribute('href'),
+                    role: el.getAttribute('role'),
+                    dataTestId: el.getAttribute('data-testid'),
+                    formIndex: null
                 };
             });
         })()

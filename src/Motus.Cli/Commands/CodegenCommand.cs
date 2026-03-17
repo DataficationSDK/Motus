@@ -38,6 +38,11 @@ public static class CodegenCommand
             DefaultValueFactory = _ => 30_000
         };
 
+        var detectListenersOpt = new Option<bool>("--detect-listeners")
+        {
+            Description = "Detect elements with JS event listeners (for vanilla JS, jQuery, etc.)"
+        };
+
         var cmd = new Command("codegen", "Generate page object models from live web pages")
         {
             urlArg,
@@ -45,6 +50,7 @@ public static class CodegenCommand
             namespaceOpt,
             selectorPriorityOpt,
             timeoutOpt,
+            detectListenersOpt,
         };
 
         cmd.SetAction(async (parseResult, ct) =>
@@ -80,6 +86,7 @@ public static class CodegenCommand
                 var analysisOptions = new PageAnalysisOptions
                 {
                     SelectorPriority = selectorPriority,
+                    DetectEventListeners = parseResult.GetValue(detectListenersOpt),
                 };
 
                 var engine = PageAnalysisEngine.Create(page, analysisOptions);

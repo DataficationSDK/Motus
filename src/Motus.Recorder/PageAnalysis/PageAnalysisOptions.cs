@@ -13,4 +13,11 @@ public sealed class PageAnalysisOptions
 
     /// <summary>Maximum time allowed for the full analysis per page.</summary>
     public TimeSpan InferenceTimeout { get; init; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// When true, performs a second analysis pass using DOMDebugger.getEventListeners
+    /// to discover elements with directly-attached JS event handlers (vanilla JS, jQuery, etc.).
+    /// React event delegation is not captured. Disabled by default.
+    /// </summary>
+    public bool DetectEventListeners { get; init; }
 }

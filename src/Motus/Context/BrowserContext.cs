@@ -48,11 +48,6 @@ internal sealed class BrowserContext : IBrowserContext
                 _extraHeaders[kv.Key] = kv.Value;
         }
 
-        _selectorStrategies.Register(new CssSelectorStrategy());
-        _selectorStrategies.Register(new XPathSelectorStrategy());
-        _selectorStrategies.Register(new TextSelectorStrategy());
-        _selectorStrategies.Register(new RoleSelectorStrategy());
-        _selectorStrategies.Register(new TestIdSelectorStrategy());
     }
 
     public IBrowser Browser => _browser;

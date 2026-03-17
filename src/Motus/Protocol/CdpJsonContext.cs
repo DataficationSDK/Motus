@@ -173,6 +173,10 @@ namespace Motus;
 [JsonSerializable(typeof(AccessibilityEnableResult))]
 [JsonSerializable(typeof(AccessibilityQueryAXTreeParams))]
 [JsonSerializable(typeof(AccessibilityQueryAXTreeResult))]
+// --- DOMDebugger domain ---
+[JsonSerializable(typeof(DomDebuggerGetEventListenersParams))]
+[JsonSerializable(typeof(DomDebuggerGetEventListenersResult))]
+[JsonSerializable(typeof(DomDebuggerEventListener))]
 // --- Tracing domain ---
 [JsonSerializable(typeof(TracingStartParams))]
 [JsonSerializable(typeof(TracingStartResult))]
@@ -945,3 +949,25 @@ internal sealed record IoReadResult(
 internal sealed record IoCloseParams(string Handle);
 
 internal sealed record IoCloseResult();
+
+// ============================================================================
+// DOMDebugger domain
+// ============================================================================
+
+internal sealed record DomDebuggerGetEventListenersParams(
+    string ObjectId,
+    int? Depth = null,
+    bool? Pierce = null);
+
+internal sealed record DomDebuggerEventListener(
+    string Type,
+    bool UseCapture,
+    bool Passive,
+    bool Once,
+    string ScriptId,
+    long LineNumber,
+    long ColumnNumber,
+    long? BackendNodeId = null);
+
+internal sealed record DomDebuggerGetEventListenersResult(
+    DomDebuggerEventListener[] Listeners);
