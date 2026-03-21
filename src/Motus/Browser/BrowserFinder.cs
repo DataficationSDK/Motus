@@ -54,6 +54,7 @@ internal static class BrowserFinder
                 BrowserChannel.Chrome => "chrome",
                 BrowserChannel.Edge => "msedge",
                 BrowserChannel.Chromium => "chromium",
+                BrowserChannel.Firefox => "firefox",
                 _ => "chrome"
             };
 
@@ -79,6 +80,11 @@ internal static class BrowserFinder
                 {
                     "/Applications/Chromium.app/Contents/MacOS/Chromium"
                 },
+                BrowserChannel.Firefox => new[]
+                {
+                    "/Applications/Firefox.app/Contents/MacOS/firefox",
+                    "/Applications/Firefox Nightly.app/Contents/MacOS/firefox"
+                },
                 _ => Array.Empty<string>()
             });
         }
@@ -100,6 +106,13 @@ internal static class BrowserFinder
                 {
                     "/usr/bin/chromium-browser",
                     "/usr/bin/chromium"
+                },
+                BrowserChannel.Firefox => new[]
+                {
+                    "/usr/bin/firefox",
+                    "/usr/bin/firefox-esr",
+                    "/usr/local/bin/firefox",
+                    "/snap/bin/firefox"
                 },
                 _ => Array.Empty<string>()
             });
@@ -126,6 +139,11 @@ internal static class BrowserFinder
                 BrowserChannel.Chromium => new[]
                 {
                     Path.Combine(localAppData, "Chromium", "Application", "chrome.exe")
+                },
+                BrowserChannel.Firefox => new[]
+                {
+                    Path.Combine(programFiles, "Mozilla Firefox", "firefox.exe"),
+                    Path.Combine(programFilesX86, "Mozilla Firefox", "firefox.exe")
                 },
                 _ => Array.Empty<string>()
             });

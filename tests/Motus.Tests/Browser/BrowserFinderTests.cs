@@ -57,6 +57,43 @@ public class BrowserFinderTests
             BrowserFinder.InstalledBinariesPath = originalPath;
         }
     }
+
+    [TestMethod]
+    public void CandidatesForChannel_Firefox_ReturnsNonEmptyList()
+    {
+        var candidates = BrowserFinder.CandidatesForChannel(BrowserChannel.Firefox);
+
+        Assert.IsTrue(candidates.Count > 0, "Should return at least one Firefox candidate path.");
+    }
+
+    [TestMethod]
+    public void CandidatesForChannel_Firefox_IncludesInstalledBinariesPath_WhenSet()
+    {
+        var originalPath = BrowserFinder.InstalledBinariesPath;
+        try
+        {
+            BrowserFinder.InstalledBinariesPath = "/opt/motus/browsers";
+            var candidates = BrowserFinder.CandidatesForChannel(BrowserChannel.Firefox);
+
+            Assert.IsTrue(candidates.Any(c => c.StartsWith("/opt/motus/browsers")),
+                "Should include installed binaries path for Firefox when set.");
+            Assert.IsTrue(candidates.Any(c => c.Contains("firefox")),
+                "Firefox candidate should contain 'firefox' in the path.");
+        }
+        finally
+        {
+            BrowserFinder.InstalledBinariesPath = originalPath;
+        }
+    }
+
+    [TestMethod]
+    public void CandidatesForChannel_Firefox_DoesNotOverlapChrome()
+    {
+        var chrome = BrowserFinder.CandidatesForChannel(BrowserChannel.Chrome);
+        var firefox = BrowserFinder.CandidatesForChannel(BrowserChannel.Firefox);
+
+        CollectionAssert.AreNotEqual(chrome.ToList(), firefox.ToList());
+    }
 }
 
 [TestClass]
@@ -140,5 +177,45 @@ public class ChromiumArgsTests
         var args = ChromiumArgs.Build(options, 9222, "/tmp/profile");
 
         Assert.IsTrue(args.Any(a => a.Contains("/tmp/downloads")));
+    }
+}
+
+[TestClass]
+public class IsFirefoxChannelTests
+{
+    [TestMethod]
+    public void Firefox_Channel_ReturnsTrue()
+    {
+        Assert.IsTrue(MotusLauncher.IsFirefoxChannel(BrowserChannel.Firefox, null));
+    }
+
+    [TestMethod]
+    public void Chrome_Channel_ReturnsFalse()
+    {
+        Assert.IsFalse(MotusLauncher.IsFirefoxChannel(BrowserChannel.Chrome, null));
+    }
+
+    [TestMethod]
+    public void Null_Channel_ReturnsFalse()
+    {
+        Assert.IsFalse(MotusLauncher.IsFirefoxChannel(null, null));
+    }
+
+    [TestMethod]
+    public void Firefox_ExecutablePath_ReturnsTrue()
+    {
+        Assert.IsTrue(MotusLauncher.IsFirefoxChannel(null, "/usr/bin/firefox"));
+    }
+
+    [TestMethod]
+    public void Firefox_ExecutablePath_CaseInsensitive()
+    {
+        Assert.IsTrue(MotusLauncher.IsFirefoxChannel(null, "/Applications/Firefox.app/Contents/MacOS/Firefox"));
+    }
+
+    [TestMethod]
+    public void Chrome_ExecutablePath_ReturnsFalse()
+    {
+        Assert.IsFalse(MotusLauncher.IsFirefoxChannel(null, "/usr/bin/google-chrome"));
     }
 }

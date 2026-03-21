@@ -36,4 +36,11 @@ public class InstallCommandTests
         var result = Cmd.Parse("--path /tmp/browsers");
         Assert.AreEqual(0, result.Errors.Count);
     }
+
+    [TestMethod]
+    public void Parse_FirefoxChannel_NoErrors()
+    {
+        var result = Cmd.Parse("--channel firefox");
+        Assert.AreEqual(0, result.Errors.Count);
+    }
 }

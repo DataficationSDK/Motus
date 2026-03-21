@@ -42,10 +42,23 @@ internal enum MotusCapabilities
 /// </summary>
 internal static class CapabilityGuard
 {
-    internal static void Require(MotusCapabilities has, MotusCapabilities required, string featureName)
+    internal static void Require(
+        MotusCapabilities has, MotusCapabilities required,
+        string featureName, string? transportDescription = null)
     {
         if ((has & required) != required)
-            throw new NotSupportedException(
-                $"The active transport does not support '{featureName}'.");
+        {
+            var message = transportDescription is not null
+                ? $"'{featureName}' is not supported by the current browser transport ({transportDescription})."
+                : $"The active transport does not support '{featureName}'.";
+            throw new NotSupportedException(message);
+        }
     }
+
+    internal static string GetTransportDescription(IMotusTransport transport) => transport switch
+    {
+        CdpTransport => "Chrome/CDP",
+        BiDiTransport => "Firefox/WebDriver BiDi",
+        _ => transport.GetType().Name
+    };
 }

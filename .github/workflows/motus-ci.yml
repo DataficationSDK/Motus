@@ -85,7 +85,7 @@ jobs:
           path: TestResults/CoverageReport/SummaryGithub.md
 
   integration:
-    name: Integration Tests
+    name: Integration Tests (Chrome)
     runs-on: ubuntu-latest
     needs: dotnet
 
@@ -105,12 +105,12 @@ jobs:
       - name: Build
         run: dotnet build Motus.sln --configuration Release
 
-      - name: Test (integration)
+      - name: Test (integration - Chrome)
         run: >-
           dotnet test Motus.sln
           --configuration Release
           --no-build
-          --filter "TestCategory=Integration"
+          --filter "TestCategory=Integration&TestCategory!=Firefox"
           --logger "trx;LogFileName=integration-results.trx"
           --results-directory TestResults
 
@@ -141,6 +141,44 @@ jobs:
             TestResults/motus-junit.xml
             TestResults/motus-report.html
             TestResults/motus-results.trx
+          retention-days: 14
+
+  integration-firefox:
+    name: Integration Tests (Firefox)
+    runs-on: ubuntu-latest
+    needs: dotnet
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Install Firefox
+        uses: browser-actions/setup-firefox@v1
+        with:
+          firefox-version: latest
+
+      - name: Build
+        run: dotnet build Motus.sln --configuration Release
+
+      - name: Test (integration - Firefox)
+        run: >-
+          dotnet test Motus.sln
+          --configuration Release
+          --no-build
+          --filter "TestCategory=Integration&TestCategory=Firefox"
+          --logger "trx;LogFileName=firefox-integration-results.trx"
+          --results-directory TestResults
+
+      - name: Upload Firefox integration test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: firefox-integration-test-results
+          path: TestResults/**/*.trx
           retention-days: 14
 
   # nuget-validate:

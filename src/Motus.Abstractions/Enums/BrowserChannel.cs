@@ -12,5 +12,8 @@ public enum BrowserChannel
     Edge,
 
     /// <summary>Open-source Chromium build.</summary>
-    Chromium
+    Chromium,
+
+    /// <summary>Mozilla Firefox stable channel.</summary>
+    Firefox
 }

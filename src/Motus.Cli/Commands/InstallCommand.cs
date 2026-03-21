@@ -7,7 +7,7 @@ public static class InstallCommand
 {
     public static Command Build()
     {
-        var channelOpt = new Option<string>("--channel") { Description = "Browser channel to install (chromium, chrome, edge)", DefaultValueFactory = _ => "chromium" };
+        var channelOpt = new Option<string>("--channel") { Description = "Browser channel to install (chromium, chrome, edge, firefox)", DefaultValueFactory = _ => "chromium" };
         var revisionOpt = new Option<string?>("--revision") { Description = "Pin to a specific browser revision" };
         var pathOpt = new Option<string?>("--path") { Description = "Override browser cache directory" };
 
