@@ -4,10 +4,10 @@ namespace Motus;
 
 internal sealed class Touchscreen : ITouchscreen
 {
-    private readonly CdpSession _session;
+    private readonly IMotusSession _session;
     private readonly CancellationToken _ct;
 
-    internal Touchscreen(CdpSession session, CancellationToken ct)
+    internal Touchscreen(IMotusSession session, CancellationToken ct)
     {
         _session = session;
         _ct = ct;

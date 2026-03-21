@@ -4,11 +4,11 @@ namespace Motus;
 
 internal sealed class MotusRoute : IRoute
 {
-    private readonly CdpSession _session;
+    private readonly IMotusSession _session;
     private readonly string _fetchRequestId;
     private bool _handled;
 
-    internal MotusRoute(IRequest request, CdpSession session, string fetchRequestId)
+    internal MotusRoute(IRequest request, IMotusSession session, string fetchRequestId)
     {
         Request = request;
         _session = session;

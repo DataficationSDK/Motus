@@ -6,7 +6,7 @@ namespace Motus;
 
 internal sealed class NetworkManager
 {
-    private readonly CdpSession _session;
+    private readonly IMotusSession _session;
     private readonly Page _page;
     private readonly CancellationToken _ct;
 
@@ -26,7 +26,7 @@ internal sealed class NetworkManager
 
     internal HarRecorder? HarRecorder { get; set; }
 
-    internal NetworkManager(CdpSession session, Page page, CancellationToken ct)
+    internal NetworkManager(IMotusSession session, Page page, CancellationToken ct)
     {
         _session = session;
         _page = page;

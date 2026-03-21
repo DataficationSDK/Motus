@@ -5,7 +5,7 @@ namespace Motus;
 
 internal sealed class ElementHandle : JsHandle, IElementHandle
 {
-    internal ElementHandle(CdpSession session, string objectId)
+    internal ElementHandle(IMotusSession session, string objectId)
         : base(session, objectId)
     {
     }

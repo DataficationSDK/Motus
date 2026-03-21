@@ -9,7 +9,7 @@ namespace Motus;
 /// </summary>
 internal sealed partial class Page : IPage
 {
-    private readonly CdpSession _session;
+    private readonly IMotusSession _session;
     private readonly BrowserContext _context;
     private readonly string _targetId;
     private readonly CancellationTokenSource _pageCts = new();
@@ -30,7 +30,7 @@ internal sealed partial class Page : IPage
     private volatile bool _isClosed;
     private VideoRecorder? _videoRecorder;
 
-    internal Page(CdpSession session, BrowserContext context, string targetId)
+    internal Page(IMotusSession session, BrowserContext context, string targetId)
     {
         _session = session;
         _context = context;
@@ -82,7 +82,7 @@ internal sealed partial class Page : IPage
     internal event Action<string>? FrameNavigated;
     internal event Action<string, bool, string?>? DialogHandled;
 
-    internal CdpSession Session => _session;
+    internal IMotusSession Session => _session;
 
     internal CancellationToken PageLifetimeToken => _pageCts.Token;
 

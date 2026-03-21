@@ -10,13 +10,13 @@ namespace Motus;
 /// </summary>
 internal sealed class Tracing : ITracing
 {
-    private readonly CdpSession _browserSession;
+    private readonly IMotusSession _browserSession;
     private readonly Channel<JsonElement[]> _dataChannel = Channel.CreateUnbounded<JsonElement[]>();
     private TaskCompletionSource<TracingTracingCompleteEvent>? _completeTcs;
     private CancellationTokenSource? _pumpCts;
     private int _started;
 
-    internal Tracing(CdpSession browserSession)
+    internal Tracing(IMotusSession browserSession)
     {
         _browserSession = browserSession;
     }

@@ -7,9 +7,9 @@ namespace Motus;
 /// </summary>
 internal sealed class Dialog : IDialog
 {
-    private readonly CdpSession _session;
+    private readonly IMotusSession _session;
 
-    internal Dialog(CdpSession session, DialogType type, string message, string? defaultValue)
+    internal Dialog(IMotusSession session, DialogType type, string message, string? defaultValue)
     {
         _session = session;
         Type = type;

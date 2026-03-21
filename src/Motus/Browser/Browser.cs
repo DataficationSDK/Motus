@@ -8,8 +8,8 @@ namespace Motus;
 /// </summary>
 internal sealed class Browser : IBrowser
 {
-    private readonly CdpTransport _transport;
-    private readonly CdpSessionRegistry _registry;
+    private readonly IMotusTransport _transport;
+    private readonly IMotusSessionRegistry _registry;
     private readonly Process? _process;
     private readonly string? _tempUserDataDir;
     private readonly bool _handleSigint;
@@ -23,8 +23,8 @@ internal sealed class Browser : IBrowser
     private EventHandler? _processExitHandler;
 
     internal Browser(
-        CdpTransport transport,
-        CdpSessionRegistry registry,
+        IMotusTransport transport,
+        IMotusSessionRegistry registry,
         Process? process,
         string? tempUserDataDir,
         bool handleSigint,

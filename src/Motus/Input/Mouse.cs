@@ -4,12 +4,12 @@ namespace Motus;
 
 internal sealed class Mouse : IMouse
 {
-    private readonly CdpSession _session;
+    private readonly IMotusSession _session;
     private readonly CancellationToken _ct;
     private double _x;
     private double _y;
 
-    internal Mouse(CdpSession session, CancellationToken ct)
+    internal Mouse(IMotusSession session, CancellationToken ct)
     {
         _session = session;
         _ct = ct;

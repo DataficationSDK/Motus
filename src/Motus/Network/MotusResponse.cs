@@ -6,7 +6,7 @@ namespace Motus;
 
 internal sealed class MotusResponse : IResponse
 {
-    private readonly CdpSession _session;
+    private readonly IMotusSession _session;
     private readonly string _networkRequestId;
     private byte[]? _body;
 
@@ -17,7 +17,7 @@ internal sealed class MotusResponse : IResponse
         Dictionary<string, string>? headers,
         IRequest request,
         IFrame frame,
-        CdpSession session,
+        IMotusSession session,
         string networkRequestId)
     {
         Url = url;

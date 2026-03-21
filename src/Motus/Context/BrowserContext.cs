@@ -15,7 +15,7 @@ internal sealed class BrowserContext : IBrowserContext
     internal static Action<Abstractions.IPage>? GlobalPageCreated;
 
     private readonly Browser _browser;
-    private readonly CdpSessionRegistry _registry;
+    private readonly IMotusSessionRegistry _registry;
     private readonly string _browserContextId;
     private readonly List<Page> _pages = [];
     private readonly ConcurrentDictionary<string, Func<object?[], Task<object?>>> _bindings = new();
@@ -34,7 +34,7 @@ internal sealed class BrowserContext : IBrowserContext
 
     private readonly Tracing _tracing;
 
-    internal BrowserContext(Browser browser, CdpSessionRegistry registry, string browserContextId, ContextOptions? options = null)
+    internal BrowserContext(Browser browser, IMotusSessionRegistry registry, string browserContextId, ContextOptions? options = null)
     {
         _browser = browser;
         _registry = registry;
@@ -244,7 +244,7 @@ internal sealed class BrowserContext : IBrowserContext
         if (sessionId is not null)
         {
             _registry.RemoveSession(sessionId);
-            page.Session.Transport.RemoveChannelsForSession(sessionId);
+            page.Session.CleanupChannels();
         }
     }
 
@@ -268,11 +268,11 @@ internal sealed class BrowserContext : IBrowserContext
             var sessionId = page.Session.SessionId;
             await page.DisposeAsync().ConfigureAwait(false);
 
-            // Clean up CDP session and event channels to prevent resource accumulation
+            // Clean up session and event channels to prevent resource accumulation
             if (sessionId is not null)
             {
                 _registry.RemoveSession(sessionId);
-                page.Session.Transport.RemoveChannelsForSession(sessionId);
+                page.Session.CleanupChannels();
             }
         }
 

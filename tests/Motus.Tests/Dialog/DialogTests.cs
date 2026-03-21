@@ -9,7 +9,7 @@ public class DialogTests
 {
     private FakeCdpSocket _socket = null!;
     private CdpTransport _transport = null!;
-    private CdpSession _session = null!;
+    private IMotusSession _session = null!;
 
     [TestInitialize]
     public async Task Setup()

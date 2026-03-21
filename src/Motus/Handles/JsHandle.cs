@@ -8,11 +8,11 @@ namespace Motus;
 /// </summary>
 internal class JsHandle : IJSHandle
 {
-    private readonly CdpSession _session;
+    private readonly IMotusSession _session;
     private readonly string _objectId;
     private bool _disposed;
 
-    internal JsHandle(CdpSession session, string objectId)
+    internal JsHandle(IMotusSession session, string objectId)
     {
         _session = session;
         _objectId = objectId;
@@ -20,7 +20,7 @@ internal class JsHandle : IJSHandle
 
     internal string ObjectId => _objectId;
 
-    internal CdpSession SessionInternal => _session;
+    internal IMotusSession SessionInternal => _session;
 
     public async Task<T> EvaluateAsync<T>(string expression, object? arg = null)
     {

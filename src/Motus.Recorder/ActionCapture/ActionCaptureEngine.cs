@@ -324,7 +324,7 @@ public sealed class ActionCaptureEngine : IActionCaptureEngine
     }
 
     private static async Task PumpCdpEventsAsync<TEvent>(
-        CdpSession session,
+        IMotusSession session,
         string eventName,
         System.Text.Json.Serialization.Metadata.JsonTypeInfo<TEvent> typeInfo,
         Action<TEvent> handler,

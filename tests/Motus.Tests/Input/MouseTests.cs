@@ -1,3 +1,4 @@
+using Motus.Abstractions;
 using Motus.Tests.Transport;
 
 namespace Motus.Tests.Input;
@@ -7,7 +8,7 @@ public class MouseTests
 {
     private FakeCdpSocket _socket = null!;
     private CdpTransport _transport = null!;
-    private CdpSession _session = null!;
+    private IMotusSession _session = null!;
     private Mouse _mouse = null!;
 
     [TestInitialize]

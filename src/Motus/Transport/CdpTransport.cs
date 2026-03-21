@@ -13,7 +13,7 @@ internal readonly record struct RawCdpEvent(JsonElement Params, string? SessionI
 /// Core CDP WebSocket transport. Manages a single WebSocket connection, a background
 /// receive loop, request/response correlation, and event channel dispatch.
 /// </summary>
-internal sealed class CdpTransport : IAsyncDisposable
+internal sealed class CdpTransport : IMotusTransport
 {
     private readonly ICdpSocket _socket;
     private readonly TimeSpan _slowMo;
@@ -31,10 +31,13 @@ internal sealed class CdpTransport : IAsyncDisposable
     private readonly ConcurrentDictionary<string, Channel<RawCdpEvent>> _eventChannels = new();
     private int _nextId;
 
+    /// <inheritdoc />
+    public MotusCapabilities Capabilities => MotusCapabilities.AllCdp;
+
     /// <summary>
     /// Raised when the WebSocket connection is lost. The exception (if any) is provided.
     /// </summary>
-    internal event Action<Exception?>? Disconnected;
+    public event Action<Exception?>? Disconnected;
 
     internal CdpTransport(ICdpSocket socket, TimeSpan slowMo = default)
     {

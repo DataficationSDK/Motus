@@ -6,16 +6,13 @@ namespace Motus;
 /// Manages CDP sessions for multiplexing commands across browser targets
 /// over a single WebSocket connection.
 /// </summary>
-internal sealed class CdpSessionRegistry
+internal sealed class CdpSessionRegistry : IMotusSessionRegistry
 {
     private readonly CdpTransport _transport;
     private readonly ConcurrentDictionary<string, CdpSession> _sessions = new();
 
-    /// <summary>
-    /// The browser-level session (no session ID). Used for Target domain commands
-    /// and other browser-scoped operations.
-    /// </summary>
-    internal CdpSession BrowserSession { get; }
+    /// <inheritdoc />
+    public IMotusSession BrowserSession { get; }
 
     internal CdpSessionRegistry(CdpTransport transport)
     {
@@ -23,27 +20,24 @@ internal sealed class CdpSessionRegistry
         BrowserSession = new CdpSession(transport, sessionId: null);
     }
 
-    /// <summary>
-    /// Creates and registers a new session for the given target session ID.
-    /// Called after <c>Target.attachToTarget</c> returns a session ID.
-    /// </summary>
-    internal CdpSession CreateSession(string sessionId)
+    /// <inheritdoc />
+    public IMotusSession CreateSession(string sessionId)
     {
         var session = new CdpSession(_transport, sessionId);
         _sessions[sessionId] = session;
         return session;
     }
 
-    /// <summary>
-    /// Attempts to retrieve an existing session by its ID.
-    /// </summary>
-    internal bool TryGetSession(string sessionId, out CdpSession? session)
-        => _sessions.TryGetValue(sessionId, out session);
+    /// <inheritdoc />
+    public bool TryGetSession(string sessionId, out IMotusSession? session)
+    {
+        var found = _sessions.TryGetValue(sessionId, out var cdpSession);
+        session = cdpSession;
+        return found;
+    }
 
-    /// <summary>
-    /// Removes a session from the registry. Called on <c>Target.detachedFromTarget</c>.
-    /// </summary>
-    internal bool RemoveSession(string sessionId)
+    /// <inheritdoc />
+    public bool RemoveSession(string sessionId)
         => _sessions.TryRemove(sessionId, out _);
 
     /// <summary>

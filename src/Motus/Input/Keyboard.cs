@@ -4,10 +4,10 @@ namespace Motus;
 
 internal sealed class Keyboard : IKeyboard
 {
-    private readonly CdpSession _session;
+    private readonly IMotusSession _session;
     private readonly CancellationToken _ct;
 
-    internal Keyboard(CdpSession session, CancellationToken ct)
+    internal Keyboard(IMotusSession session, CancellationToken ct)
     {
         _session = session;
         _ct = ct;
