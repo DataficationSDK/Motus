@@ -24,8 +24,17 @@ internal enum MotusCapabilities
     /// <summary>Supports WebDriver BiDi native network intercept.</summary>
     BiDiNetworkIntercept = 1 << 4,
 
+    /// <summary>Supports WebDriver BiDi script evaluation.</summary>
+    BiDiScriptEvaluation = 1 << 5,
+
+    /// <summary>Supports WebDriver BiDi input actions.</summary>
+    BiDiInputActions = 1 << 6,
+
     /// <summary>Full CDP feature set.</summary>
-    AllCdp = TargetMultiplexing | FetchInterception | EmulationOverrides | Tracing
+    AllCdp = TargetMultiplexing | FetchInterception | EmulationOverrides | Tracing,
+
+    /// <summary>Full BiDi feature set.</summary>
+    AllBiDi = BiDiNetworkIntercept | BiDiScriptEvaluation | BiDiInputActions
 }
 
 /// <summary>
