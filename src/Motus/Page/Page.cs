@@ -139,6 +139,12 @@ internal sealed partial class Page : IPage
 
         // Initialize network monitoring and interception
         await InitializeNetworkAsync(ct).ConfigureAwait(false);
+
+        // In BiDi, domain enables are no-ops and don't fire frameNavigated events,
+        // so _mainFrameId may still be null. The browsing context ID (targetId) serves
+        // as the frame identifier in BiDi.
+        if (_mainFrameId is null && _session is BiDiSession)
+            _mainFrameId = _targetId;
     }
 
     /// <summary>

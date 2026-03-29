@@ -104,7 +104,7 @@ public class FirefoxIntegrationTests
         var context = await browser.NewContextAsync();
         var page = await context.NewPageAsync();
 
-        var result = await page.EvaluateAsync<int>("() => 1 + 1");
+        var result = await page.EvaluateAsync<int>("1 + 1");
 
         Assert.AreEqual(2, result);
     }

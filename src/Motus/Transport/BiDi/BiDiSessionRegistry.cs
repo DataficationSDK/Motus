@@ -13,10 +13,10 @@ internal sealed class BiDiSessionRegistry : IMotusSessionRegistry
 
     public IMotusSession BrowserSession { get; }
 
-    internal BiDiSessionRegistry(BiDiTransport transport)
+    internal BiDiSessionRegistry(BiDiTransport transport, string? browserSessionId = null)
     {
         _transport = transport;
-        BrowserSession = new BiDiSession(transport, sessionId: null);
+        BrowserSession = new BiDiSession(transport, sessionId: browserSessionId);
     }
 
     public IMotusSession CreateSession(string sessionId)

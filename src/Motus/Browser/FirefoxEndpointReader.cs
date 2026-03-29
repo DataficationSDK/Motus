@@ -46,7 +46,11 @@ internal static class FirefoxEndpointReader
                 var wsIndex = e.Data.IndexOf("ws://", StringComparison.Ordinal);
                 if (wsIndex >= 0)
                 {
-                    var wsUrl = e.Data[wsIndex..];
+                    var wsUrl = e.Data[wsIndex..].TrimEnd('/');
+                    // Firefox advertises ws://host:port but the BiDi WebSocket
+                    // endpoint is at /session. Append it if not already present.
+                    if (!wsUrl.EndsWith("/session", StringComparison.Ordinal))
+                        wsUrl += "/session";
                     tcs.TrySetResult(new Uri(wsUrl));
                 }
             }

@@ -68,7 +68,7 @@ public class FirefoxEndpointReaderTests
         var result = await FirefoxEndpointReader.WaitForEndpointAsync(
             stderr, TimeSpan.FromSeconds(5), CancellationToken.None);
 
-        Assert.AreEqual("ws://127.0.0.1:9222/", result.ToString());
+        Assert.AreEqual("ws://127.0.0.1:9222/session", result.ToString());
         Assert.AreEqual(9222, result.Port);
     }
 
@@ -82,7 +82,7 @@ public class FirefoxEndpointReaderTests
         var result = await FirefoxEndpointReader.WaitForEndpointAsync(
             stderr, TimeSpan.FromSeconds(5), CancellationToken.None);
 
-        Assert.AreEqual("ws", result.Scheme);
+        Assert.AreEqual("ws://127.0.0.1:4444/session", result.ToString());
         Assert.AreEqual(4444, result.Port);
     }
 

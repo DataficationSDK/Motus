@@ -90,8 +90,10 @@ public static class MotusLauncher
                 var bidiTransport = new BiDiTransport(socket);
                 await bidiTransport.ConnectAsync(wsEndpoint, ct).ConfigureAwait(false);
 
+                var sessionId = await bidiTransport.CreateSessionAsync(ct).ConfigureAwait(false);
+
                 transport = bidiTransport;
-                registry = new BiDiSessionRegistry(bidiTransport);
+                registry = new BiDiSessionRegistry(bidiTransport, sessionId);
             }
             else
             {

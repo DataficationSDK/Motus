@@ -69,6 +69,7 @@ internal static class BiDiTranslationRegistry
             new NoOpTranslation("Runtime.enable", "session.status"),
             new NoOpTranslation("Page.setLifecycleEventsEnabled", "session.status"),
             new NoOpTranslation("Fetch.disable", "session.status"),
+            new NoOpTranslation("Page.setInterceptFileChooserDialog", "session.status"),
         ];
 
         return all.ToDictionary(t => t.CdpMethod);
@@ -85,9 +86,14 @@ internal static class JsonBuilder
 
     internal static JsonElement Empty() => s_emptyObject;
 
+    private static readonly JsonSerializerOptions s_skipNullOptions = new()
+    {
+        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
+    };
+
     internal static JsonElement FromObject(object obj)
     {
-        var bytes = JsonSerializer.SerializeToUtf8Bytes(obj);
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(obj, s_skipNullOptions);
         using var doc = JsonDocument.Parse(bytes);
         return doc.RootElement.Clone();
     }
@@ -222,19 +228,31 @@ internal sealed class TargetCloseTargetTranslation : IBiDiTranslation
 }
 
 /// <summary>
-/// Target.attachToTarget -> no-op (BiDi has no attach concept)
-/// Returns { sessionId: targetId } to satisfy the engine's expectation.
+/// Target.attachToTarget -> no-op (BiDi has no attach concept).
+/// Returns { sessionId: targetId } so the created session uses the real
+/// browsing context ID, which BiDi commands require as the context parameter.
 /// </summary>
 internal sealed class TargetAttachToTargetTranslation : IBiDiTranslation
 {
+    // The attach is a no-op, but we need to capture the targetId from params
+    // and echo it back as the sessionId in the result.
+    private static readonly AsyncLocal<string?> s_lastTargetId = new();
+
     public string CdpMethod => "Target.attachToTarget";
     public string BiDiMethod => "session.status";
 
     public JsonElement TranslateParams(JsonElement cdpParams, string? contextId)
-        => JsonBuilder.Empty();
+    {
+        s_lastTargetId.Value = cdpParams.GetStringOrNull("targetId");
+        return JsonBuilder.Empty();
+    }
 
     public JsonElement TranslateResult(JsonElement bidiResult)
-        => JsonBuilder.FromObject(new { sessionId = "bidi-session" });
+    {
+        var targetId = s_lastTargetId.Value ?? "bidi-session";
+        s_lastTargetId.Value = null;
+        return JsonBuilder.FromObject(new { sessionId = targetId });
+    }
 }
 
 /// <summary>

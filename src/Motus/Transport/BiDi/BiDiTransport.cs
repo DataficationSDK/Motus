@@ -45,6 +45,23 @@ internal sealed class BiDiTransport : IMotusTransport
     }
 
     /// <summary>
+    /// Sends <c>session.new</c> to establish a WebDriver BiDi session and returns the session ID.
+    /// Must be called after <see cref="ConnectAsync"/> and before any other commands.
+    /// </summary>
+    internal async Task<string> CreateSessionAsync(CancellationToken ct)
+    {
+        var sessionParams = new BiDiSessionNewParams(
+            new BiDiSessionCapabilitiesRequest(AlwaysMatch: BiDiTransport.EmptyJsonElement()));
+        var paramsElement = JsonSerializer.SerializeToElement(
+            sessionParams, BiDiJsonContext.Default.BiDiSessionNewParams);
+
+        var result = await SendRawAsync("session.new", paramsElement, ct).ConfigureAwait(false);
+        var sessionResult = JsonSerializer.Deserialize(result, BiDiJsonContext.Default.BiDiSessionNewResult)
+            ?? throw new BiDiProtocolException("session.new returned null result");
+        return sessionResult.SessionId;
+    }
+
+    /// <summary>
     /// Sends a raw BiDi command and awaits the correlated response.
     /// </summary>
     internal async Task<JsonElement> SendRawAsync(

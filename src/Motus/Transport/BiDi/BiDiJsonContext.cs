@@ -11,6 +11,16 @@ internal sealed record BiDiSessionStatusResult(
     [property: JsonPropertyName("ready")] bool Ready,
     [property: JsonPropertyName("message")] string Message);
 
+internal sealed record BiDiSessionCapabilitiesRequest(
+    [property: JsonPropertyName("alwaysMatch")] JsonElement? AlwaysMatch = null);
+
+internal sealed record BiDiSessionNewParams(
+    [property: JsonPropertyName("capabilities")] BiDiSessionCapabilitiesRequest Capabilities);
+
+internal sealed record BiDiSessionNewResult(
+    [property: JsonPropertyName("sessionId")] string SessionId,
+    [property: JsonPropertyName("capabilities")] JsonElement? Capabilities = null);
+
 internal sealed record BiDiSessionSubscribeParams(
     [property: JsonPropertyName("events")] string[] Events,
     [property: JsonPropertyName("contexts")] string[]? Contexts = null);
@@ -180,6 +190,9 @@ internal sealed record BiDiNetworkHeader(
 [JsonSerializable(typeof(BiDiCommandEnvelope))]
 [JsonSerializable(typeof(BiDiInboundDiscriminator))]
 // Session domain
+[JsonSerializable(typeof(BiDiSessionCapabilitiesRequest))]
+[JsonSerializable(typeof(BiDiSessionNewParams))]
+[JsonSerializable(typeof(BiDiSessionNewResult))]
 [JsonSerializable(typeof(BiDiSessionStatusResult))]
 [JsonSerializable(typeof(BiDiSessionSubscribeParams))]
 [JsonSerializable(typeof(BiDiSessionSubscribeResult))]
