@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using Microsoft.Extensions.Logging;
 using Motus.Runner.Services;
 using Motus.Runner.Services.Timeline;
 using Motus.Runner.Services.VisualRegression;
@@ -14,6 +15,7 @@ public static class RunnerHost
         string? filter = null,
         int port = 5100,
         string? traceFilePath = null,
+        bool verbose = false,
         CancellationToken ct = default)
     {
         // The static web assets manifest is named after the ApplicationName.
@@ -31,6 +33,11 @@ public static class RunnerHost
             ContentRootPath = runnerAssemblyDir,
             EnvironmentName = "Development",
         });
+
+        // Suppress ASP.NET Core info/warn noise unless verbose is set.
+        // Errors still surface so startup failures are visible.
+        builder.Logging.SetMinimumLevel(
+            verbose ? LogLevel.Information : LogLevel.Error);
 
         builder.WebHost.UseUrls($"http://localhost:{port}");
 
@@ -118,6 +125,7 @@ public static class RunnerHost
 
         var url = $"http://localhost:{port}";
         Console.WriteLine($"Motus Runner started at {url}");
+        Console.WriteLine("Press Ctrl+C to stop.");
         OpenBrowser(url);
 
         await app.RunAsync(ct);
