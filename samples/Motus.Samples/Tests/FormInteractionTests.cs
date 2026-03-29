@@ -23,9 +23,10 @@ public class FormInteractionTests : MotusTestBase
         await Fixtures.SetPageContentAsync(Page,Fixtures.LoginForm);
 
         // TypeAsync dispatches individual key events with an optional delay between them.
-        // A delay of 50ms prevents macOS from dropping keystrokes under compositor pressure.
+        // macOS CI runners need a generous delay to prevent the compositor from dropping
+        // keystrokes when three rapid CDP events (keyDown, char, keyUp) pile up per character.
         var password = Page.GetByLabel("Password");
-        await password.TypeAsync("secret123", new KeyboardTypeOptions(Delay: 50));
+        await password.TypeAsync("secret123", new KeyboardTypeOptions(Delay: 100));
         await Expect.That(password).ToHaveValueAsync("secret123");
     }
 
