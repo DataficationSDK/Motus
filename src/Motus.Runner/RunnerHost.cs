@@ -16,16 +16,23 @@ public static class RunnerHost
         string? traceFilePath = null,
         CancellationToken ct = default)
     {
-        var runnerAssembly = typeof(RunnerHost).Assembly;
+        // The static web assets manifest is named after the ApplicationName.
+        // When hosted by Motus.Cli, the entry assembly is Motus.Cli but the
+        // manifest ships as Motus.Runner.staticwebassets.runtime.json. Setting
+        // ApplicationName to "Motus.Runner" and ContentRootPath to the Runner
+        // assembly directory ensures the middleware discovers the correct manifest.
+        var runnerAssemblyDir = Path.GetDirectoryName(
+            typeof(RunnerHost).Assembly.Location)!;
+
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions
         {
             Args = args,
-            ApplicationName = runnerAssembly.GetName().Name,
-            ContentRootPath = AppContext.BaseDirectory,
+            ApplicationName = "Motus.Runner",
+            ContentRootPath = runnerAssemblyDir,
+            EnvironmentName = "Development",
         });
 
         builder.WebHost.UseUrls($"http://localhost:{port}");
-        builder.WebHost.UseStaticWebAssets();
 
         var options = new RunnerOptions
         {

@@ -19,7 +19,7 @@ The result is a framework that talks directly to Chromium and Firefox over WebSo
 ### Prerequisites
 
 - [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0) or [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
-- Chrome, Edge, or Firefox installed (or use `dotnet motus install` to download a browser binary)
+- Chrome, Edge, or Firefox installed (or use `motus install` to download a browser binary)
 
 ### Install
 
@@ -58,7 +58,7 @@ public class SearchTests : MotusTestBase
 ### Generate Page Objects from Live Pages
 
 ```bash
-dotnet motus codegen https://example.com/login --output ./Pages --namespace MyApp.Pages
+motus codegen https://example.com/login --output ./Pages --namespace MyApp.Pages
 ```
 
 This navigates to the URL, crawls the DOM for interactive elements, infers the best selector for each using pluggable strategies, and emits a typed `.g.cs` Page Object Model class. Use `--detect-listeners` to also discover elements with directly-attached JS event handlers (vanilla JS, jQuery, etc.).
@@ -66,16 +66,16 @@ This navigates to the URL, crawls the DOM for interactive elements, infers the b
 ### Record a Test Session
 
 ```bash
-dotnet motus record --output ./Tests --framework mstest --selector-priority testid,role,text,css
+motus record --output ./Tests --framework mstest --selector-priority testid,role,text,css
 ```
 
 ### Run Tests
 
 ```bash
-dotnet motus run --workers auto --reporter console
-dotnet motus run --visual # launches the Blazor visual runner
-dotnet motus run --reporter html:./reports/result.html
-dotnet motus run --reporter junit:./reports/junit.xml
+motus run --workers auto --reporter console
+motus run --visual # launches the Blazor visual runner
+motus run --reporter html:./reports/result.html
+motus run --reporter junit:./reports/junit.xml
 ```
 
 ## How It Works
@@ -94,7 +94,7 @@ All CDP types are source-generated at build time from the protocol JSON schema. 
 | `Motus.Analyzers` | Roslyn diagnostic analyzers and code fixes |
 | `Motus.Recorder` | Action capture, selector inference, POM generation |
 | `Motus.Runner` | Blazor visual test runner with live screencast and timeline |
-| `Motus.Cli` | `dotnet motus` CLI tool |
+| `Motus.Cli` | `motus` CLI tool |
 | `Motus.Testing.*` | Test framework integrations (MSTest, xUnit, NUnit) |
 
 ## The Extension Model
@@ -157,7 +157,7 @@ Code fixes are provided for MOT001, MOT002, and MOT004.
 
 ## Visual Runner
 
-Launch the Blazor-based visual runner with `dotnet motus run --visual`:
+Launch the Blazor-based visual runner with `motus run --visual`:
 
 - **Live browser view** with real-time screencast via CDP `Page.startScreencast`
 - **Action timeline** with clickable steps, before/after screenshots, network requests, and console messages
@@ -185,14 +185,14 @@ Launch the Blazor-based visual runner with `dotnet motus run --visual`:
 ## CLI Reference
 
 ```
-dotnet motus run              Run tests with optional --visual, --filter, --workers, --reporter
-dotnet motus record           Record a browser session and emit test code
-dotnet motus codegen          Generate POM classes from live pages
-dotnet motus screenshot       Capture a screenshot of a URL
-dotnet motus pdf              Generate a PDF from a URL
-dotnet motus trace show       Open a trace file in the visual runner
-dotnet motus install          Download and install browser binaries
-dotnet motus update-protocol  Fetch and update CDP protocol schema files
+motus run              Run tests with optional --visual, --filter, --workers, --reporter
+motus record           Record a browser session and emit test code
+motus codegen          Generate POM classes from live pages
+motus screenshot       Capture a screenshot of a URL
+motus pdf              Generate a PDF from a URL
+motus trace show       Open a trace file in the visual runner
+motus install          Download and install browser binaries
+motus update-protocol  Fetch and update CDP protocol schema files
 ```
 
 ## Build from Source
