@@ -4,6 +4,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE.md)
 [![.NET 8 | 10](https://img.shields.io/badge/.NET-8.0%20%7C%2010.0-purple.svg)](https://dotnet.microsoft.com/download/dotnet/10.0)
+[![NuGet](https://img.shields.io/nuget/v/Motus?label=NuGet)](https://www.nuget.org/packages/Motus)
 
 ## The Story
 
