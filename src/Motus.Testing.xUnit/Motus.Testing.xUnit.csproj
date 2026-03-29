@@ -11,8 +11,11 @@
     <Title>Motus.Testing.xUnit</Title>
     <Description>xUnit integration for Motus browser automation. Provides collection and class fixtures for parallel test execution.</Description>
     <IsTestProject>false</IsTestProject>
-    <PackageReadmeFile />
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Motus.Testing\Motus.Testing.csproj" />

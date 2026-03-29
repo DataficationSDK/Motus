@@ -11,8 +11,11 @@
     <Title>Motus.Testing.MSTest</Title>
     <Description>MSTest integration for Motus browser automation. Provides a base test class with per-test browser context isolation.</Description>
     <IsTestProject>false</IsTestProject>
-    <PackageReadmeFile />
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Motus.Testing\Motus.Testing.csproj" />
