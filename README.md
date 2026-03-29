@@ -9,7 +9,7 @@
 
 Every .NET browser automation framework either wraps a JavaScript tool behind a process boundary or bolts extensibility on as an afterthought. Playwright for .NET proxies commands through a Node.js sidecar. Selenium's extension model grew organically over fifteen years and it shows.
 
-Motus started from a different premise, one validated by the success of [Verso](https://github.com/DataficationSDK/Verso): if the framework's own features are built on the same public plugin interfaces available to third-party authors, the architecture stays honest. Every built-in selector strategy, lifecycle hook, wait condition, and reporter is registered through the same `IPluginContext` that any consumer can use. There are no internal shortcuts.
+Motus started from a premise proven by the architecture of [Verso](https://github.com/DataficationSDK/Verso): if the framework's own features are built on the same public plugin interfaces available to third-party authors, the architecture stays honest. Every built-in selector strategy, lifecycle hook, wait condition, and reporter is registered through the same `IPluginContext` that any consumer can use. There are no internal shortcuts.
 
 The result is a framework that talks directly to Chromium and Firefox over WebSocket (CDP and WebDriver BiDi), ships source-generated protocol bindings for NativeAOT, and gives you compile-time diagnostics for common automation mistakes before your tests ever run.
 
@@ -24,7 +24,7 @@ The result is a framework that talks directly to Chromium and Firefox over WebSo
 
 ```bash
 dotnet add package Motus
-dotnet add package Motus.Testing.MSTest   # or Motus.Testing.xUnit / Motus.Testing.NUnit
+dotnet add package Motus.Testing.MSTest # or Motus.Testing.xUnit / Motus.Testing.NUnit
 dotnet tool install --global Motus.Cli
 ```
 
@@ -72,7 +72,7 @@ dotnet motus record --output ./Tests --framework mstest --selector-priority test
 
 ```bash
 dotnet motus run --workers auto --reporter console
-dotnet motus run --visual                             # launches the Blazor visual runner
+dotnet motus run --visual # launches the Blazor visual runner
 dotnet motus run --reporter html:./reports/result.html
 dotnet motus run --reporter junit:./reports/junit.xml
 ```

@@ -47,3 +47,4 @@ TestResult.xml
 coverage/
 *.coverage
 *.coveragexml
+/starter
