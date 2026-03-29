@@ -22,9 +22,10 @@ public class FormInteractionTests : MotusTestBase
     {
         await Fixtures.SetPageContentAsync(Page,Fixtures.LoginForm);
 
-        // TypeAsync dispatches individual key events with an optional delay between them
+        // TypeAsync dispatches individual key events with an optional delay between them.
+        // A delay of 50ms prevents macOS from dropping keystrokes under compositor pressure.
         var password = Page.GetByLabel("Password");
-        await password.TypeAsync("secret123", new KeyboardTypeOptions(Delay: 10));
+        await password.TypeAsync("secret123", new KeyboardTypeOptions(Delay: 50));
         await Expect.That(password).ToHaveValueAsync("secret123");
     }
 
