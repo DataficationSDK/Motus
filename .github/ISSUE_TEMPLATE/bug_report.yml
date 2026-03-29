@@ -1,0 +1,140 @@
+name: Bug Report
+description: Report a bug in Motus
+title: "[Bug]: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. Please fill out the sections below so we can reproduce and fix the issue.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: A clear, concise description of the bug.
+      placeholder: What happened? What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      description: Minimal steps to reproduce the behavior.
+      placeholder: |
+        1. Create a test class with `[MotusTest]`
+        2. Navigate to `...`
+        3. Click element with selector `...`
+        4. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: error-output
+    attributes:
+      label: Error Output
+      description: Paste any error messages, stack traces, or unexpected output.
+      render: text
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      description: Which part of Motus is affected?
+      options:
+        - CDP / Browser Protocol
+        - WebDriver BiDi
+        - Selectors / Query Engine
+        - Navigation / Page Lifecycle
+        - Wait Conditions
+        - Screenshots / Visual Comparison
+        - Recorder
+        - Plugin System
+        - Source Generators / Analyzers
+        - CLI (dotnet motus)
+        - Test Framework Integration (MSTest / xUnit / NUnit)
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: browser
+    attributes:
+      label: Browser
+      description: Which browser(s) does this affect?
+      multiple: true
+      options:
+        - Chrome
+        - Edge
+        - Firefox
+        - All
+        - N/A
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Motus Version
+      description: "NuGet package version or commit hash."
+      placeholder: "e.g., 1.0.0 or commit abc1234"
+    validations:
+      required: true
+
+  - type: input
+    id: browser-version
+    attributes:
+      label: Browser Version
+      description: "Browser version if relevant. Check chrome://version or about:support."
+      placeholder: "e.g., Chrome 126.0.6478.127"
+
+  - type: input
+    id: dotnet-version
+    attributes:
+      label: .NET Version
+      description: "Output of `dotnet --version`"
+      placeholder: "e.g., 8.0.300"
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating System
+      placeholder: "e.g., Windows 11, macOS 14.5, Ubuntu 24.04"
+
+  - type: textarea
+    id: code-snippet
+    attributes:
+      label: Code Snippet
+      description: If applicable, paste a minimal test or code sample that triggers the bug.
+      render: csharp
+
+  - type: textarea
+    id: plugins
+    attributes:
+      label: Loaded Plugins
+      description: List any third-party plugins registered when the bug occurs.
+      placeholder: "e.g., MyCustomSelector 0.2.1, CustomReporter 1.0.0"
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      description: How much does this impact your work?
+      options:
+        - "Low - cosmetic or minor inconvenience"
+        - "Medium - workaround exists but it's disruptive"
+        - "High - blocks a workflow, no reasonable workaround"
+        - "Critical - data loss, crash, or security issue"
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues and this hasn't been reported yet
+          required: true
+        - label: I can reproduce this with no third-party plugins loaded
+          required: false
