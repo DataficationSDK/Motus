@@ -6,8 +6,6 @@
 [![.NET 8 | 10](https://img.shields.io/badge/.NET-8.0%20%7C%2010.0-purple.svg)](https://dotnet.microsoft.com/download/dotnet/10.0)
 [![NuGet](https://img.shields.io/nuget/v/Motus?label=NuGet)](https://www.nuget.org/packages/Motus)
 
-> **Note:** Motus is experimental and under active development. APIs may change and you may encounter bugs. Issues and feedback are welcome.
-
 ## The Story
 
 Every .NET browser automation framework either wraps a JavaScript tool behind a process boundary or bolts extensibility on as an afterthought. Playwright for .NET proxies commands through a Node.js sidecar. Selenium's extension model grew organically over fifteen years and it shows.
