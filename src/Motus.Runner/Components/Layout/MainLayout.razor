@@ -1,16 +1,21 @@
 @inherits LayoutComponentBase
 @inject ITestSessionService Session
 @inject ITimelineService Timeline
+@inject RunnerOptions Options
 @implements IDisposable
 
-<div class="runner-shell" id="runner-shell">
+<div class="runner-shell" id="runner-shell"
+     style="@(Options.TraceMode ? "grid-template-columns: 1fr; grid-template-areas: 'toolbar' 'main' 'resize' 'bottom';" : "")">
     <div class="runner-toolbar">
         <RunnerToolbar />
     </div>
-    <div class="runner-sidebar" id="runner-sidebar">
-        <TestExplorer />
-    </div>
-    <div class="sidebar-resize-handle" id="sidebar-resize-handle"></div>
+    @if (!Options.TraceMode)
+    {
+        <div class="runner-sidebar" id="runner-sidebar">
+            <TestExplorer />
+        </div>
+        <div class="sidebar-resize-handle" id="sidebar-resize-handle"></div>
+    }
     <div class="runner-main">
         <div class="main-tabs">
             <button class="main-tab @(activeTab == "browser" ? "tab-active" : "")"
@@ -117,6 +122,8 @@
 
     protected override void OnInitialized()
     {
+        if (Options.TraceMode)
+            activeTab = "step";
         Session.StateChanged += OnStateChanged;
         Session.RunStarted += OnRunStarted;
         Timeline.TimelineChanged += OnTimelineChanged;

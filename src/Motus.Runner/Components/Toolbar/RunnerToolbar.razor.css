@@ -109,6 +109,23 @@
     50% { opacity: 0.5; }
 }
 
+.toolbar-trace-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--vsc-fg-bright);
+    font-family: var(--vsc-font-mono);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 400px;
+}
+
+.toolbar-trace-info {
+    font-size: 11px;
+    color: var(--vsc-fg-dim);
+    font-family: var(--vsc-font-mono);
+}
+
 .running-indicator {
     font-size: 11px;
     color: var(--vsc-green);

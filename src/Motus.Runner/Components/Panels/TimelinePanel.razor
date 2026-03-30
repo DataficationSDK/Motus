@@ -1,5 +1,6 @@
 @inject ITimelineService Timeline
 @inject ITestSessionService Session
+@inject RunnerOptions Options
 @implements IDisposable
 
 <div class="timeline-panel">
@@ -70,22 +71,36 @@
                 list.Add(entry);
             }
 
-            // Build groups in discovery order so tests appear alongside their classmates
+            // Build groups in discovery order so tests appear alongside their classmates.
+            // In trace mode there are no discovered tests, so group directly from entries.
             var groups = new List<TestGroup>();
             var seen = new HashSet<string>();
-            foreach (var test in Session.DiscoveredTests)
+
+            if (Options.TraceMode)
             {
-                if (!seen.Add(test.FullName)) continue;
+                foreach (var (testName, entries) in entriesByTest)
+                {
+                    var parts = testName.Split('.');
+                    var shortName = parts.Length > 0 ? parts[^1] : testName;
+                    groups.Add(new TestGroup(testName, shortName, entries));
+                }
+            }
+            else
+            {
+                foreach (var test in Session.DiscoveredTests)
+                {
+                    if (!seen.Add(test.FullName)) continue;
 
-                // Only include tests that have timeline entries or were part of the last run
-                var hasEntries = entriesByTest.TryGetValue(test.FullName, out var entries);
-                var wasInLastRun = Session.LastRunTests.Contains(test.FullName);
+                    // Only include tests that have timeline entries or were part of the last run
+                    var hasEntries = entriesByTest.TryGetValue(test.FullName, out var entries);
+                    var wasInLastRun = Session.LastRunTests.Contains(test.FullName);
 
-                if (!hasEntries && !wasInLastRun) continue;
+                    if (!hasEntries && !wasInLastRun) continue;
 
-                var parts = test.FullName.Split('.');
-                var shortName = parts.Length > 0 ? parts[^1] : test.FullName;
-                groups.Add(new TestGroup(test.FullName, shortName, entries ?? []));
+                    var parts = test.FullName.Split('.');
+                    var shortName = parts.Length > 0 ? parts[^1] : test.FullName;
+                    groups.Add(new TestGroup(test.FullName, shortName, entries ?? []));
+                }
             }
 
             return groups;

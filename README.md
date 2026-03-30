@@ -61,6 +61,9 @@ public class SearchTests : MotusTestBase
 
 ```bash
 motus codegen https://example.com/login --output ./Pages --namespace MyApp.Pages
+
+# Or open a browser, navigate yourself, then press Enter to analyze
+motus codegen --headed --output ./Pages
 ```
 
 This navigates to the URL, crawls the DOM for interactive elements, infers the best selector for each using pluggable strategies, and emits a typed `.g.cs` Page Object Model class. Use `--detect-listeners` to also discover elements with directly-attached JS event handlers (vanilla JS, jQuery, etc.).
@@ -189,10 +192,10 @@ Launch the Blazor-based visual runner with `motus run --visual`:
 ```
 motus run              Run tests with optional --visual, --filter, --workers, --reporter
 motus record           Record a browser session and emit test code
-motus codegen          Generate POM classes from live pages
-motus screenshot       Capture a screenshot of a URL
-motus pdf              Generate a PDF from a URL
-motus trace show       Open a trace file in the visual runner
+motus codegen          Generate POM classes from live pages (--headed, --connect, --detect-listeners)
+motus screenshot       Capture a screenshot (--full-page, --delay, --hide-banners, --width, --height)
+motus pdf              Generate a PDF from a URL (--delay, --hide-banners, --width, --timeout)
+motus trace show       Open a trace file in the visual runner with timeline, screenshots, and network
 motus install          Download and install browser binaries
 motus update-protocol  Fetch and update CDP protocol schema files
 ```

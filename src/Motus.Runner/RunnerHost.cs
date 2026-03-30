@@ -54,6 +54,8 @@ public static class RunnerHost
             AssemblyPaths = assemblyPaths ?? [],
             Filter = filter,
             Port = port,
+            TraceMode = traceFilePath is not null,
+            TraceFilePath = traceFilePath,
         };
 
         builder.Services.AddSingleton(options);
@@ -143,9 +145,13 @@ public static class RunnerHost
         }
 
         var url = $"http://localhost:{port}";
-        Console.WriteLine($"Motus Runner started at {url}");
-        Console.WriteLine("Press Ctrl+C to stop.");
-        OpenBrowser(url);
+
+        app.Lifetime.ApplicationStarted.Register(() =>
+        {
+            Console.WriteLine($"Motus Runner started at {url}");
+            Console.WriteLine("Press Ctrl+C to stop.");
+            OpenBrowser(url);
+        });
 
         await app.RunAsync(ct);
     }

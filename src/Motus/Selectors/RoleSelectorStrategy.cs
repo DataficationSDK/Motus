@@ -59,15 +59,47 @@ internal sealed class RoleSelectorStrategy : ISelectorStrategy
 
     public async Task<string?> GenerateSelector(IElementHandle element, CancellationToken ct = default)
     {
-        var role = await element.EvaluateAsync<string?>(
-            "function() { return this.getAttribute('role'); }").ConfigureAwait(false);
-        if (role is null)
+        var result = await element.EvaluateAsync<string?>(
+            """
+            function() {
+                var el = this;
+                var role = el.getAttribute('role');
+                if (!role) {
+                    var tag = el.tagName.toLowerCase();
+                    var type = (el.getAttribute('type') || '').toLowerCase();
+                    if (tag === 'button' || (tag === 'input' && (type === 'submit' || type === 'button' || type === 'reset')))
+                        role = 'button';
+                    else if (tag === 'a' && el.hasAttribute('href'))
+                        role = 'link';
+                    else if (tag === 'input' && type === 'checkbox')
+                        role = 'checkbox';
+                    else if (tag === 'input' && type === 'radio')
+                        role = 'radio';
+                    else if (tag === 'select')
+                        role = 'listbox';
+                    else if (tag === 'textarea')
+                        role = 'textbox';
+                    else if (tag === 'input' && (type === '' || type === 'text' || type === 'email' || type === 'password' || type === 'search' || type === 'url' || type === 'tel' || type === 'number'))
+                        role = 'textbox';
+                }
+                if (!role) return null;
+                var name = el.getAttribute('aria-label') || el.textContent?.trim();
+                if (name && name.length <= 100) return role + '\t' + name;
+                return role + '\t';
+            }
+            """).ConfigureAwait(false);
+
+        if (result is null)
             return null;
 
-        var name = await element.EvaluateAsync<string?>(
-            "function() { return this.getAttribute('aria-label') || this.textContent?.trim(); }").ConfigureAwait(false);
+        var tabIdx = result.IndexOf('\t');
+        if (tabIdx < 0)
+            return $"role={result}";
 
-        if (name is not null && name.Length <= 100)
+        var role = result[..tabIdx];
+        var name = result[(tabIdx + 1)..];
+
+        if (name.Length > 0)
             return $"""role={role}[name="{name}"]""";
 
         return $"role={role}";

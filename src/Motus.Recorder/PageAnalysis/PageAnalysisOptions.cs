@@ -12,7 +12,7 @@ public sealed class PageAnalysisOptions
     public int MaxSelectorLength { get; init; } = 200;
 
     /// <summary>Maximum time allowed for the full analysis per page.</summary>
-    public TimeSpan InferenceTimeout { get; init; } = TimeSpan.FromSeconds(30);
+    public TimeSpan InferenceTimeout { get; init; } = TimeSpan.FromSeconds(60);
 
     /// <summary>
     /// When true, performs a second analysis pass using DOMDebugger.getEventListeners
@@ -20,4 +20,10 @@ public sealed class PageAnalysisOptions
     /// React event delegation is not captured. Disabled by default.
     /// </summary>
     public bool DetectEventListeners { get; init; }
+
+    /// <summary>
+    /// Optional CSS selector to scope element discovery to a specific container
+    /// (e.g. ".modal-dialog", "#login-form"). When null, the entire document is crawled.
+    /// </summary>
+    public string? Scope { get; init; }
 }

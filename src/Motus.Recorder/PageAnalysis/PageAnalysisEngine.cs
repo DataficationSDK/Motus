@@ -45,7 +45,7 @@ public sealed class PageAnalysisEngine
         var linkedCt = timeoutCts.Token;
 
         // Single JS evaluation to discover all interactive elements
-        var elementsJson = await page.EvaluateAsync<JsonElement>(DomCrawlScript);
+        var elementsJson = await page.EvaluateAsync<JsonElement>(BuildDomCrawlScript(_options.Scope));
         var elements = DeserializeElements(elementsJson);
 
         // Listener pass: discover elements with directly-attached JS event handlers
@@ -81,13 +81,13 @@ public sealed class PageAnalysisEngine
 
             // Elements from listener pass have negative ElementIndex as a sentinel
             var handleJs = info.ElementIndex >= 0
-                ? $"document.querySelectorAll('{InteractiveSelector}')[{info.ElementIndex}]"
-                : $"window.__mtusCandidates[{-(info.ElementIndex + 1)}]";
+                ? $"[window.__mtusElements[{info.ElementIndex}]]"
+                : $"[window.__mtusCandidates[{-(info.ElementIndex + 1)}]]";
 
             try
             {
                 selector = await InferSelectorForElement(
-                    page, handleJs, orderedStrategies, linkedCt);
+                    page, handleJs, orderedStrategies, info, linkedCt);
             }
             catch (OperationCanceledException)
             {
@@ -108,6 +108,7 @@ public sealed class PageAnalysisEngine
         IPage page,
         string handleJs,
         IReadOnlyList<ISelectorStrategy> strategies,
+        PageElementInfo info,
         CancellationToken ct)
     {
         var internalPage = (Page)page;
@@ -118,22 +119,90 @@ public sealed class PageAnalysisEngine
 
         var element = handles[0];
 
-        // Try each strategy in priority order (same pattern as SelectorInferenceEngine)
+        // Try each strategy in priority order (same pattern as SelectorInferenceEngine).
+        // Individual strategy failures are caught so one slow strategy doesn't
+        // prevent faster ones from running.
         foreach (var strategy in strategies)
         {
-            var selector = await strategy.GenerateSelector(element, ct);
-            if (selector is null || selector.Length > _options.MaxSelectorLength)
-                continue;
+            try
+            {
+                var selector = await strategy.GenerateSelector(element, ct);
+                if (selector is null || selector.Length > _options.MaxSelectorLength)
+                    continue;
 
-            var matches = await strategy.ResolveAsync(
-                selector, page.MainFrame, pierceShadow: true, ct);
+                var matches = await strategy.ResolveAsync(
+                    selector, page.MainFrame, pierceShadow: true, ct);
 
-            if (matches.Count == 1)
-                return selector;
+                if (matches.Count == 1)
+                    return selector;
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            {
+                // Per-strategy timeout; try next strategy
+            }
+            catch
+            {
+                // Strategy failed; try next
+            }
+        }
+
+        // Attribute-based CSS fallback: try generating selectors from the
+        // element's known attributes (name, placeholder, href, etc.)
+        var cssStrategy = strategies.FirstOrDefault(s => s.StrategyName == "css");
+        if (cssStrategy is not null)
+        {
+            foreach (var candidate in BuildAttributeFallbacks(info))
+            {
+                if (candidate.Length > _options.MaxSelectorLength)
+                    continue;
+
+                try
+                {
+                    var matches = await cssStrategy.ResolveAsync(
+                        candidate, page.MainFrame, pierceShadow: true, ct);
+
+                    if (matches.Count == 1)
+                        return candidate;
+                }
+                catch
+                {
+                    // Malformed candidate, skip
+                }
+            }
         }
 
         return null;
     }
+
+    private static IEnumerable<string> BuildAttributeFallbacks(PageElementInfo info)
+    {
+        // name attribute: highly discriminating for form inputs
+        if (info.Name is not null)
+        {
+            if (info.Tag == "input" && info.Type is not null)
+                yield return $"css=input[type=\"{EscapeCssAttrValue(info.Type)}\"][name=\"{EscapeCssAttrValue(info.Name)}\"]";
+            yield return $"css=[name=\"{EscapeCssAttrValue(info.Name)}\"]";
+        }
+
+        // placeholder: unique per form context in well-authored pages
+        if (info.Placeholder is not null)
+            yield return $"css=[placeholder=\"{EscapeCssAttrValue(info.Placeholder)}\"]";
+
+        // href: links are almost always unique by path
+        if (info.Href is not null && info.Tag == "a")
+            yield return $"css=a[href=\"{EscapeCssAttrValue(info.Href)}\"]";
+
+        // type=submit/reset buttons
+        if (info.Tag is "button" or "input" && info.Type is "submit" or "reset")
+            yield return $"css={info.Tag}[type=\"{info.Type}\"]";
+
+        // aria-label on the element itself
+        if (info.AriaLabel is not null)
+            yield return $"css=[aria-label=\"{EscapeCssAttrValue(info.AriaLabel)}\"]";
+    }
+
+    private static string EscapeCssAttrValue(string value)
+        => value.Replace("\\", "\\\\").Replace("\"", "\\\"");
 
     private static IReadOnlyList<PageElementInfo> DeserializeElements(JsonElement json)
     {
@@ -189,7 +258,7 @@ public sealed class PageAnalysisEngine
     private async Task<IReadOnlyList<PageElementInfo>> DiscoverListenerElementsAsync(
         IPage page, CancellationToken ct)
     {
-        var candidatesJson = await page.EvaluateAsync<JsonElement>(EventListenerCandidateScript);
+        var candidatesJson = await page.EvaluateAsync<JsonElement>(BuildEventListenerCandidateScript(_options.Scope));
         var candidates = DeserializeElements(candidatesJson);
 
         if (candidates.Count == 0)
@@ -240,7 +309,10 @@ public sealed class PageAnalysisEngine
         "a[href]," +
         "[role=\\\"button\\\"]:not([disabled])";
 
-    internal const string DomCrawlScript = $$"""
+    private static string EscapeJsString(string value)
+        => value.Replace("\\", "\\\\").Replace("'", "\\'");
+
+    internal static string BuildDomCrawlScript(string? scope) => $$"""
         (() => {
             const selector = 'input:not([type="hidden"]):not([disabled]),' +
                 'button:not([disabled]),' +
@@ -248,12 +320,15 @@ public sealed class PageAnalysisEngine
                 'textarea:not([disabled]),' +
                 'a[href],' +
                 '[role="button"]:not([disabled])';
-            const elements = document.querySelectorAll(selector);
-            const forms = document.querySelectorAll('form');
+            const root = {{(scope is null ? "document" : $"document.querySelector('{EscapeJsString(scope)}')")}};
+            if (!root) return [];
+            const elements = Array.from(root.querySelectorAll(selector));
+            window.__mtusElements = elements;
+            const forms = root.querySelectorAll('form');
             const formMap = new Map();
             forms.forEach((f, i) => formMap.set(f, i));
 
-            return Array.from(elements).map(el => {
+            return elements.map(el => {
                 let formIndex = null;
                 const form = el.closest('form');
                 if (form && formMap.has(form)) formIndex = formMap.get(form);
@@ -276,7 +351,7 @@ public sealed class PageAnalysisEngine
         })()
         """;
 
-    private const string EventListenerCandidateScript = """
+    internal static string BuildEventListenerCandidateScript(string? scope) => $$"""
         (() => {
             const semanticSelector = 'input:not([type="hidden"]):not([disabled]),' +
                 'button:not([disabled]),' +
@@ -284,9 +359,11 @@ public sealed class PageAnalysisEngine
                 'textarea:not([disabled]),' +
                 'a[href],' +
                 '[role="button"]:not([disabled])';
-            const semanticSet = new Set(document.querySelectorAll(semanticSelector));
+            const root = {{(scope is null ? "document" : $"document.querySelector('{EscapeJsString(scope)}')")}};
+            if (!root) return [];
+            const semanticSet = new Set(root.querySelectorAll(semanticSelector));
 
-            const all = document.querySelectorAll('*');
+            const all = root.querySelectorAll('*');
             const candidates = [];
             for (const el of all) {
                 if (semanticSet.has(el)) continue;

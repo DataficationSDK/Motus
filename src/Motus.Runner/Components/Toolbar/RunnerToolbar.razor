@@ -1,61 +1,77 @@
 @inject ITestSessionService Session
 @inject IStepDebugService StepDebug
+@inject ITimelineService Timeline
+@inject RunnerOptions Options
 @implements IDisposable
 
 <div class="toolbar">
-    <button class="toolbar-btn run-btn" @onclick="RunAll" disabled="@Session.IsRunning" title="Run All Tests">
-        &#9654; Run All
-    </button>
-    <button class="toolbar-btn stop-btn" @onclick="Stop" disabled="@(!Session.IsRunning)" title="Stop">
-        &#9632; Stop
-    </button>
-    <button class="toolbar-btn reset-btn" @onclick="Reset" disabled="@Session.IsRunning" title="Clear all results and timeline">
-        &#8635; Reset
-    </button>
-    <div class="toolbar-separator"></div>
-    <div class="step-debug-group">
-        <button class="toolbar-btn @(StepDebug.IsStepMode ? "step-active" : "")"
-                @onclick="ToggleStepMode"
-                title="Toggle Step Mode">
-            Step Mode
+    @if (Options.TraceMode)
+    {
+        <span class="toolbar-trace-label" title="@Options.TraceFilePath">
+            Trace: @(Path.GetFileName(Options.TraceFilePath))
+        </span>
+        <div class="toolbar-separator"></div>
+        <span class="toolbar-trace-info">
+            @Timeline.Entries.Count event(s)
+        </span>
+        <div class="toolbar-spacer"></div>
+    }
+    else
+    {
+        <button class="toolbar-btn run-btn" @onclick="RunAll" disabled="@Session.IsRunning" title="Run All Tests">
+            &#9654; Run All
         </button>
-        <button class="toolbar-btn"
-                @onclick="StepDebug.Advance"
-                disabled="@(!StepDebug.IsPaused)"
-                title="Advance one step">
-            &#9654;| Step
+        <button class="toolbar-btn stop-btn" @onclick="Stop" disabled="@(!Session.IsRunning)" title="Stop">
+            &#9632; Stop
         </button>
-        <button class="toolbar-btn"
-                @onclick="StepDebug.Resume"
-                disabled="@(!StepDebug.IsStepMode)"
-                title="Resume execution">
-            &#9654;&#9654; Resume
+        <button class="toolbar-btn reset-btn" @onclick="Reset" disabled="@Session.IsRunning" title="Clear all results and timeline">
+            &#8635; Reset
         </button>
-        @if (StepDebug.IsPaused)
+        <div class="toolbar-separator"></div>
+        <div class="step-debug-group">
+            <button class="toolbar-btn @(StepDebug.IsStepMode ? "step-active" : "")"
+                    @onclick="ToggleStepMode"
+                    title="Toggle Step Mode">
+                Step Mode
+            </button>
+            <button class="toolbar-btn"
+                    @onclick="StepDebug.Advance"
+                    disabled="@(!StepDebug.IsPaused)"
+                    title="Advance one step">
+                &#9654;| Step
+            </button>
+            <button class="toolbar-btn"
+                    @onclick="StepDebug.Resume"
+                    disabled="@(!StepDebug.IsStepMode)"
+                    title="Resume execution">
+                &#9654;&#9654; Resume
+            </button>
+            @if (StepDebug.IsPaused)
+            {
+                <span class="paused-indicator" title="@StepDebug.PendingSelector">
+                    Paused: @StepDebug.PendingActionType
+                </span>
+            }
+        </div>
+        <div class="toolbar-separator"></div>
+        @if (Session.IsRunning && Session.RunningTestName is not null)
         {
-            <span class="paused-indicator" title="@StepDebug.PendingSelector">
-                Paused: @StepDebug.PendingActionType
+            <span class="running-indicator" title="@Session.RunningTestName">
+                &#9654; @Session.RunningTestName
             </span>
         }
-    </div>
-    <div class="toolbar-separator"></div>
-    @if (Session.IsRunning && Session.RunningTestName is not null)
-    {
-        <span class="running-indicator" title="@Session.RunningTestName">
-            &#9654; @Session.RunningTestName
-        </span>
+        <input class="toolbar-filter"
+               type="text"
+               placeholder="Filter tests..."
+               value="@Session.FilterText"
+               @oninput="OnFilterInput" />
+        <div class="toolbar-spacer"></div>
+        <div class="toolbar-stats">
+            <span class="stat stat-passed" title="Passed">&#10003; @PassedCount</span>
+            <span class="stat stat-failed" title="Failed">&#10007; @FailedCount</span>
+            <span class="stat stat-pending" title="Pending">&#9679; @PendingCount</span>
+        </div>
     }
-    <input class="toolbar-filter"
-           type="text"
-           placeholder="Filter tests..."
-           value="@Session.FilterText"
-           @oninput="OnFilterInput" />
-    <div class="toolbar-spacer"></div>
-    <div class="toolbar-stats">
-        <span class="stat stat-passed" title="Passed">&#10003; @PassedCount</span>
-        <span class="stat stat-failed" title="Failed">&#10007; @FailedCount</span>
-        <span class="stat stat-pending" title="Pending">&#9679; @PendingCount</span>
-    </div>
 </div>
 
 @code {

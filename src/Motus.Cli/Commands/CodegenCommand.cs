@@ -11,8 +11,8 @@ public static class CodegenCommand
     {
         var urlArg = new Argument<string[]>("url")
         {
-            Description = "One or more URLs to generate page objects for",
-            Arity = ArgumentArity.OneOrMore
+            Description = "One or more URLs to generate page objects for (optional with --connect)",
+            Arity = ArgumentArity.ZeroOrMore
         };
 
         var outputOpt = new Option<string>("--output")
@@ -43,6 +43,21 @@ public static class CodegenCommand
             Description = "Detect elements with JS event listeners (for vanilla JS, jQuery, etc.)"
         };
 
+        var connectOpt = new Option<string?>("--connect")
+        {
+            Description = "WebSocket endpoint to connect to an existing browser (e.g. ws://localhost:9222)"
+        };
+
+        var headedOpt = new Option<bool>("--headed")
+        {
+            Description = "Launch a visible browser so you can navigate and interact before analysis"
+        };
+
+        var scopeOpt = new Option<string?>("--scope")
+        {
+            Description = "CSS selector to limit discovery to a specific container (e.g. \".modal-dialog\", \"#login-form\")"
+        };
+
         var cmd = new Command("codegen", "Generate page object models from live web pages")
         {
             urlArg,
@@ -51,15 +66,20 @@ public static class CodegenCommand
             selectorPriorityOpt,
             timeoutOpt,
             detectListenersOpt,
+            connectOpt,
+            headedOpt,
+            scopeOpt,
         };
 
         cmd.SetAction(async (parseResult, ct) =>
         {
-            var urls = parseResult.GetValue(urlArg)!;
+            var urls = parseResult.GetValue(urlArg) ?? [];
             var outputDir = parseResult.GetValue(outputOpt)!;
             var ns = parseResult.GetValue(namespaceOpt)!;
             var selectorPriorityRaw = parseResult.GetValue(selectorPriorityOpt);
             var timeoutMs = parseResult.GetValue(timeoutOpt);
+            var connect = parseResult.GetValue(connectOpt);
+            var headed = parseResult.GetValue(headedOpt);
 
             IReadOnlyList<string>? selectorPriority = null;
             if (!string.IsNullOrWhiteSpace(selectorPriorityRaw))
@@ -69,57 +89,157 @@ public static class CodegenCommand
                     .ToArray();
             }
 
+            if (urls.Length == 0 && connect is null && !headed)
+            {
+                Console.Error.WriteLine("Error: Provide at least one URL, use --connect, or use --headed.");
+                return;
+            }
+
             Directory.CreateDirectory(outputDir);
 
-            var launchOptions = new LaunchOptions
+            var analysisOptions = new PageAnalysisOptions
             {
-                Headless = true,
-                ExecutablePath = BrowserPathHelper.Resolve()
+                SelectorPriority = selectorPriority,
+                DetectEventListeners = parseResult.GetValue(detectListenersOpt),
+                Scope = parseResult.GetValue(scopeOpt),
             };
 
-            var browser = await MotusLauncher.LaunchAsync(launchOptions, ct);
+            var emitter = new PomEmitter();
+            var isConnected = connect is not null;
+
+            IBrowser browser;
+            if (isConnected)
+            {
+                browser = await MotusLauncher.ConnectAsync(connect!, ct);
+            }
+            else
+            {
+                var launchOptions = new LaunchOptions
+                {
+                    Headless = !headed,
+                    ExecutablePath = BrowserPathHelper.Resolve(),
+                };
+                browser = await MotusLauncher.LaunchAsync(launchOptions, ct);
+            }
+
             try
             {
-                var ctx = await browser.NewContextAsync();
-                var page = await ctx.NewPageAsync();
-
-                var analysisOptions = new PageAnalysisOptions
+                if (headed && urls.Length == 0)
                 {
-                    SelectorPriority = selectorPriority,
-                    DetectEventListeners = parseResult.GetValue(detectListenersOpt),
-                };
+                    // Headed mode with no URLs: open a blank page and let the user navigate
+                    await browser.NewPageAsync();
 
-                var engine = PageAnalysisEngine.Create(page, analysisOptions);
-                var emitter = new PomEmitter();
-
-                foreach (var url in urls)
+                    await PromptAndAnalyzeAsync(browser, analysisOptions, emitter, ns, outputDir, ct);
+                }
+                else if (headed)
                 {
-                    Console.WriteLine($"Analyzing {url}...");
-                    await page.GotoAsync(url, new NavigationOptions { Timeout = (int)timeoutMs });
-                    await page.WaitForLoadStateAsync(LoadState.NetworkIdle, timeoutMs);
+                    // Headed mode with URLs: navigate, let the user interact, then analyze
+                    var page = await browser.NewPageAsync();
 
-                    var elements = await engine.AnalyzeAsync(page, ct);
-                    var className = PageClassNameDeriver.Derive(url);
-
-                    var options = new PomEmitOptions
+                    foreach (var url in urls)
                     {
-                        Namespace = ns,
-                        ClassName = className,
-                        PageUrl = url
-                    };
+                        await page.GotoAsync(url, new NavigationOptions { Timeout = (int)timeoutMs });
+                        await page.WaitForLoadStateAsync(LoadState.NetworkIdle, timeoutMs);
 
-                    var code = emitter.Emit(elements, options);
-                    var filePath = Path.Combine(outputDir, $"{className}.g.cs");
-                    await File.WriteAllTextAsync(filePath, code, ct);
-                    Console.WriteLine($"  Generated {filePath} ({elements.Count} elements)");
+                        await PromptAndAnalyzeAsync(browser, analysisOptions, emitter, ns, outputDir, ct);
+                    }
+                }
+                else if (isConnected && urls.Length == 0)
+                {
+                    // Connect mode: analyze the active page
+                    var page = GetActivePage(browser);
+                    if (page is null)
+                    {
+                        Console.Error.WriteLine("Error: No open pages found in the connected browser.");
+                        return;
+                    }
+
+                    await AnalyzePageAsync(page, page.Url, analysisOptions, emitter, ns, outputDir, ct);
+                }
+                else
+                {
+                    // Standard mode: headless navigation to each URL
+                    IPage page;
+                    if (isConnected)
+                    {
+                        page = GetActivePage(browser) ?? await browser.NewPageAsync();
+                    }
+                    else
+                    {
+                        var ctx = await browser.NewContextAsync();
+                        page = await ctx.NewPageAsync();
+                    }
+
+                    foreach (var url in urls)
+                    {
+                        Console.WriteLine($"Analyzing {url}...");
+                        await page.GotoAsync(url, new NavigationOptions { Timeout = (int)timeoutMs });
+                        await page.WaitForLoadStateAsync(LoadState.NetworkIdle, timeoutMs);
+
+                        await AnalyzePageAsync(page, url, analysisOptions, emitter, ns, outputDir, ct);
+                    }
                 }
             }
             finally
             {
-                await browser.CloseAsync();
+                if (!isConnected)
+                    await browser.CloseAsync();
             }
         });
 
         return cmd;
+    }
+
+    private static async Task PromptAndAnalyzeAsync(
+        IBrowser browser, PageAnalysisOptions analysisOptions, PomEmitter emitter,
+        string ns, string outputDir, CancellationToken ct)
+    {
+        Console.WriteLine("Navigate to the page you want to analyze in the browser.");
+        Console.WriteLine("Press Enter when ready...");
+        await Task.Run(() => Console.ReadLine(), ct);
+
+        // Re-resolve the active page since the user may have opened new tabs
+        // or closed the original one while navigating.
+        var page = GetActivePage(browser);
+        if (page is null)
+        {
+            Console.Error.WriteLine("Error: No open pages found in the browser.");
+            return;
+        }
+
+        var url = page.Url;
+        if (string.IsNullOrEmpty(url) || url == "about:blank")
+        {
+            Console.Error.WriteLine("Error: No page loaded. Navigate to a page before pressing Enter.");
+            return;
+        }
+
+        await AnalyzePageAsync(page, url, analysisOptions, emitter, ns, outputDir, ct);
+    }
+
+    private static async Task AnalyzePageAsync(
+        IPage page, string url, PageAnalysisOptions analysisOptions, PomEmitter emitter,
+        string ns, string outputDir, CancellationToken ct)
+    {
+        Console.WriteLine($"Analyzing {url}...");
+        var engine = PageAnalysisEngine.Create(page, analysisOptions);
+        var elements = await engine.AnalyzeAsync(page, ct);
+        var className = PageClassNameDeriver.Derive(url);
+
+        var options = new PomEmitOptions { Namespace = ns, ClassName = className, PageUrl = url };
+        var code = emitter.Emit(elements, options);
+        var filePath = Path.Combine(outputDir, $"{className}.g.cs");
+        await File.WriteAllTextAsync(filePath, code, ct);
+        Console.WriteLine($"  Generated {filePath} ({elements.Count} elements)");
+    }
+
+    private static IPage? GetActivePage(IBrowser browser)
+    {
+        foreach (var ctx in browser.Contexts)
+        {
+            if (ctx.Pages.Count > 0)
+                return ctx.Pages[^1];
+        }
+        return null;
     }
 }
