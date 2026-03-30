@@ -11,7 +11,7 @@ public class ConsoleReporterTests
     public async Task OnTestRunStart_WritesHeader()
     {
         var sw = new StringWriter();
-        var reporter = new ConsoleReporter(sw);
+        var reporter = new ConsoleReporter(sw, useColor: false);
 
         await reporter.OnTestRunStartAsync(new TestSuiteInfo("Suite1", 7));
 
@@ -23,7 +23,7 @@ public class ConsoleReporterTests
     public async Task OnTestEnd_Passed_WritesPASS()
     {
         var sw = new StringWriter();
-        var reporter = new ConsoleReporter(sw);
+        var reporter = new ConsoleReporter(sw, useColor: false);
 
         var test = new TestInfo("MyNamespace.MyTest", "Suite1");
         var result = new TestResult("MyNamespace.MyTest", true, 123.4);
@@ -40,7 +40,7 @@ public class ConsoleReporterTests
     public async Task OnTestEnd_Failed_WritesFAIL()
     {
         var sw = new StringWriter();
-        var reporter = new ConsoleReporter(sw);
+        var reporter = new ConsoleReporter(sw, useColor: false);
 
         var test = new TestInfo("MyNamespace.FailingTest", "Suite1");
         var result = new TestResult("MyNamespace.FailingTest", false, 50, "Something broke");
@@ -56,7 +56,7 @@ public class ConsoleReporterTests
     public async Task OnTestRunEnd_WritesSummary()
     {
         var sw = new StringWriter();
-        var reporter = new ConsoleReporter(sw);
+        var reporter = new ConsoleReporter(sw, useColor: false);
 
         var summary = new TestRunSummary("Suite1", 8, 2, 1, 5500);
 

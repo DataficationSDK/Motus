@@ -107,6 +107,19 @@ public sealed class TestRunner(int maxWorkers)
             }
         }
 
+        // Run [AssemblyCleanup] for each initialized assembly
+        foreach (var assembly in assemblies)
+        {
+            try
+            {
+                await RunAssemblyCleanupAsync(assembly);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"AssemblyCleanup failed for {assembly.GetName().Name}: {ex.InnerException?.Message ?? ex.Message}");
+            }
+        }
+
         var skipped = tests.Count(t => t.IsIgnored);
         var passed = results.Count(r => r.Passed);
         var failed = results.Count(r => !r.Passed);
@@ -194,6 +207,22 @@ public sealed class TestRunner(int maxWorkers)
             var result = method.Invoke(instance, null);
             if (result is Task task)
                 await task;
+        }
+    }
+
+    private static async Task RunAssemblyCleanupAsync(Assembly assembly)
+    {
+        foreach (var type in assembly.GetExportedTypes())
+        {
+            var methods = type.GetMethods(BindingFlags.Public | BindingFlags.Static)
+                .Where(m => m.GetCustomAttributes(true).Any(a => a.GetType().Name == "AssemblyCleanupAttribute"));
+
+            foreach (var method in methods)
+            {
+                var result = method.Invoke(null, null);
+                if (result is Task task)
+                    await task;
+            }
         }
     }
 
