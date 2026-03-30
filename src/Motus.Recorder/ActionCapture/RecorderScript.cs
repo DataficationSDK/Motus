@@ -19,18 +19,20 @@ internal static class RecorderScript
         if (!binding) return;
 
         const targetMap = new Map();
+        const reverseMap = new WeakMap();
         let targetSeq = 0;
 
         function captureTarget(el) {
+            const existing = reverseMap.get(el);
+            if (existing !== undefined) return existing;
             const id = ++targetSeq;
             targetMap.set(id, el);
+            reverseMap.set(el, id);
             return id;
         }
 
         window.__motus_get_target__ = (id) => {
-            const el = targetMap.get(id);
-            targetMap.delete(id);
-            return el || null;
+            return targetMap.get(id) || null;
         };
 
         function getModifiers(e) {

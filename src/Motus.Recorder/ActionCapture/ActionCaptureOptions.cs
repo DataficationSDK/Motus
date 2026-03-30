@@ -14,7 +14,7 @@ public sealed class ActionCaptureOptions
     /// Debounce window for text input events (milliseconds).
     /// Rapid input events within this window collapse into a single FillAction.
     /// </summary>
-    public int FillDebounceMs { get; init; } = 100;
+    public int FillDebounceMs { get; init; } = 600;
 
     /// <summary>
     /// Debounce window for scroll events (milliseconds).
