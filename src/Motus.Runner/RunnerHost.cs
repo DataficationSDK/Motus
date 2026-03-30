@@ -1,6 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
-using System.Text.Json.Nodes;
+using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Logging;
 using Motus.Runner.Services;
 using Motus.Runner.Services.Timeline;
@@ -19,26 +19,27 @@ public static class RunnerHost
         bool verbose = false,
         CancellationToken ct = default)
     {
-        // The static web assets manifest is named after the ApplicationName.
-        // When hosted by Motus.Cli, the entry assembly is Motus.Cli but the
-        // manifest ships as Motus.Runner.staticwebassets.runtime.json. Setting
-        // ApplicationName to "Motus.Runner" and ContentRootPath to the Runner
-        // assembly directory ensures the middleware discovers the correct manifest.
-        //
-        // When installed as a global tool, the manifest's ContentRoots contain
-        // absolute paths from the CI build machine. FixStaticWebAssetsManifest
-        // rewrites them to point at the bundled wwwroot directory.
+        // Resolve the directory containing Motus.Runner.dll. When running from
+        // a build output this is bin/Debug|Release; when installed as a global
+        // tool it is the tool store directory.
         var runnerAssemblyDir = Path.GetDirectoryName(
             typeof(RunnerHost).Assembly.Location)!;
 
-        FixStaticWebAssetsManifest(runnerAssemblyDir);
+        // Determine whether the static web assets manifest has valid paths.
+        // In Development mode ASP.NET Core uses the manifest to locate wwwroot
+        // content and _framework/ files. The manifest contains absolute paths
+        // from the machine that built the package (typically CI), so it only
+        // works when running from the original build output. When installed as
+        // a global tool we fall back to Production mode and serve the bundled
+        // wwwroot via a PhysicalFileProvider instead.
+        var useDevMode = HasValidStaticWebAssetsManifest(runnerAssemblyDir);
 
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions
         {
             Args = args,
             ApplicationName = "Motus.Runner",
             ContentRootPath = runnerAssemblyDir,
-            EnvironmentName = "Development",
+            EnvironmentName = useDevMode ? "Development" : "Production",
         });
 
         // Suppress ASP.NET Core info/warn noise unless verbose is set.
@@ -110,6 +111,17 @@ public static class RunnerHost
         if (!app.Environment.IsDevelopment())
         {
             app.UseExceptionHandler("/Error");
+
+            // In Production mode (global tool install), serve the bundled
+            // wwwroot files that were packed alongside the assembly.
+            var wwwrootPath = Path.Combine(runnerAssemblyDir, "wwwroot");
+            if (Directory.Exists(wwwrootPath))
+            {
+                app.UseStaticFiles(new StaticFileOptions
+                {
+                    FileProvider = new PhysicalFileProvider(wwwrootPath),
+                });
+            }
         }
 
         app.UseStaticFiles();
@@ -139,33 +151,31 @@ public static class RunnerHost
     }
 
     /// <summary>
-    /// When the static web assets manifest was built on a different machine (e.g. CI),
-    /// its ContentRoots contain absolute paths that don't exist locally. This method
-    /// rewrites them to point at the bundled wwwroot directory next to the assembly.
+    /// Returns true when the static web assets manifest exists and its ContentRoots
+    /// point to directories that exist on disk (i.e. running from the original build
+    /// output). Returns false when installed as a global tool where the manifest
+    /// contains absolute paths from the CI build machine.
     /// </summary>
-    private static void FixStaticWebAssetsManifest(string assemblyDir)
+    private static bool HasValidStaticWebAssetsManifest(string assemblyDir)
     {
         var manifestPath = Path.Combine(assemblyDir, "Motus.Runner.staticwebassets.runtime.json");
         if (!File.Exists(manifestPath))
-            return;
+            return false;
 
-        var json = JsonNode.Parse(File.ReadAllText(manifestPath));
-        var contentRoots = json?["ContentRoots"]?.AsArray();
-        if (contentRoots is null || contentRoots.Count == 0)
-            return;
+        try
+        {
+            var json = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(manifestPath));
+            var contentRoots = json?["ContentRoots"]?.AsArray();
+            if (contentRoots is null || contentRoots.Count == 0)
+                return false;
 
-        // If the first content root exists on disk, the manifest is valid (e.g.
-        // running from the build output on the same machine that built it).
-        var firstRoot = contentRoots[0]?.GetValue<string>();
-        if (firstRoot is not null && Directory.Exists(firstRoot))
-            return;
-
-        // Rewrite all content roots to the bundled wwwroot directory.
-        var wwwroot = Path.Combine(assemblyDir, "wwwroot") + Path.DirectorySeparatorChar;
-        for (var i = 0; i < contentRoots.Count; i++)
-            contentRoots[i] = wwwroot;
-
-        File.WriteAllText(manifestPath, json!.ToJsonString());
+            var firstRoot = contentRoots[0]?.GetValue<string>();
+            return firstRoot is not null && Directory.Exists(firstRoot);
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static void OpenBrowser(string url)
