@@ -41,8 +41,18 @@
 
   <!-- Bundle the static web assets manifest plus the actual wwwroot content
        so the Blazor visual runner works when installed as a global tool.
-       RunnerHost rewrites the manifest's ContentRoots at startup when the
-       original build-time paths (CI or another machine) no longer exist. -->
+       RunnerHost detects invalid manifest paths at startup and falls back
+       to Production mode, serving the bundled wwwroot via PhysicalFileProvider. -->
+  <Target Name="_ResolveBlazorFrameworkAssets" BeforeTargets="_IncludeRunnerStaticAssets">
+    <!-- .NET 10+ serves _framework/blazor.web.js as a static web asset from a
+         NuGet package rather than from embedded resources. Resolve the files here
+         so we can flatten them into wwwroot/_framework/ without directory nesting. -->
+    <ItemGroup>
+      <_BlazorFrameworkFile Include="$(NuGetPackageRoot)microsoft.aspnetcore.app.internal.assets/*/_framework/blazor.web.js" />
+      <_BlazorFrameworkFile Include="$(NuGetPackageRoot)microsoft.aspnetcore.app.internal.assets/*/_framework/blazor.server.js" />
+    </ItemGroup>
+  </Target>
+
   <Target Name="_IncludeRunnerStaticAssets" AfterTargets="Build">
     <ItemGroup>
       <TfmSpecificPackageFile Include="$(OutputPath)Motus.Runner.staticwebassets.runtime.json"
@@ -53,6 +63,8 @@
       <TfmSpecificPackageFile Include="..\Motus.Runner\obj\$(Configuration)\$(TargetFramework)\scopedcss\bundle\Motus.Runner.styles.css"
                               Condition="Exists('..\Motus.Runner\obj\$(Configuration)\$(TargetFramework)\scopedcss\bundle\Motus.Runner.styles.css')"
                               PackagePath="tools/$(TargetFramework)/any/wwwroot/" />
+      <TfmSpecificPackageFile Include="@(_BlazorFrameworkFile)"
+                              PackagePath="tools/$(TargetFramework)/any/wwwroot/_framework/%(Filename)%(Extension)" />
     </ItemGroup>
   </Target>
 
