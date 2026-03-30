@@ -80,7 +80,7 @@ public abstract class MotusTestBase
     {
         if (_context is not null)
         {
-            var testFailed = TestContext.CurrentTestOutcome != UnitTestOutcome.Passed;
+            var testFailed = TestContext?.CurrentTestOutcome != UnitTestOutcome.Passed;
             if (_failureTracing is not null)
                 await _failureTracing.StopAsync(_context, testFailed).ConfigureAwait(false);
 
