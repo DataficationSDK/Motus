@@ -39,13 +39,20 @@
     <ProjectReference Include="..\Motus.Runner\Motus.Runner.csproj" />
   </ItemGroup>
 
-  <!-- Include the static web assets manifest so the Blazor visual runner
-       can discover _framework/ and wwwroot files when installed as a global tool. -->
-  <Target Name="_IncludeStaticWebAssetsManifest" AfterTargets="Build">
+  <!-- Bundle the static web assets manifest plus the actual wwwroot content
+       so the Blazor visual runner works when installed as a global tool.
+       RunnerHost rewrites the manifest's ContentRoots at startup when the
+       original build-time paths (CI or another machine) no longer exist. -->
+  <Target Name="_IncludeRunnerStaticAssets" AfterTargets="Build">
     <ItemGroup>
       <TfmSpecificPackageFile Include="$(OutputPath)Motus.Runner.staticwebassets.runtime.json"
                               Condition="Exists('$(OutputPath)Motus.Runner.staticwebassets.runtime.json')"
                               PackagePath="tools/$(TargetFramework)/any/" />
+      <TfmSpecificPackageFile Include="..\Motus.Runner\wwwroot\**\*"
+                              PackagePath="tools/$(TargetFramework)/any/wwwroot/" />
+      <TfmSpecificPackageFile Include="..\Motus.Runner\obj\$(Configuration)\$(TargetFramework)\scopedcss\bundle\Motus.Runner.styles.css"
+                              Condition="Exists('..\Motus.Runner\obj\$(Configuration)\$(TargetFramework)\scopedcss\bundle\Motus.Runner.styles.css')"
+                              PackagePath="tools/$(TargetFramework)/any/wwwroot/" />
     </ItemGroup>
   </Target>
 

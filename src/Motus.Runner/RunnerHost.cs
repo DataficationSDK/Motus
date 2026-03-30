@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Text.Json.Nodes;
 using Microsoft.Extensions.Logging;
 using Motus.Runner.Services;
 using Motus.Runner.Services.Timeline;
@@ -23,8 +24,14 @@ public static class RunnerHost
         // manifest ships as Motus.Runner.staticwebassets.runtime.json. Setting
         // ApplicationName to "Motus.Runner" and ContentRootPath to the Runner
         // assembly directory ensures the middleware discovers the correct manifest.
+        //
+        // When installed as a global tool, the manifest's ContentRoots contain
+        // absolute paths from the CI build machine. FixStaticWebAssetsManifest
+        // rewrites them to point at the bundled wwwroot directory.
         var runnerAssemblyDir = Path.GetDirectoryName(
             typeof(RunnerHost).Assembly.Location)!;
+
+        FixStaticWebAssetsManifest(runnerAssemblyDir);
 
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions
         {
@@ -129,6 +136,36 @@ public static class RunnerHost
         OpenBrowser(url);
 
         await app.RunAsync(ct);
+    }
+
+    /// <summary>
+    /// When the static web assets manifest was built on a different machine (e.g. CI),
+    /// its ContentRoots contain absolute paths that don't exist locally. This method
+    /// rewrites them to point at the bundled wwwroot directory next to the assembly.
+    /// </summary>
+    private static void FixStaticWebAssetsManifest(string assemblyDir)
+    {
+        var manifestPath = Path.Combine(assemblyDir, "Motus.Runner.staticwebassets.runtime.json");
+        if (!File.Exists(manifestPath))
+            return;
+
+        var json = JsonNode.Parse(File.ReadAllText(manifestPath));
+        var contentRoots = json?["ContentRoots"]?.AsArray();
+        if (contentRoots is null || contentRoots.Count == 0)
+            return;
+
+        // If the first content root exists on disk, the manifest is valid (e.g.
+        // running from the build output on the same machine that built it).
+        var firstRoot = contentRoots[0]?.GetValue<string>();
+        if (firstRoot is not null && Directory.Exists(firstRoot))
+            return;
+
+        // Rewrite all content roots to the bundled wwwroot directory.
+        var wwwroot = Path.Combine(assemblyDir, "wwwroot") + Path.DirectorySeparatorChar;
+        for (var i = 0; i < contentRoots.Count; i++)
+            contentRoots[i] = wwwroot;
+
+        File.WriteAllText(manifestPath, json!.ToJsonString());
     }
 
     private static void OpenBrowser(string url)
