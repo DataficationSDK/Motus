@@ -71,7 +71,7 @@ This navigates to the URL, crawls the DOM for interactive elements, infers the b
 ### Record a Test Session
 
 ```bash
-motus record --output ./Tests --framework mstest --selector-priority testid,role,text,css
+motus record --output ./Tests/LoginTest.cs --framework mstest --selector-priority testid,role,text,css
 ```
 
 ### Run Tests
