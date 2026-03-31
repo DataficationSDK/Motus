@@ -77,10 +77,10 @@ motus record --output ./Tests/LoginTest.cs --framework mstest --selector-priorit
 ### Run Tests
 
 ```bash
-motus run --workers auto --reporter console
-motus run --visual # launches the Blazor visual runner
-motus run --reporter html:./reports/result.html
-motus run --reporter junit:./reports/junit.xml
+motus run ./bin/Debug/net8.0/MyTests.dll --workers auto --reporter console
+motus run ./bin/Debug/net8.0/MyTests.dll --visual
+motus run ./bin/Debug/net8.0/MyTests.dll --reporter html:./reports/result.html
+motus run ./bin/Debug/net8.0/MyTests.dll --reporter junit:./reports/junit.xml
 ```
 
 ## How It Works
@@ -190,7 +190,7 @@ Launch the Blazor-based visual runner with `motus run --visual`:
 ## CLI Reference
 
 ```
-motus run              Run tests with optional --visual, --filter, --workers, --reporter
+motus run <assemblies>  Run tests with optional --visual, --filter, --workers, --reporter
 motus record           Record a browser session and emit test code
 motus codegen          Generate POM classes from live pages (--headed, --connect, --detect-listeners)
 motus screenshot       Capture a screenshot (--full-page, --delay, --hide-banners, --width, --height)
