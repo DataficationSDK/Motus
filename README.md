@@ -6,7 +6,7 @@
 [![.NET 8 | 10](https://img.shields.io/badge/.NET-8.0%20%7C%2010.0-purple.svg)](https://dotnet.microsoft.com/download/dotnet/10.0)
 [![NuGet](https://img.shields.io/nuget/v/Motus?label=NuGet)](https://www.nuget.org/packages/Motus)
 
-<video src="https://github.com/user-attachments/assets/cb74ef25-23f6-4c43-9946-8219a634381f" autoplay loop muted playsinline></video>
+<video src="https://github.com/user-attachments/assets/7ad5ed29-1f65-45b1-a666-3b9537835b0a" autoplay loop muted playsinline></video>
 
 ## The Story
 
@@ -58,6 +58,8 @@ public class SearchTests : MotusTestBase
 ```
 
 ### Generate Page Objects from Live Pages
+
+<video src="https://github.com/user-attachments/assets/cb74ef25-23f6-4c43-9946-8219a634381f" autoplay loop muted playsinline></video>
 
 ```bash
 motus codegen https://example.com/login --output ./Pages --namespace MyApp.Pages
