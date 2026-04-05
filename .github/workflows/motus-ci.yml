@@ -45,7 +45,7 @@ jobs:
           --configuration Release
           --no-build
           --filter "TestCategory!=Integration"
-          --logger "trx;LogFileName=results.trx"
+          --logger "trx;LogFilePrefix=results"
           --collect:"XPlat Code Coverage"
           --results-directory TestResults
           -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=cobertura
