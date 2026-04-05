@@ -8,6 +8,8 @@ internal sealed class PluginContext : IPluginContext
 
     internal PluginContext(BrowserContext context) => _context = context;
 
+    internal BrowserContext Context => _context;
+
     public void RegisterLifecycleHook(ILifecycleHook hook) =>
         _context.LifecycleHooks.Add(hook);
 

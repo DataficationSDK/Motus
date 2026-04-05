@@ -73,6 +73,48 @@ internal sealed class Locator : ILocator
             [new RuntimeCallArgument(Value: JsonSerializer.SerializeToElement(className))], ct).ConfigureAwait(false);
     }
 
+    // --- Accessibility Queries for Assertions ---
+
+    private volatile bool _accessibilityEnabled;
+
+    internal async Task<string?> GetAccessibilityNameAsync(CancellationToken ct)
+    {
+        var node = await QuerySingleAXNodeAsync(ct).ConfigureAwait(false);
+        return node?.Name?.Value?.GetString();
+    }
+
+    internal async Task<string?> GetAccessibilityRoleAsync(CancellationToken ct)
+    {
+        var node = await QuerySingleAXNodeAsync(ct).ConfigureAwait(false);
+        return node?.Role?.Value?.GetString();
+    }
+
+    private async Task<AccessibilityAXNodeSimple?> QuerySingleAXNodeAsync(CancellationToken ct)
+    {
+        var objectId = await ResolveObjectIdCoreAsync(ct).ConfigureAwait(false);
+
+        if (!_accessibilityEnabled)
+        {
+            await _page.Session.SendAsync(
+                "Accessibility.enable",
+                CdpJsonContext.Default.AccessibilityEnableResult,
+                ct).ConfigureAwait(false);
+            _accessibilityEnabled = true;
+        }
+
+        var result = await _page.Session.SendAsync(
+            "Accessibility.queryAXTree",
+            new AccessibilityQueryAXTreeParams(
+                ObjectId: objectId,
+                AccessibleName: null,
+                Role: null),
+            CdpJsonContext.Default.AccessibilityQueryAXTreeParams,
+            CdpJsonContext.Default.AccessibilityQueryAXTreeResult,
+            ct).ConfigureAwait(false);
+
+        return result.Nodes.FirstOrDefault(n => !n.Ignored);
+    }
+
     // --- Timeout Helper ---
 
     private CancellationTokenSource BuildActionCts(double? methodTimeout)

@@ -41,6 +41,14 @@ internal sealed record MotusRecorderConfig(
     string? Framework = null,
     string[]? SelectorPriority = null);
 
+internal sealed record MotusAccessibilityConfig(
+    bool? Enable = null,
+    string? Mode = null,
+    bool? AuditAfterNavigation = null,
+    bool? AuditAfterActions = null,
+    bool? IncludeWarnings = null,
+    string[]? SkipRules = null);
+
 internal sealed record MotusRootConfig(
     string? Motus = null,
     MotusLaunchConfig? Launch = null,
@@ -49,7 +57,8 @@ internal sealed record MotusRootConfig(
     MotusReporterConfig? Reporter = null,
     MotusAssertionsConfig? Assertions = null,
     MotusRecorderConfig? Recorder = null,
-    MotusFailureConfig? Failure = null);
+    MotusFailureConfig? Failure = null,
+    MotusAccessibilityConfig? Accessibility = null);
 
 internal static class MotusConfigLoader
 {
@@ -159,6 +168,15 @@ internal static class MotusConfigLoader
         if (envReader("MOTUS_FAILURES_TRACE_PATH") is { Length: > 0 } tracePath)
         { failure = failure with { TracePath = tracePath }; failureChanged = true; }
 
+        var accessibility = config.Accessibility ?? new MotusAccessibilityConfig();
+        var accessibilityChanged = false;
+
+        if (TryParseBool(envReader("MOTUS_ACCESSIBILITY_ENABLE"), out var a11yEnable))
+        { accessibility = accessibility with { Enable = a11yEnable }; accessibilityChanged = true; }
+
+        if (envReader("MOTUS_ACCESSIBILITY_MODE") is { Length: > 0 } a11yMode)
+        { accessibility = accessibility with { Mode = a11yMode }; accessibilityChanged = true; }
+
         return config with
         {
             Launch = launchChanged ? launch : config.Launch,
@@ -166,6 +184,7 @@ internal static class MotusConfigLoader
             Locator = locatorChanged ? locator : config.Locator,
             Assertions = assertionsChanged ? assertions : config.Assertions,
             Failure = failureChanged ? failure : config.Failure,
+            Accessibility = accessibilityChanged ? accessibility : config.Accessibility,
         };
     }
 

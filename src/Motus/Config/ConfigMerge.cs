@@ -6,24 +6,45 @@ internal static class ConfigMerge
 {
     internal static LaunchOptions ApplyConfig(LaunchOptions options)
     {
-        var launch = MotusConfigLoader.Config.Launch;
-        if (launch is null)
-            return options;
-
         var result = options;
 
-        if (options.Headless && launch.Headless.HasValue)
-            result = result with { Headless = launch.Headless.Value };
+        var launch = MotusConfigLoader.Config.Launch;
+        if (launch is not null)
+        {
+            if (options.Headless && launch.Headless.HasValue)
+                result = result with { Headless = launch.Headless.Value };
 
-        if (options.Channel is null && launch.Channel is not null
-            && Enum.TryParse<BrowserChannel>(launch.Channel, ignoreCase: true, out var channel))
-            result = result with { Channel = channel };
+            if (options.Channel is null && launch.Channel is not null
+                && Enum.TryParse<BrowserChannel>(launch.Channel, ignoreCase: true, out var channel))
+                result = result with { Channel = channel };
 
-        if (options.SlowMo == 0 && launch.SlowMo.HasValue)
-            result = result with { SlowMo = launch.SlowMo.Value };
+            if (options.SlowMo == 0 && launch.SlowMo.HasValue)
+                result = result with { SlowMo = launch.SlowMo.Value };
 
-        if (options.Timeout == 30_000 && launch.Timeout.HasValue)
-            result = result with { Timeout = launch.Timeout.Value };
+            if (options.Timeout == 30_000 && launch.Timeout.HasValue)
+                result = result with { Timeout = launch.Timeout.Value };
+        }
+
+        var a11y = MotusConfigLoader.Config.Accessibility;
+        if (a11y is not null && options.Accessibility is null)
+        {
+            var mode = AccessibilityMode.Enforce;
+            if (a11y.Mode is not null)
+                Enum.TryParse(a11y.Mode, ignoreCase: true, out mode);
+
+            result = result with
+            {
+                Accessibility = new AccessibilityOptions
+                {
+                    Enable = a11y.Enable ?? false,
+                    Mode = mode,
+                    AuditAfterNavigation = a11y.AuditAfterNavigation ?? true,
+                    AuditAfterActions = a11y.AuditAfterActions ?? false,
+                    IncludeWarnings = a11y.IncludeWarnings ?? true,
+                    SkipRules = a11y.SkipRules,
+                }
+            };
+        }
 
         return result;
     }

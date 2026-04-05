@@ -157,4 +157,18 @@ public sealed class LocatorAssertions
             var count = await _locator.CountAsync().ConfigureAwait(false);
             return (count == expected, count.ToString());
         }, "ToHaveCount", expected.ToString(), options);
+
+    public Task ToHaveAccessibleNameAsync(string expected, AssertionOptions? options = null) =>
+        RetryAsync(async ct =>
+        {
+            var name = await _locator.GetAccessibilityNameAsync(ct).ConfigureAwait(false) ?? "";
+            return (name == expected, name);
+        }, "ToHaveAccessibleName", expected, options);
+
+    public Task ToHaveRoleAsync(string expected, AssertionOptions? options = null) =>
+        RetryAsync(async ct =>
+        {
+            var role = await _locator.GetAccessibilityRoleAsync(ct).ConfigureAwait(false) ?? "";
+            return (role == expected, role);
+        }, "ToHaveRole", expected, options);
 }

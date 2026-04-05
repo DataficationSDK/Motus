@@ -40,4 +40,7 @@ public sealed record LaunchOptions
 
     /// <summary>Manually registered plugins to load into each browser context.</summary>
     public IReadOnlyList<IPlugin>? Plugins { get; init; }
+
+    /// <summary>Accessibility audit hook configuration. Disabled by default.</summary>
+    public AccessibilityOptions? Accessibility { get; init; }
 }

@@ -16,7 +16,12 @@ internal sealed class PluginHost
         var pluginContext = context.GetPluginContext();
 
         // 1. Load built-in plugins (failures propagate - these are required)
-        var builtins = new IPlugin[] { new BuiltinSelectorsPlugin(), new AccessibilityRulesPlugin() };
+        var builtins = new IPlugin[]
+        {
+            new BuiltinSelectorsPlugin(),
+            new AccessibilityRulesPlugin(),
+            new AccessibilityAuditHook(options.Accessibility),
+        };
         foreach (var plugin in builtins)
         {
             await plugin.OnLoadedAsync(pluginContext).ConfigureAwait(false);

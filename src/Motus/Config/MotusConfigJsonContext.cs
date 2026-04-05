@@ -11,6 +11,7 @@ namespace Motus;
 [JsonSerializable(typeof(MotusLocatorConfig))]
 [JsonSerializable(typeof(MotusReporterConfig))]
 [JsonSerializable(typeof(MotusRecorderConfig))]
+[JsonSerializable(typeof(MotusAccessibilityConfig))]
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]

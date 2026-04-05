@@ -5,6 +5,12 @@ namespace Motus;
 internal sealed partial class Page
 {
     /// <summary>
+    /// The most recent accessibility audit result, set by <see cref="AccessibilityAuditHook"/>
+    /// after navigation or action. Null when the hook is disabled or no audit has run.
+    /// </summary>
+    internal AccessibilityAuditResult? LastAccessibilityAudit { get; set; }
+
+    /// <summary>
     /// Runs the registered accessibility rules against this page's accessibility tree.
     /// Pre-fetches computed styles, duplicate IDs, and document language for rules that need them.
     /// </summary>
