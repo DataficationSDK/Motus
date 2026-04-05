@@ -18,7 +18,8 @@ internal sealed partial class Page
 
     internal async Task EnableAuthHandlingAsync()
     {
-        if (_networkManager is not null)
+        if (_networkManager is not null
+            && (_session.Capabilities & MotusCapabilities.FetchInterception) != 0)
             await _networkManager.EnableFetchWithAuthAsync(_pageCts.Token).ConfigureAwait(false);
     }
 

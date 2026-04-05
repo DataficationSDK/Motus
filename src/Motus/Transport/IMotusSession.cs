@@ -15,6 +15,11 @@ internal interface IMotusSession
     string? SessionId { get; }
 
     /// <summary>
+    /// The transport capabilities available to this session.
+    /// </summary>
+    MotusCapabilities Capabilities { get; }
+
+    /// <summary>
     /// Sends a typed command and returns the typed response.
     /// </summary>
     Task<TResponse> SendAsync<TParams, TResponse>(

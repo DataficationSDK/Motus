@@ -21,6 +21,12 @@ internal enum MotusCapabilities
     /// <summary>Supports CDP Tracing domain.</summary>
     Tracing = 1 << 3,
 
+    /// <summary>Supports CDP Security domain (certificate error override).</summary>
+    SecurityOverrides = 1 << 7,
+
+    /// <summary>Supports CDP Accessibility domain (AX tree query).</summary>
+    AccessibilityTree = 1 << 8,
+
     /// <summary>Supports WebDriver BiDi native network intercept.</summary>
     BiDiNetworkIntercept = 1 << 4,
 
@@ -31,7 +37,8 @@ internal enum MotusCapabilities
     BiDiInputActions = 1 << 6,
 
     /// <summary>Full CDP feature set.</summary>
-    AllCdp = TargetMultiplexing | FetchInterception | EmulationOverrides | Tracing,
+    AllCdp = TargetMultiplexing | FetchInterception | EmulationOverrides | Tracing
+           | SecurityOverrides | AccessibilityTree,
 
     /// <summary>Full BiDi feature set.</summary>
     AllBiDi = BiDiNetworkIntercept | BiDiScriptEvaluation | BiDiInputActions
@@ -60,5 +67,12 @@ internal static class CapabilityGuard
         CdpTransport => "Chrome/CDP",
         BiDiTransport => "Firefox/WebDriver BiDi",
         _ => transport.GetType().Name
+    };
+
+    internal static string GetTransportDescription(IMotusSession session) => session switch
+    {
+        CdpSession cdp => GetTransportDescription(cdp.Transport),
+        BiDiSession bidi => GetTransportDescription(bidi.Transport),
+        _ => session.GetType().Name
     };
 }

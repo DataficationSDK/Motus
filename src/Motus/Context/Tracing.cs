@@ -32,6 +32,9 @@ internal sealed class Tracing : ITracing
         if (Interlocked.CompareExchange(ref _started, 1, 0) != 0)
             throw new InvalidOperationException("Tracing is already started.");
 
+        CapabilityGuard.Require(_browserSession.Capabilities, MotusCapabilities.Tracing,
+            "Tracing", CapabilityGuard.GetTransportDescription(_browserSession));
+
         options ??= new TracingStartOptions();
 
         var categories = new List<string> { "devtools.timeline", "-*" };

@@ -173,6 +173,16 @@ namespace Motus;
 [JsonSerializable(typeof(AccessibilityEnableResult))]
 [JsonSerializable(typeof(AccessibilityQueryAXTreeParams))]
 [JsonSerializable(typeof(AccessibilityQueryAXTreeResult))]
+[JsonSerializable(typeof(AccessibilityGetFullAXTreeParams))]
+[JsonSerializable(typeof(AccessibilityGetFullAXTreeResult))]
+[JsonSerializable(typeof(AccessibilityAXNode))]
+[JsonSerializable(typeof(AccessibilityAXValue))]
+[JsonSerializable(typeof(AccessibilityAXProperty))]
+[JsonSerializable(typeof(AccessibilityAXRelatedNode))]
+// --- DOM domain (describeNode) ---
+[JsonSerializable(typeof(DomDescribeNodeParams))]
+[JsonSerializable(typeof(DomDescribeNodeResult))]
+[JsonSerializable(typeof(DomNodeDescription))]
 // --- DOMDebugger domain ---
 [JsonSerializable(typeof(DomDebuggerGetEventListenersParams))]
 [JsonSerializable(typeof(DomDebuggerGetEventListenersResult))]
@@ -616,6 +626,19 @@ internal sealed record DomResolveNodeParams(
 
 internal sealed record DomResolveNodeResult(RuntimeRemoteObject Object);
 
+internal sealed record DomDescribeNodeParams(
+    int? BackendNodeId = null,
+    int? NodeId = null,
+    bool? Pierce = null);
+
+internal sealed record DomNodeDescription(
+    string? LocalName = null,
+    string? NodeName = null,
+    int? NodeId = null,
+    JsonElement? Attributes = null);
+
+internal sealed record DomDescribeNodeResult(DomNodeDescription Node);
+
 // ============================================================================
 // Page domain (screenshot with clip)
 // ============================================================================
@@ -698,6 +721,38 @@ internal sealed record AccessibilityAXNodeSimple(
     long? BackendDOMNodeId = null);
 
 internal sealed record AccessibilityQueryAXTreeResult(AccessibilityAXNodeSimple[] Nodes);
+
+internal sealed record AccessibilityGetFullAXTreeParams(
+    int? Depth = null,
+    string? FrameId = null);
+
+internal sealed record AccessibilityAXRelatedNode(
+    long? BackendDOMNodeId = null,
+    string? Idref = null,
+    string? Text = null);
+
+internal sealed record AccessibilityAXValue(
+    string Type,
+    JsonElement? Value = null,
+    AccessibilityAXRelatedNode[]? RelatedNodes = null);
+
+internal sealed record AccessibilityAXProperty(
+    string Name,
+    AccessibilityAXValue Value);
+
+internal sealed record AccessibilityAXNode(
+    string NodeId,
+    bool Ignored,
+    AccessibilityAXValue? Role = null,
+    AccessibilityAXValue? Name = null,
+    AccessibilityAXValue? Description = null,
+    AccessibilityAXValue? Value = null,
+    AccessibilityAXProperty[]? Properties = null,
+    string[]? ChildIds = null,
+    long? BackendDOMNodeId = null,
+    string? ParentId = null);
+
+internal sealed record AccessibilityGetFullAXTreeResult(AccessibilityAXNode[] Nodes);
 
 // ============================================================================
 // Network domain (monitoring)

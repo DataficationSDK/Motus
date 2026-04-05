@@ -24,6 +24,7 @@ internal sealed class BrowserContext : IBrowserContext
     private readonly ReporterCollection _reporters = new();
     private readonly Dictionary<string, Abstractions.IWaitCondition> _waitConditions = new();
     private readonly SelectorStrategyRegistry _selectorStrategies = new();
+    private readonly AccessibilityRuleCollection _accessibilityRules = new();
     private readonly List<(string Pattern, Func<IRoute, Task> Handler)> _contextRoutes = [];
     private readonly object _contextRouteLock = new();
     private readonly Dictionary<string, string> _extraHeaders = new();
@@ -41,6 +42,9 @@ internal sealed class BrowserContext : IBrowserContext
         _browserContextId = browserContextId;
         _options = options;
         _tracing = new Tracing(registry.BrowserSession);
+
+        // Register built-in accessibility rules
+        _accessibilityRules.Add(new AltTextAccessibilityRule());
 
         if (_options?.ExtraHttpHeaders is not null)
         {
@@ -74,6 +78,8 @@ internal sealed class BrowserContext : IBrowserContext
     internal ReporterCollection Reporters => _reporters;
 
     internal SelectorStrategyRegistry SelectorStrategies => _selectorStrategies;
+
+    internal AccessibilityRuleCollection AccessibilityRules => _accessibilityRules;
 
     internal void RegisterWaitCondition(string name, Abstractions.IWaitCondition condition)
     {
@@ -376,6 +382,8 @@ internal sealed class BrowserContext : IBrowserContext
     public async Task SetGeolocationAsync(Geolocation? geolocation)
     {
         var page = GetFirstPageOrThrow();
+        CapabilityGuard.Require(page.Session.Capabilities, MotusCapabilities.EmulationOverrides,
+            "Geolocation override", CapabilityGuard.GetTransportDescription(page.Session));
         await page.Session.SendAsync(
             "Emulation.setGeolocationOverride",
             new EmulationSetGeolocationOverrideParams(
@@ -591,8 +599,12 @@ internal sealed class BrowserContext : IBrowserContext
         if (_options is null)
             return;
 
+        var desc = CapabilityGuard.GetTransportDescription(page.Session);
+
         if (_options.Viewport is { } viewport)
         {
+            CapabilityGuard.Require(page.Session.Capabilities, MotusCapabilities.EmulationOverrides,
+                "Viewport emulation", desc);
             page.SetViewportInternal(viewport);
             await page.Session.SendAsync(
                 "Emulation.setDeviceMetricsOverride",
@@ -608,6 +620,8 @@ internal sealed class BrowserContext : IBrowserContext
 
         if (_options.Locale is not null)
         {
+            CapabilityGuard.Require(page.Session.Capabilities, MotusCapabilities.EmulationOverrides,
+                "Locale override", desc);
             await page.Session.SendAsync(
                 "Emulation.setLocaleOverride",
                 new EmulationSetLocaleOverrideParams(_options.Locale),
@@ -618,6 +632,8 @@ internal sealed class BrowserContext : IBrowserContext
 
         if (_options.TimezoneId is not null)
         {
+            CapabilityGuard.Require(page.Session.Capabilities, MotusCapabilities.EmulationOverrides,
+                "Timezone override", desc);
             await page.Session.SendAsync(
                 "Emulation.setTimezoneOverride",
                 new EmulationSetTimezoneOverrideParams(_options.TimezoneId),
@@ -628,6 +644,8 @@ internal sealed class BrowserContext : IBrowserContext
 
         if (_options.ColorScheme is not null)
         {
+            CapabilityGuard.Require(page.Session.Capabilities, MotusCapabilities.EmulationOverrides,
+                "Color scheme emulation", desc);
             await page.Session.SendAsync(
                 "Emulation.setEmulatedMedia",
                 new EmulationSetEmulatedMediaParams(
@@ -641,6 +659,8 @@ internal sealed class BrowserContext : IBrowserContext
 
         if (_options.UserAgent is not null)
         {
+            CapabilityGuard.Require(page.Session.Capabilities, MotusCapabilities.EmulationOverrides,
+                "User-agent override", desc);
             await page.Session.SendAsync(
                 "Emulation.setUserAgentOverride",
                 new EmulationSetUserAgentOverrideParams(_options.UserAgent),
@@ -651,6 +671,8 @@ internal sealed class BrowserContext : IBrowserContext
 
         if (_options.IgnoreHTTPSErrors)
         {
+            CapabilityGuard.Require(page.Session.Capabilities, MotusCapabilities.SecurityOverrides,
+                "HTTPS error override", desc);
             await page.Session.SendAsync(
                 "Security.enable",
                 CdpJsonContext.Default.SecurityEnableResult,
@@ -666,6 +688,8 @@ internal sealed class BrowserContext : IBrowserContext
 
         if (_options.Geolocation is not null)
         {
+            CapabilityGuard.Require(page.Session.Capabilities, MotusCapabilities.EmulationOverrides,
+                "Geolocation override", desc);
             await page.Session.SendAsync(
                 "Emulation.setGeolocationOverride",
                 new EmulationSetGeolocationOverrideParams(

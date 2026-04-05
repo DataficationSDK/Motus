@@ -8,6 +8,9 @@ internal sealed partial class Page
 
     public async Task SetViewportSizeAsync(ViewportSize viewportSize)
     {
+        CapabilityGuard.Require(_session.Capabilities, MotusCapabilities.EmulationOverrides,
+            "Viewport emulation", CapabilityGuard.GetTransportDescription(_session));
+
         _viewportSize = viewportSize;
 
         await _session.SendAsync(
@@ -141,6 +144,9 @@ internal sealed partial class Page
 
     public async Task EmulateMediaAsync(string? media = null, ColorScheme? colorScheme = null)
     {
+        CapabilityGuard.Require(_session.Capabilities, MotusCapabilities.EmulationOverrides,
+            "Media emulation", CapabilityGuard.GetTransportDescription(_session));
+
         var features = colorScheme is not null
             ? new[] { new EmulationMediaFeature("prefers-color-scheme", colorScheme.Value.ToString().ToLowerInvariant()) }
             : null;

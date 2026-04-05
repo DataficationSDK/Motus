@@ -20,5 +20,8 @@ internal sealed class PluginContext : IPluginContext
     public void RegisterReporter(IReporter reporter) =>
         _context.Reporters.Add(reporter);
 
+    public void RegisterAccessibilityRule(IAccessibilityRule rule) =>
+        _context.AccessibilityRules.Add(rule);
+
     public IMotusLogger CreateLogger(string categoryName) => NullMotusLogger.Instance;
 }

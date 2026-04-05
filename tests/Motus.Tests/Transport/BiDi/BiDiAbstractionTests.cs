@@ -79,6 +79,41 @@ public class BiDiAbstractionTests
     }
 
     [TestMethod]
+    public void BiDiSession_Capabilities_Returns_AllBiDi()
+    {
+        var socket = new FakeCdpSocket();
+        var transport = new BiDiTransport(socket);
+        var session = new BiDiSession(transport, "ctx-1");
+
+        Assert.AreEqual(MotusCapabilities.AllBiDi, session.Capabilities);
+    }
+
+    [TestMethod]
+    public void AllBiDi_Excludes_SecurityOverrides()
+    {
+        Assert.AreEqual(MotusCapabilities.None,
+            MotusCapabilities.AllBiDi & MotusCapabilities.SecurityOverrides);
+    }
+
+    [TestMethod]
+    public void AllBiDi_Excludes_AccessibilityTree()
+    {
+        Assert.AreEqual(MotusCapabilities.None,
+            MotusCapabilities.AllBiDi & MotusCapabilities.AccessibilityTree);
+    }
+
+    [TestMethod]
+    public void CapabilityGuard_GetTransportDescription_BiDiSession()
+    {
+        var socket = new FakeCdpSocket();
+        var transport = new BiDiTransport(socket);
+        var session = new BiDiSession(transport, "ctx-1");
+
+        var desc = CapabilityGuard.GetTransportDescription(session);
+        StringAssert.Contains(desc, "BiDi");
+    }
+
+    [TestMethod]
     public void BiDiSession_CleanupChannels_Does_Not_Throw_For_Null_SessionId()
     {
         var socket = new FakeCdpSocket();

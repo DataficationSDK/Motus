@@ -77,6 +77,41 @@ public class TransportAbstractionTests
     }
 
     [TestMethod]
+    public void CdpSession_Capabilities_Returns_AllCdp()
+    {
+        var socket = new FakeCdpSocket();
+        var transport = new CdpTransport(socket);
+        var session = new CdpSession(transport, "test");
+
+        Assert.AreEqual(MotusCapabilities.AllCdp, session.Capabilities);
+    }
+
+    [TestMethod]
+    public void AllCdp_Includes_SecurityOverrides()
+    {
+        Assert.AreNotEqual(MotusCapabilities.None,
+            MotusCapabilities.AllCdp & MotusCapabilities.SecurityOverrides);
+    }
+
+    [TestMethod]
+    public void AllCdp_Includes_AccessibilityTree()
+    {
+        Assert.AreNotEqual(MotusCapabilities.None,
+            MotusCapabilities.AllCdp & MotusCapabilities.AccessibilityTree);
+    }
+
+    [TestMethod]
+    public void CapabilityGuard_GetTransportDescription_CdpSession()
+    {
+        var socket = new FakeCdpSocket();
+        var transport = new CdpTransport(socket);
+        var session = new CdpSession(transport, "test");
+
+        var desc = CapabilityGuard.GetTransportDescription(session);
+        StringAssert.Contains(desc, "CDP");
+    }
+
+    [TestMethod]
     public void CdpSession_CleanupChannels_Does_Not_Throw_For_Null_SessionId()
     {
         var socket = new FakeCdpSocket();

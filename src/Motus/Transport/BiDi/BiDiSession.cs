@@ -20,6 +20,8 @@ internal sealed class BiDiSession : IMotusSession
 
     internal BiDiTransport Transport => _transport;
 
+    public MotusCapabilities Capabilities => _transport.Capabilities;
+
     internal BiDiSession(BiDiTransport transport, string? sessionId = null)
     {
         _transport = transport;

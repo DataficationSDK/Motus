@@ -30,6 +30,12 @@ public interface IPluginContext
     void RegisterReporter(IReporter reporter);
 
     /// <summary>
+    /// Registers a custom accessibility rule that will be invoked during accessibility audits.
+    /// </summary>
+    /// <param name="rule">The accessibility rule to register.</param>
+    void RegisterAccessibilityRule(IAccessibilityRule rule);
+
+    /// <summary>
     /// Creates a logger scoped to the calling plugin.
     /// </summary>
     /// <param name="categoryName">The log category name.</param>

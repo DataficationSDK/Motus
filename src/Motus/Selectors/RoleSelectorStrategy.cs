@@ -21,6 +21,8 @@ internal sealed class RoleSelectorStrategy : ISelectorStrategy
         string selector, IFrame frame, bool pierceShadow = true, CancellationToken ct = default)
     {
         var page = SelectorStrategyHelpers.GetPage(frame);
+        CapabilityGuard.Require(page.Session.Capabilities, MotusCapabilities.AccessibilityTree,
+            "Role selector (Accessibility.queryAXTree)", CapabilityGuard.GetTransportDescription(page.Session));
 
         var (role, name) = ParseRoleSelector(selector);
 

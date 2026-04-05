@@ -21,6 +21,8 @@ internal sealed class CdpSession : IMotusSession
 
     internal CdpTransport Transport => _transport;
 
+    public MotusCapabilities Capabilities => _transport.Capabilities;
+
     internal CdpSession(CdpTransport transport, string? sessionId = null)
     {
         _transport = transport;

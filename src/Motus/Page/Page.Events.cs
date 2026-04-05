@@ -90,8 +90,9 @@ internal sealed partial class Page
             CdpJsonContext.Default.TargetAttachedToTargetEvent,
             OnTargetAttached, ct);
 
-        // Fetch auth required (HTTP credentials)
-        if (_context.Options?.HttpCredentials is not null)
+        // Fetch auth required (HTTP credentials) — requires CDP Fetch domain
+        if (_context.Options?.HttpCredentials is not null
+            && (_session.Capabilities & MotusCapabilities.FetchInterception) != 0)
         {
             _ = PumpEventsAsync(
                 "Fetch.authRequired",
