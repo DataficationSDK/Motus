@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RunSettings>
+  <DataCollectionRunSettings>
+    <DataCollectors>
+      <DataCollector friendlyName="XPlat Code Coverage">
+        <Configuration>
+          <Format>cobertura</Format>
+
+          <!-- Exclude source-generated protocol domains and the Blazor visual runner -->
+          <Exclude>
+            [Motus]Motus.Protocol.*,
+            [Motus.Runner]*
+          </Exclude>
+
+          <!-- Exclude types decorated with these attributes -->
+          <ExcludeByAttribute>
+            ExcludeFromCodeCoverage,CompilerGenerated
+          </ExcludeByAttribute>
+
+          <!-- Exclude source-generated files from the Roslyn generators -->
+          <ExcludeByFile>
+            **/*.g.cs
+          </ExcludeByFile>
+        </Configuration>
+      </DataCollector>
+    </DataCollectors>
+  </DataCollectionRunSettings>
+</RunSettings>

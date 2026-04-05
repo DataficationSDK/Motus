@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json.Serialization;
 
 namespace Motus;
@@ -15,4 +16,5 @@ namespace Motus;
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
+[ExcludeFromCodeCoverage]
 internal sealed partial class MotusConfigJsonContext : JsonSerializerContext;

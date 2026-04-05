@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json.Serialization;
 
 namespace Motus.Recorder.ActionCapture;
@@ -15,4 +16,5 @@ internal sealed record RecorderDialogClosedEvent(bool Result, string UserInput);
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
+[ExcludeFromCodeCoverage]
 internal sealed partial class RecorderJsonContext : JsonSerializerContext;

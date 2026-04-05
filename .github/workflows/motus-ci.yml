@@ -48,7 +48,7 @@ jobs:
           --logger "trx;LogFilePrefix=results"
           --collect:"XPlat Code Coverage"
           --results-directory TestResults
-          -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=cobertura
+          --settings coverage.runsettings
 
       - name: Upload test results
         if: always()

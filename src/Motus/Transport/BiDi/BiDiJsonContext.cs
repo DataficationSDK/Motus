@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -236,4 +237,5 @@ internal sealed record BiDiNetworkHeader(
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
+[ExcludeFromCodeCoverage]
 internal sealed partial class BiDiJsonContext : JsonSerializerContext;
