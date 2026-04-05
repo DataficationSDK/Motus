@@ -82,9 +82,9 @@ public class PluginHostTests
 
             await host.LoadAsync(options, context);
 
-            // 1 built-in + 1 manual (discovered duplicate suppressed)
-            Assert.AreEqual(2, host.Plugins.Count, "Duplicate PluginId should be deduplicated.");
-            Assert.AreEqual("Manual", host.Plugins[1].Name, "Manual plugin should take precedence.");
+            // 2 built-ins + 1 manual (discovered duplicate suppressed)
+            Assert.AreEqual(3, host.Plugins.Count, "Duplicate PluginId should be deduplicated.");
+            Assert.AreEqual("Manual", host.Plugins[2].Name, "Manual plugin should take precedence.");
         }
         finally
         {
@@ -106,8 +106,8 @@ public class PluginHostTests
         await host.LoadAsync(options, context);
 
         Assert.IsTrue(goodPlugin.Loaded, "Good plugin should still load after a failing one.");
-        // 1 built-in + 1 good (failing plugin excluded)
-        Assert.AreEqual(2, host.Plugins.Count, "Only successfully loaded plugins should be tracked.");
+        // 2 built-ins + 1 good (failing plugin excluded)
+        Assert.AreEqual(3, host.Plugins.Count, "Only successfully loaded plugins should be tracked.");
     }
 
     [TestMethod]

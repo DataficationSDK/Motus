@@ -179,10 +179,24 @@ namespace Motus;
 [JsonSerializable(typeof(AccessibilityAXValue))]
 [JsonSerializable(typeof(AccessibilityAXProperty))]
 [JsonSerializable(typeof(AccessibilityAXRelatedNode))]
-// --- DOM domain (describeNode) ---
+// --- DOM domain ---
 [JsonSerializable(typeof(DomDescribeNodeParams))]
 [JsonSerializable(typeof(DomDescribeNodeResult))]
 [JsonSerializable(typeof(DomNodeDescription))]
+[JsonSerializable(typeof(DomGetDocumentParams))]
+[JsonSerializable(typeof(DomGetDocumentResult))]
+[JsonSerializable(typeof(DomDocumentNode))]
+[JsonSerializable(typeof(DomQuerySelectorAllParams))]
+[JsonSerializable(typeof(DomQuerySelectorAllResult))]
+[JsonSerializable(typeof(DomGetAttributesParams))]
+[JsonSerializable(typeof(DomGetAttributesResult))]
+[JsonSerializable(typeof(DomPushNodesByBackendIdsParams))]
+[JsonSerializable(typeof(DomPushNodesByBackendIdsResult))]
+// --- CSS domain ---
+[JsonSerializable(typeof(CssEnableResult))]
+[JsonSerializable(typeof(CssGetComputedStyleForNodeParams))]
+[JsonSerializable(typeof(CssGetComputedStyleForNodeResult))]
+[JsonSerializable(typeof(CssComputedStyleProperty))]
 // --- DOMDebugger domain ---
 [JsonSerializable(typeof(DomDebuggerGetEventListenersParams))]
 [JsonSerializable(typeof(DomDebuggerGetEventListenersResult))]
@@ -638,6 +652,41 @@ internal sealed record DomNodeDescription(
     JsonElement? Attributes = null);
 
 internal sealed record DomDescribeNodeResult(DomNodeDescription Node);
+
+internal sealed record DomGetDocumentParams(int? Depth = null, bool? Pierce = null);
+
+internal sealed record DomDocumentNode(
+    int NodeId,
+    int BackendNodeId,
+    string? NodeName = null,
+    string? NodeValue = null,
+    int? ChildNodeCount = null);
+
+internal sealed record DomGetDocumentResult(DomDocumentNode Root);
+
+internal sealed record DomQuerySelectorAllParams(int NodeId, string Selector);
+
+internal sealed record DomQuerySelectorAllResult(int[] NodeIds);
+
+internal sealed record DomGetAttributesParams(int NodeId);
+
+internal sealed record DomGetAttributesResult(string[] Attributes);
+
+internal sealed record DomPushNodesByBackendIdsParams(int[] BackendNodeIds);
+
+internal sealed record DomPushNodesByBackendIdsResult(int[] NodeIds);
+
+// ============================================================================
+// CSS domain
+// ============================================================================
+
+internal sealed record CssEnableResult();
+
+internal sealed record CssGetComputedStyleForNodeParams(int NodeId);
+
+internal sealed record CssComputedStyleProperty(string Name, string Value);
+
+internal sealed record CssGetComputedStyleForNodeResult(CssComputedStyleProperty[] ComputedStyle);
 
 // ============================================================================
 // Page domain (screenshot with clip)

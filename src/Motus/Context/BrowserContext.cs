@@ -43,9 +43,6 @@ internal sealed class BrowserContext : IBrowserContext
         _options = options;
         _tracing = new Tracing(registry.BrowserSession);
 
-        // Register built-in accessibility rules
-        _accessibilityRules.Add(new AltTextAccessibilityRule());
-
         if (_options?.ExtraHttpHeaders is not null)
         {
             foreach (var kv in _options.ExtraHttpHeaders)
