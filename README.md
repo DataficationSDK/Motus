@@ -85,6 +85,48 @@ motus run ./bin/Debug/net8.0/MyTests.dll --reporter html:./reports/result.html
 motus run ./bin/Debug/net8.0/MyTests.dll --reporter junit:./reports/junit.xml
 ```
 
+### Accessibility Testing
+
+Motus audits pages against WCAG 2.1 Level A/AA rules using the browser's native accessibility tree (no JavaScript injection). Enable the built-in audit hook to run checks automatically after every navigation, or use assertions for targeted validation.
+
+```csharp
+// Assert the page passes all accessibility rules
+await Expect.That(page).ToPassAccessibilityAuditAsync();
+
+// Skip specific rules or exclude warnings
+await Expect.That(page).ToPassAccessibilityAuditAsync(opts =>
+{
+    opts.SkipRules("a11y-color-contrast");
+    opts.IncludeWarnings = false;
+});
+
+// Assert accessible name and role on individual elements
+await Expect.That(page.Locator("button#submit")).ToHaveAccessibleNameAsync("Submit order");
+await Expect.That(page.Locator("nav")).ToHaveRoleAsync("navigation");
+```
+
+Enable the audit lifecycle hook via config or CLI to run audits automatically:
+
+```bash
+# Report violations without failing tests
+motus run ./bin/Debug/net8.0/MyTests.dll --a11y warn
+
+# Fail tests on error-severity violations
+motus run ./bin/Debug/net8.0/MyTests.dll --a11y enforce
+```
+
+Or in `motus.config.json`:
+
+```json
+{
+  "accessibility": {
+    "enable": true,
+    "mode": "enforce",
+    "skipRules": ["a11y-color-contrast"]
+  }
+}
+```
+
 ## How It Works
 
 Motus communicates directly with the browser over WebSocket. For Chromium-based browsers, it speaks the Chrome DevTools Protocol (CDP). For Firefox, it uses WebDriver BiDi. There is no Node.js sidecar, no driver binary, and no process boundary between your test code and the protocol layer.
@@ -114,6 +156,8 @@ Five interfaces define every point of extensibility, all registered through `IPl
 | `ILifecycleHook` | Intercept navigation, actions, page create/close, console messages, and errors |
 | `IWaitCondition` | Define named wait conditions for use with `WaitForAsync` |
 | `IReporter` | Receive test run events for custom reporting (multiple reporters run simultaneously) |
+| `IAccessibilityRule` | Define custom WCAG accessibility rules evaluated against the browser's accessibility tree |
+| `IAccessibilityReporter` | Opt-in interface for reporters to receive per-violation accessibility events |
 | `IMotusLogger` | Structured logging for plugin diagnostics |
 
 ### Plugin Discovery
@@ -144,7 +188,7 @@ public class MyPlugin : IPlugin
 
 ### Dogfooding All the Way Down
 
-The five built-in selector strategies (CSS, XPath, Text, Role, TestId) are registered through `IPluginContext`. The console, HTML, JUnit, and TRX reporters implement `IReporter`. The visual runner's timeline is powered by an `ILifecycleHook`. None of them have special access to engine internals.
+The five built-in selector strategies (CSS, XPath, Text, Role, TestId) are registered through `IPluginContext`. The console, HTML, JUnit, and TRX reporters implement `IReporter`. The visual runner's timeline is powered by an `ILifecycleHook`. The nine built-in WCAG rules and the accessibility audit hook are registered as plugins through the same `IPluginContext`. None of them have special access to engine internals.
 
 ## Roslyn Analyzers
 
@@ -183,7 +227,8 @@ Launch the Blazor-based visual runner with `motus run --visual`:
 | **Network** | Request interception, response mocking, route matching with glob patterns |
 | **Recording** | Capture browser interactions and emit idiomatic C# test code (MSTest, xUnit, NUnit) |
 | **Codegen** | Generate Page Object Model classes from live pages with selector inference |
-| **Reporters** | Console, HTML, JUnit XML, TRX, plus custom reporters via `IReporter` |
+| **Accessibility** | Built-in WCAG 2.1 Level A/AA audits via CDP accessibility tree, lifecycle hook, page and locator assertions, custom rules via `IAccessibilityRule` |
+| **Reporters** | Console, HTML, JUnit XML, TRX, plus custom reporters via `IReporter` (with opt-in `IAccessibilityReporter` for violation events) |
 | **Tracing** | Screenshots, DOM snapshots, network logs, HAR export, and WebM video recording |
 | **Parallel** | Context-level, browser-level, and worker-level parallel execution |
 | **Configuration** | Layered: `motus.config.json`, environment variables, code (code always wins) |
@@ -192,7 +237,7 @@ Launch the Blazor-based visual runner with `motus run --visual`:
 ## CLI Reference
 
 ```
-motus run <assemblies>  Run tests with optional --visual, --filter, --workers, --reporter
+motus run <assemblies>  Run tests with optional --visual, --filter, --workers, --reporter, --a11y
 motus record           Record a browser session and emit test code
 motus codegen          Generate POM classes from live pages (--headed, --connect, --detect-listeners)
 motus screenshot       Capture a screenshot (--full-page, --delay, --hide-banners, --width, --height)
