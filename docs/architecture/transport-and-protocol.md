@@ -173,6 +173,6 @@ This design has two consequences:
 
 ## See Also
 
-- [Plugin System Architecture](../architecture/plugin-system.md)
-- [Engine Layer](../architecture/engine.md)
-- [BiDi Translation Registry](../architecture/bidi-translation.md)
+- [Plugin Interfaces](../extensions/plugin-interfaces.md) - extensibility hooks and registration
+- [Architecture Overview](overview.md) - project structure and data flow
+- [Browser Lifecycle](browser-lifecycle.md) - launch, connection, and disposal

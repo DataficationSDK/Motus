@@ -465,8 +465,7 @@ Build and run your test suite. The most common remaining failures after the step
 
 ## See Also
 
-- [MotusTestBase API reference](../guides/testing-mstest.md)
-- [Plugin extensibility](../extensions/overview.md)
-- [Tracing and failure capture](../guides/tracing.md)
-- [Configuration reference](../guides/configuration.md)
-- [Accessibility assertions](../guides/accessibility.md)
+- [Testing Frameworks](../guides/testing-frameworks.md) -- MSTest, NUnit, and xUnit integration
+- [Plugin Extensibility](../extensions/getting-started.md) -- building and registering plugins
+- [Configuration Reference](../guides/configuration.md) -- full `motus.config.json` schema
+- [Accessibility Testing](../guides/accessibility-testing.md) -- WCAG rules and assertions

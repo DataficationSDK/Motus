@@ -108,7 +108,7 @@ This means `dotnet publish -r <rid> -p:PublishAot=true` produces a fully trimmed
 
 ## See Also
 
-- [Plugin System](plugin-system.md) - full interface reference and registration lifecycle
-- [Transport Layer](transport.md) - CDP and BiDi protocol details, session management, and SlowMo
-- [Selector Strategies](selector-strategies.md) - built-in strategies and how to implement `ISelectorStrategy`
-- [NativeAOT](nativeaot.md) - source generator details and AOT publishing guide
+- [Plugin Interfaces](../extensions/plugin-interfaces.md) - full interface reference and registration lifecycle
+- [Transport and Protocol](transport-and-protocol.md) - CDP and BiDi protocol details, session management, and SlowMo
+- [Selectors and Assertions](selectors-and-assertions.md) - built-in strategies and how to implement `ISelectorStrategy`
+- [NativeAOT and Best Practices](../extensions/best-practices.md) - source generator details and AOT compatibility guide

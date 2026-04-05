@@ -333,6 +333,6 @@ Commit this file or add it to `.gitignore` depending on whether the whole team u
 ## See Also
 
 - [Getting Started](../getting-started.md)
-- [Plugins and Extensibility](../extensions/plugins.md)
-- [Accessibility Auditing](./accessibility.md)
-- [Reporters](./reporters.md)
+- [Plugins and Extensibility](../extensions/getting-started.md)
+- [Accessibility Testing](./accessibility-testing.md)
+- [Testing Frameworks](./testing-frameworks.md)

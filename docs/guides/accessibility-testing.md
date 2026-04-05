@@ -444,4 +444,3 @@ public class HomePageAccessibilityTests : MotusTestBase
 
 - [Configuration](./configuration.md) -- full `motus.config.json` schema and `AccessibilityOptions` property reference
 - [Plugin Interfaces](../extensions/plugin-interfaces.md) -- `IAccessibilityRule`, `IAccessibilityReporter`, and `IPluginContext` API reference
-- [Reporters](./reporters.md) -- configuring and combining built-in reporters

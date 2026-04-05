@@ -328,6 +328,5 @@ Key behaviors:
 
 ## See Also
 
-- [Configuration Reference](../configuration.md) -- full `motus.config.json` schema including the `failure` section
-- [LaunchOptions and ContextOptions](../api/options.md) -- all available properties
-- Playwright Trace Viewer: `npx playwright show-trace <trace.zip>`
+- [Configuration Reference](./configuration.md) -- full `motus.config.json` schema including the `failure` section
+- [Network Interception](./network-interception.md) -- route matching, request mocking, and response modification
