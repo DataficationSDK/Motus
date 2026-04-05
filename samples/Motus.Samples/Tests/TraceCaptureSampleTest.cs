@@ -16,6 +16,9 @@ public class TraceCaptureSampleTest : MotusTestBase
             AppContext.BaseDirectory, "..", "..", "..", ".."));
         var tracePath = Path.Combine(projectDir, "sample-trace.zip");
 
+        // Stop any pre-existing tracing (e.g. from failure-tracing) before starting fresh
+        await Context.Tracing.StopAsync();
+
         await Context.Tracing.StartAsync(new TracingStartOptions
         {
             Screenshots = true,

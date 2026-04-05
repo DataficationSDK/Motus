@@ -108,6 +108,7 @@ jobs:
         run: dotnet build Motus.sln --configuration Release
 
       - name: Test (integration - Chrome)
+        timeout-minutes: 10
         run: >-
           dotnet test Motus.sln
           --configuration Release
@@ -126,6 +127,7 @@ jobs:
 
       - name: Generate Motus reports
         if: always()
+        timeout-minutes: 5
         run: >-
           dotnet run --project src/Motus.Cli/Motus.Cli.csproj --configuration Release --framework net10.0 --no-build --
           run samples/Motus.Samples/bin/Release/net8.0/Motus.Samples.dll
