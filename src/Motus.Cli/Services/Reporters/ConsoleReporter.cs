@@ -2,7 +2,7 @@ using Motus.Abstractions;
 
 namespace Motus.Cli.Services.Reporters;
 
-public sealed class ConsoleReporter(TextWriter writer, bool useColor) : IReporter
+public sealed class ConsoleReporter(TextWriter writer, bool useColor) : IReporter, IAccessibilityReporter
 {
     private const string Green = "\x1b[32m";
     private const string Red = "\x1b[31m";
@@ -39,6 +39,29 @@ public sealed class ConsoleReporter(TextWriter writer, bool useColor) : IReporte
 
             if (!result.Passed && result.ErrorMessage is not null)
                 writer.WriteLine($"         {result.ErrorMessage}");
+        }
+
+        return Task.CompletedTask;
+    }
+
+    public Task OnAccessibilityViolationAsync(AccessibilityViolation violation, TestInfo test)
+    {
+        var severity = violation.Severity.ToString();
+        var selector = violation.Selector is not null ? $" ({violation.Selector})" : "";
+
+        if (useColor)
+        {
+            var color = violation.Severity switch
+            {
+                AccessibilityViolationSeverity.Error => Red,
+                AccessibilityViolationSeverity.Warning => Yellow,
+                _ => Gray,
+            };
+            writer.WriteLine($"         {color}[A11Y {severity}]{Reset} {violation.RuleId}: {violation.Message}{selector}");
+        }
+        else
+        {
+            writer.WriteLine($"         [A11Y {severity}] {violation.RuleId}: {violation.Message}{selector}");
         }
 
         return Task.CompletedTask;

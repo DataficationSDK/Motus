@@ -4,16 +4,28 @@ using Motus.Abstractions;
 
 namespace Motus.Cli.Services.Reporters;
 
-public sealed class HtmlReporter(string outputPath) : IReporter
+public sealed class HtmlReporter(string outputPath) : IReporter, IAccessibilityReporter
 {
     private static readonly HashSet<string> ImageExtensions =
         new([".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".svg"], StringComparer.OrdinalIgnoreCase);
 
     private readonly List<(TestInfo Info, Abstractions.TestResult Result)> _results = [];
+    private readonly Dictionary<string, List<AccessibilityViolation>> _violations = new();
 
     public Task OnTestRunStartAsync(TestSuiteInfo suite) => Task.CompletedTask;
 
     public Task OnTestStartAsync(TestInfo test) => Task.CompletedTask;
+
+    public Task OnAccessibilityViolationAsync(AccessibilityViolation violation, TestInfo test)
+    {
+        if (!_violations.TryGetValue(test.TestName, out var list))
+        {
+            list = [];
+            _violations[test.TestName] = list;
+        }
+        list.Add(violation);
+        return Task.CompletedTask;
+    }
 
     public Task OnTestEndAsync(TestInfo test, Abstractions.TestResult result)
     {
@@ -55,6 +67,15 @@ pre.stack-trace { background: #f6f8fa; padding: 1rem; border-radius: 4px; overfl
 .attachments h4 { margin: 0 0 0.5rem; font-size: 0.875rem; }
 .attachments img { max-width: 100%; border: 1px solid #e1e4e8; border-radius: 4px; margin: 0.25rem 0; }
 .attachments a { display: block; color: #0366d6; margin: 0.25rem 0; }
+.accessibility { margin-top: 0.75rem; }
+.accessibility h4 { margin: 0 0 0.5rem; font-size: 0.875rem; }
+.violation { padding: 0.4rem 0.6rem; margin: 0.25rem 0; border-radius: 4px; font-size: 0.85rem; }
+.violation.error { background: #ffeef0; }
+.violation.warning { background: #fff8c5; }
+.violation.info { background: #f1f8ff; }
+.badge.a11y-error { background: #ffeef0; color: #cb2431; }
+.badge.a11y-warning { background: #fff8c5; color: #735c0f; }
+.badge.a11y-info { background: #f1f8ff; color: #0366d6; }
 """);
         sb.AppendLine("</style></head><body>");
         sb.AppendLine("<h1>Motus Test Report</h1>");
@@ -74,7 +95,8 @@ pre.stack-trace { background: #f6f8fa; padding: 1rem; border-radius: 4px; overfl
         {
             var badgeClass = r.Passed ? "pass" : "fail";
             var badgeText = r.Passed ? "PASS" : "FAIL";
-            var hasDetails = !r.Passed || r.Attachments is { Count: > 0 };
+            var hasA11y = _violations.TryGetValue(r.TestName, out var testViolations) && testViolations.Count > 0;
+            var hasDetails = !r.Passed || r.Attachments is { Count: > 0 } || hasA11y;
 
             sb.AppendLine("<li class=\"test-item\">");
 
@@ -114,6 +136,25 @@ pre.stack-trace { background: #f6f8fa; padding: 1rem; border-radius: 4px; overfl
                         {
                             sb.AppendLine($"<a href=\"{HttpUtility.HtmlEncode(attachment)}\">{HttpUtility.HtmlEncode(Path.GetFileName(attachment))}</a>");
                         }
+                    }
+                    sb.AppendLine("</div>");
+                }
+
+                if (hasA11y)
+                {
+                    sb.AppendLine("<div class=\"accessibility\"><h4>Accessibility Violations</h4>");
+                    foreach (var v in testViolations!)
+                    {
+                        var severityClass = v.Severity switch
+                        {
+                            AccessibilityViolationSeverity.Error => "error",
+                            AccessibilityViolationSeverity.Warning => "warning",
+                            _ => "info",
+                        };
+                        var selector = v.Selector is not null
+                            ? $" <code>{HttpUtility.HtmlEncode(v.Selector)}</code>"
+                            : "";
+                        sb.AppendLine($"<div class=\"violation {severityClass}\"><span class=\"badge a11y-{severityClass}\">{v.Severity}</span> <strong>{HttpUtility.HtmlEncode(v.RuleId)}</strong>: {HttpUtility.HtmlEncode(v.Message)}{selector}</div>");
                     }
                     sb.AppendLine("</div>");
                 }

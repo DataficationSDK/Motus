@@ -146,4 +146,44 @@ public class HtmlReporterTests
         Assert.IsTrue(html.Contains("1 Skipped"));
         Assert.IsTrue(html.Contains("8 Total"));
     }
+
+    [TestMethod]
+    public async Task AccessibilityViolations_RenderedInTestDetails()
+    {
+        var reporter = new HtmlReporter(_outputPath);
+
+        var testInfo = new TestInfo("Ns.A11yTest", "S");
+        await reporter.OnTestEndAsync(testInfo, new TestResult("Ns.A11yTest", true, 100));
+        await reporter.OnAccessibilityViolationAsync(
+            new AccessibilityViolation("a11y-alt-text", AccessibilityViolationSeverity.Error,
+                "Image missing alt text", null, null, null, "img.hero"),
+            testInfo);
+        await reporter.OnTestRunEndAsync(new TestRunSummary("S", 1, 0, 0, 100));
+
+        var html = await File.ReadAllTextAsync(_outputPath);
+        Assert.IsTrue(html.Contains("Accessibility Violations"),
+            $"Expected accessibility heading, got: {html[..200]}...");
+        Assert.IsTrue(html.Contains("a11y-alt-text"), "Expected rule ID in HTML.");
+        Assert.IsTrue(html.Contains("img.hero"), "Expected selector in HTML.");
+        Assert.IsTrue(html.Contains("violation error"), "Expected error severity CSS class.");
+        Assert.IsTrue(html.Contains("<details>"),
+            "Test with violations should have collapsible details.");
+    }
+
+    [TestMethod]
+    public async Task AccessibilityViolation_Warning_HasCorrectSeverityClass()
+    {
+        var reporter = new HtmlReporter(_outputPath);
+
+        var testInfo = new TestInfo("Ns.WarnTest", "S");
+        await reporter.OnTestEndAsync(testInfo, new TestResult("Ns.WarnTest", true, 50));
+        await reporter.OnAccessibilityViolationAsync(
+            new AccessibilityViolation("a11y-heading", AccessibilityViolationSeverity.Warning,
+                "Bad heading hierarchy", null, null, null, null),
+            testInfo);
+        await reporter.OnTestRunEndAsync(new TestRunSummary("S", 1, 0, 0, 50));
+
+        var html = await File.ReadAllTextAsync(_outputPath);
+        Assert.IsTrue(html.Contains("violation warning"), "Expected warning severity CSS class.");
+    }
 }

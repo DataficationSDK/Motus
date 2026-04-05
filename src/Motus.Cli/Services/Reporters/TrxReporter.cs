@@ -3,16 +3,23 @@ using Motus.Abstractions;
 
 namespace Motus.Cli.Services.Reporters;
 
-public sealed class TrxReporter(string outputPath) : IReporter
+public sealed class TrxReporter(string outputPath) : IReporter, IAccessibilityReporter
 {
     private static readonly XNamespace TrxNs = "http://microsoft.com/schemas/VisualStudio/TeamTest/2010";
 
     private readonly List<(TestInfo Info, Abstractions.TestResult Result, Guid ExecutionId, Guid TestId)> _results = [];
+    private readonly HashSet<string> _testsWithViolations = new();
     private readonly Guid _runId = Guid.NewGuid();
 
     public Task OnTestRunStartAsync(TestSuiteInfo suite) => Task.CompletedTask;
 
     public Task OnTestStartAsync(TestInfo test) => Task.CompletedTask;
+
+    public Task OnAccessibilityViolationAsync(AccessibilityViolation violation, TestInfo test)
+    {
+        _testsWithViolations.Add(test.TestName);
+        return Task.CompletedTask;
+    }
 
     public Task OnTestEndAsync(TestInfo test, Abstractions.TestResult result)
     {
@@ -61,7 +68,7 @@ public sealed class TrxReporter(string outputPath) : IReporter
             var className = lastDot > 0 ? result.TestName[..lastDot] : info.SuiteName;
             var methodName = lastDot > 0 ? result.TestName[(lastDot + 1)..] : result.TestName;
 
-            definitions.Add(new XElement(TrxNs + "UnitTest",
+            var unitTest = new XElement(TrxNs + "UnitTest",
                 new XAttribute("name", result.TestName),
                 new XAttribute("id", testId),
                 new XElement(TrxNs + "Execution",
@@ -69,7 +76,16 @@ public sealed class TrxReporter(string outputPath) : IReporter
                 new XElement(TrxNs + "TestMethod",
                     new XAttribute("codeBase", info.SuiteName),
                     new XAttribute("className", className),
-                    new XAttribute("name", methodName))));
+                    new XAttribute("name", methodName)));
+
+            if (_testsWithViolations.Contains(result.TestName))
+            {
+                unitTest.Add(new XElement(TrxNs + "TestCategory",
+                    new XElement(TrxNs + "TestCategoryItem",
+                        new XAttribute("TestCategory", "a11y"))));
+            }
+
+            definitions.Add(unitTest);
 
             testEntries.Add(new XElement(TrxNs + "TestEntry",
                 new XAttribute("testId", testId),

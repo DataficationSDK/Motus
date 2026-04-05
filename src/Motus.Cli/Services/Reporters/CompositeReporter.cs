@@ -2,7 +2,7 @@ using Motus.Abstractions;
 
 namespace Motus.Cli.Services.Reporters;
 
-public sealed class CompositeReporter(IReadOnlyList<IReporter> reporters) : IReporter
+public sealed class CompositeReporter(IReadOnlyList<IReporter> reporters) : IReporter, IAccessibilityReporter
 {
     public async Task OnTestRunStartAsync(TestSuiteInfo suite)
     {
@@ -37,6 +37,18 @@ public sealed class CompositeReporter(IReadOnlyList<IReporter> reporters) : IRep
         {
             try { await reporter.OnTestRunEndAsync(summary); }
             catch { }
+        }
+    }
+
+    public async Task OnAccessibilityViolationAsync(AccessibilityViolation violation, TestInfo test)
+    {
+        foreach (var reporter in reporters)
+        {
+            if (reporter is IAccessibilityReporter a11y)
+            {
+                try { await a11y.OnAccessibilityViolationAsync(violation, test); }
+                catch { }
+            }
         }
     }
 }

@@ -25,6 +25,8 @@
     <InternalsVisibleTo Include="Motus.Recorder" />
     <InternalsVisibleTo Include="Motus.Recorder.Tests" />
     <InternalsVisibleTo Include="Motus.Runner" />
+    <InternalsVisibleTo Include="Motus.Cli" />
+    <InternalsVisibleTo Include="Motus.Cli.Tests" />
   </ItemGroup>
 
   <ItemGroup>

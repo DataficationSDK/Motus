@@ -53,4 +53,16 @@ public sealed class ReporterCollection
             catch { }
         }
     }
+
+    public async Task FireOnAccessibilityViolationAsync(AccessibilityViolation violation, TestInfo test)
+    {
+        foreach (var reporter in Snapshot())
+        {
+            if (reporter is IAccessibilityReporter a11y)
+            {
+                try { await a11y.OnAccessibilityViolationAsync(violation, test).ConfigureAwait(false); }
+                catch { }
+            }
+        }
+    }
 }

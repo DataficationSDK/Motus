@@ -71,6 +71,19 @@ internal sealed class AccessibilityAuditHook : IPlugin, ILifecycleHook
         var result = await concrete.RunAccessibilityAuditAsync(rules, CancellationToken.None)
             .ConfigureAwait(false);
         concrete.LastAccessibilityAudit = result;
+
+        // Push violations to the ambient sink (for CLI TestRunner) and
+        // dispatch to plugin-registered reporters on the BrowserContext.
+        if (result.Violations is { Count: > 0 })
+        {
+            var testInfo = new TestInfo("accessibility-audit", "motus");
+            foreach (var violation in result.Violations)
+            {
+                AccessibilityViolationSink.Add(violation);
+                await _context.Reporters.FireOnAccessibilityViolationAsync(violation, testInfo)
+                    .ConfigureAwait(false);
+            }
+        }
     }
 
     private IReadOnlyList<IAccessibilityRule> FilterRules(IReadOnlyList<IAccessibilityRule> rules)

@@ -16,7 +16,10 @@ public sealed class TestRunner(int maxWorkers)
     private readonly ConcurrentDictionary<Assembly, bool> _initializedAssemblies = new();
     private readonly ConcurrentDictionary<Type, bool> _initializedClasses = new();
 
-    public async Task<TestRunResult> RunAsync(List<DiscoveredTest> tests, IReporter reporter)
+    public Task<TestRunResult> RunAsync(List<DiscoveredTest> tests, IReporter reporter) =>
+        RunAsync(tests, reporter, a11yMode: null);
+
+    public async Task<TestRunResult> RunAsync(List<DiscoveredTest> tests, IReporter reporter, string? a11yMode)
     {
         var suiteName = tests.Count > 0
             ? tests[0].TestClass.Assembly.GetName().Name ?? "Motus Tests"
@@ -62,6 +65,8 @@ public sealed class TestRunner(int maxWorkers)
                 var testInfo = new TestInfo(test.FullName, suiteName);
                 await reporter.OnTestStartAsync(testInfo);
 
+                AccessibilityViolationSink.Begin();
+
                 CliTestResult result;
 
                 if (failedAssemblies.Contains(test.TestClass.Assembly))
@@ -72,6 +77,31 @@ public sealed class TestRunner(int maxWorkers)
                 else
                 {
                     result = await ExecuteTestAsync(test);
+                }
+
+                var violations = AccessibilityViolationSink.End();
+
+                // Dispatch violations to IAccessibilityReporter reporters
+                if (violations.Count > 0 && reporter is IAccessibilityReporter a11yReporter)
+                {
+                    foreach (var violation in violations)
+                    {
+                        try { await a11yReporter.OnAccessibilityViolationAsync(violation, testInfo); }
+                        catch { }
+                    }
+                }
+
+                // In enforce mode, override a passing test to failed when Error violations exist
+                if (result.Passed
+                    && string.Equals(a11yMode, "enforce", StringComparison.OrdinalIgnoreCase)
+                    && violations.Any(v => v.Severity == AccessibilityViolationSeverity.Error))
+                {
+                    var count = violations.Count(v => v.Severity == AccessibilityViolationSeverity.Error);
+                    result = result with
+                    {
+                        Passed = false,
+                        ErrorMessage = $"Accessibility enforcement failed: {count} error-severity violation(s) detected.",
+                    };
                 }
 
                 lock (lockObj)

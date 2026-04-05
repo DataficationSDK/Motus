@@ -3,7 +3,7 @@ using TestResult = Motus.Abstractions.TestResult;
 
 namespace Motus.Tests.Plugins;
 
-internal sealed class RecordingReporter : IReporter
+internal sealed class RecordingReporter : IReporter, IAccessibilityReporter
 {
     internal List<string> Calls { get; } = [];
 
@@ -31,6 +31,22 @@ internal sealed class RecordingReporter : IReporter
         Calls.Add($"RunEnd:{summary.Passed}p:{summary.Failed}f:{summary.Skipped}s");
         return Task.CompletedTask;
     }
+
+    public Task OnAccessibilityViolationAsync(AccessibilityViolation violation, TestInfo test)
+    {
+        Calls.Add($"A11Y:{violation.RuleId}:{test.TestName}");
+        return Task.CompletedTask;
+    }
+}
+
+internal sealed class PlainReporter : IReporter
+{
+    internal List<string> Calls { get; } = [];
+
+    public Task OnTestRunStartAsync(TestSuiteInfo suite) { Calls.Add("RunStart"); return Task.CompletedTask; }
+    public Task OnTestStartAsync(TestInfo test) { Calls.Add("TestStart"); return Task.CompletedTask; }
+    public Task OnTestEndAsync(TestInfo test, TestResult result) { Calls.Add("TestEnd"); return Task.CompletedTask; }
+    public Task OnTestRunEndAsync(TestRunSummary summary) { Calls.Add("RunEnd"); return Task.CompletedTask; }
 }
 
 internal sealed class ThrowingReporter : IReporter
@@ -90,6 +106,28 @@ public class ReporterCollectionTests
             new TestInfo("Test1", "Suite1"),
             new TestResult("Test1", true, 50));
         await collection.FireOnTestRunEndAsync(new TestRunSummary("Suite1", 0, 0, 0, 0));
+    }
+
+    [TestMethod]
+    public async Task FireOnAccessibilityViolation_DispatchesToA11yReportersOnly()
+    {
+        var collection = new ReporterCollection();
+        var a11yReporter = new RecordingReporter(); // implements IAccessibilityReporter
+        var plainReporter = new PlainReporter(); // does NOT implement IAccessibilityReporter
+        collection.Add(a11yReporter);
+        collection.Add(plainReporter);
+
+        var violation = new AccessibilityViolation(
+            "a11y-alt-text", AccessibilityViolationSeverity.Error,
+            "Missing alt text", null, null, null, "img.hero");
+        var testInfo = new TestInfo("MyTest", "MySuite");
+
+        await collection.FireOnAccessibilityViolationAsync(violation, testInfo);
+
+        Assert.AreEqual(1, a11yReporter.Calls.Count);
+        Assert.AreEqual("A11Y:a11y-alt-text:MyTest", a11yReporter.Calls[0]);
+        Assert.AreEqual(0, plainReporter.Calls.Count,
+            "Plain reporter should not receive accessibility violations.");
     }
 
     [TestMethod]

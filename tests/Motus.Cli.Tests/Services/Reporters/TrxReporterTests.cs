@@ -165,4 +165,41 @@ public class TrxReporterTests
         var summary = doc.Descendants(TrxNs + "ResultSummary").First();
         Assert.AreEqual("Completed", summary.Attribute("outcome")!.Value);
     }
+
+    [TestMethod]
+    public async Task AccessibilityViolation_AddsA11yCategory()
+    {
+        var reporter = new TrxReporter(_outputPath);
+
+        var testInfo = new TestInfo("Ns.A11yTest", "Suite1");
+        await reporter.OnTestEndAsync(testInfo, new TestResult("Ns.A11yTest", true, 100));
+        await reporter.OnAccessibilityViolationAsync(
+            new AccessibilityViolation("a11y-alt-text", AccessibilityViolationSeverity.Error,
+                "Missing alt text", null, null, null, null),
+            testInfo);
+        await reporter.OnTestRunEndAsync(new TestRunSummary("Suite1", 1, 0, 0, 100));
+
+        var doc = XDocument.Load(_outputPath);
+        var unitTest = doc.Descendants(TrxNs + "UnitTest").First();
+        var category = unitTest.Element(TrxNs + "TestCategory");
+        Assert.IsNotNull(category, "Test with violations should have a TestCategory element.");
+        var item = category!.Element(TrxNs + "TestCategoryItem");
+        Assert.AreEqual("a11y", item!.Attribute("TestCategory")!.Value);
+    }
+
+    [TestMethod]
+    public async Task NoAccessibilityViolation_NoCategory()
+    {
+        var reporter = new TrxReporter(_outputPath);
+
+        await reporter.OnTestEndAsync(
+            new TestInfo("Ns.CleanTest", "Suite1"),
+            new TestResult("Ns.CleanTest", true, 50));
+        await reporter.OnTestRunEndAsync(new TestRunSummary("Suite1", 1, 0, 0, 50));
+
+        var doc = XDocument.Load(_outputPath);
+        var unitTest = doc.Descendants(TrxNs + "UnitTest").First();
+        Assert.IsNull(unitTest.Element(TrxNs + "TestCategory"),
+            "Test without violations should not have a TestCategory element.");
+    }
 }

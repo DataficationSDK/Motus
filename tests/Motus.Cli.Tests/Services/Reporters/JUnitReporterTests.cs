@@ -128,4 +128,44 @@ public class JUnitReporterTests
         Assert.IsTrue(sysOut.Value.Contains("/tmp/screenshot.png"));
         Assert.IsTrue(sysOut.Value.Contains("/tmp/trace.zip"));
     }
+
+    [TestMethod]
+    public async Task AccessibilityViolations_AddFailureElement()
+    {
+        var reporter = new JUnitReporter(_outputPath);
+
+        var testInfo = new TestInfo("Ns.A11yTest", "Suite1");
+        await reporter.OnTestEndAsync(testInfo, new TestResult("Ns.A11yTest", true, 100));
+        await reporter.OnAccessibilityViolationAsync(
+            new AccessibilityViolation("a11y-alt-text", AccessibilityViolationSeverity.Error,
+                "Image missing alt text", null, null, null, "img.hero"),
+            testInfo);
+        await reporter.OnAccessibilityViolationAsync(
+            new AccessibilityViolation("a11y-heading", AccessibilityViolationSeverity.Warning,
+                "Bad heading hierarchy", null, null, null, null),
+            testInfo);
+        await reporter.OnTestRunEndAsync(new TestRunSummary("Suite1", 1, 0, 0, 100));
+
+        var doc = XDocument.Load(_outputPath);
+        var failure = doc.Descendants("testcase").First().Element("failure")!;
+        Assert.AreEqual("accessibility", failure.Attribute("type")!.Value);
+        Assert.AreEqual("2 accessibility violation(s)", failure.Attribute("message")!.Value);
+        Assert.IsTrue(failure.Value.Contains("[Error] a11y-alt-text"));
+        Assert.IsTrue(failure.Value.Contains("[Warning] a11y-heading"));
+        Assert.IsTrue(failure.Value.Contains("(img.hero)"));
+    }
+
+    [TestMethod]
+    public async Task NoAccessibilityViolations_NoFailureElement()
+    {
+        var reporter = new JUnitReporter(_outputPath);
+
+        await reporter.OnTestEndAsync(
+            new TestInfo("Ns.CleanTest", "Suite1"),
+            new TestResult("Ns.CleanTest", true, 50));
+        await reporter.OnTestRunEndAsync(new TestRunSummary("Suite1", 1, 0, 0, 50));
+
+        var doc = XDocument.Load(_outputPath);
+        Assert.IsNull(doc.Descendants("testcase").First().Element("failure"));
+    }
 }

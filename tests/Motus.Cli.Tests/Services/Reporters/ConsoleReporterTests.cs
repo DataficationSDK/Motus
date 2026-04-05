@@ -68,4 +68,42 @@ public class ConsoleReporterTests
         Assert.IsTrue(output.Contains("11 total"), $"Expected total count, got: {output}");
         Assert.IsTrue(output.Contains("5.5s"), $"Expected duration, got: {output}");
     }
+
+    [TestMethod]
+    public async Task OnAccessibilityViolation_Error_PrintsInline()
+    {
+        var sw = new StringWriter();
+        var reporter = new ConsoleReporter(sw, useColor: false);
+
+        var violation = new AccessibilityViolation(
+            "a11y-alt-text", AccessibilityViolationSeverity.Error,
+            "Image missing alternative text", null, null, null, "img.hero");
+        var test = new TestInfo("MyTest", "Suite1");
+
+        await reporter.OnAccessibilityViolationAsync(violation, test);
+
+        var output = sw.ToString();
+        Assert.IsTrue(output.Contains("[A11Y Error]"), $"Expected severity label, got: {output}");
+        Assert.IsTrue(output.Contains("a11y-alt-text"), $"Expected rule ID, got: {output}");
+        Assert.IsTrue(output.Contains("Image missing alternative text"), $"Expected message, got: {output}");
+        Assert.IsTrue(output.Contains("(img.hero)"), $"Expected selector, got: {output}");
+    }
+
+    [TestMethod]
+    public async Task OnAccessibilityViolation_Warning_PrintsYellowLabel()
+    {
+        var sw = new StringWriter();
+        var reporter = new ConsoleReporter(sw, useColor: false);
+
+        var violation = new AccessibilityViolation(
+            "a11y-heading", AccessibilityViolationSeverity.Warning,
+            "Heading levels should increase by one", null, null, null, null);
+        var test = new TestInfo("MyTest", "Suite1");
+
+        await reporter.OnAccessibilityViolationAsync(violation, test);
+
+        var output = sw.ToString();
+        Assert.IsTrue(output.Contains("[A11Y Warning]"), $"Expected warning label, got: {output}");
+        Assert.IsFalse(output.Contains("("), "No selector should omit parentheses.");
+    }
 }

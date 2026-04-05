@@ -172,11 +172,92 @@ public class TestRunnerTests
         Assert.AreEqual(0, result.Failed);
     }
 
+    [TestMethod]
+    public async Task EnforceMode_FailsPassingTestWithErrorViolations()
+    {
+        var tests = new List<DiscoveredTest>
+        {
+            MakeTest(typeof(ViolationProducingFixture), nameof(ViolationProducingFixture.TestThatProducesViolations)),
+        };
+
+        var reporter = new A11yRecordingReporter();
+        var runner = new TestRunner(1);
+        var result = await runner.RunAsync(tests, reporter, a11yMode: "enforce");
+
+        Assert.AreEqual(1, result.Failed,
+            "Test should fail in enforce mode when Error-severity violations are present.");
+        Assert.AreEqual(0, result.Passed);
+        Assert.IsTrue(reporter.ViolationCalls.Count > 0,
+            "Violations should be dispatched to IAccessibilityReporter.");
+    }
+
+    [TestMethod]
+    public async Task WarnMode_DoesNotFailPassingTestWithViolations()
+    {
+        var tests = new List<DiscoveredTest>
+        {
+            MakeTest(typeof(ViolationProducingFixture), nameof(ViolationProducingFixture.TestThatProducesViolations)),
+        };
+
+        var reporter = new A11yRecordingReporter();
+        var runner = new TestRunner(1);
+        var result = await runner.RunAsync(tests, reporter, a11yMode: "warn");
+
+        Assert.AreEqual(0, result.Failed,
+            "Test should not fail in warn mode even with Error-severity violations.");
+        Assert.AreEqual(1, result.Passed);
+        Assert.IsTrue(reporter.ViolationCalls.Count > 0,
+            "Violations should still be dispatched in warn mode.");
+    }
+
+    [TestMethod]
+    public async Task NoA11yMode_DoesNotFailPassingTestWithViolations()
+    {
+        var tests = new List<DiscoveredTest>
+        {
+            MakeTest(typeof(ViolationProducingFixture), nameof(ViolationProducingFixture.TestThatProducesViolations)),
+        };
+
+        var reporter = new A11yRecordingReporter();
+        var runner = new TestRunner(1);
+        var result = await runner.RunAsync(tests, reporter, a11yMode: null);
+
+        Assert.AreEqual(1, result.Passed,
+            "Without a11y mode, violations should not affect test results.");
+    }
+
+    public class ViolationProducingFixture
+    {
+        public void TestThatProducesViolations()
+        {
+            // Simulate what the AccessibilityAuditHook does during test execution
+            AccessibilityViolationSink.Add(new AccessibilityViolation(
+                "a11y-alt-text", AccessibilityViolationSeverity.Error,
+                "Image missing alt text", null, null, null, "img.hero"));
+        }
+    }
+
     private sealed class NullReporter : IReporter
     {
         public Task OnTestRunStartAsync(TestSuiteInfo suite) => Task.CompletedTask;
         public Task OnTestStartAsync(TestInfo test) => Task.CompletedTask;
         public Task OnTestEndAsync(TestInfo test, Motus.Abstractions.TestResult result) => Task.CompletedTask;
         public Task OnTestRunEndAsync(TestRunSummary summary) => Task.CompletedTask;
+    }
+
+    private sealed class A11yRecordingReporter : IReporter, IAccessibilityReporter
+    {
+        internal List<(string RuleId, string TestName)> ViolationCalls { get; } = [];
+
+        public Task OnTestRunStartAsync(TestSuiteInfo suite) => Task.CompletedTask;
+        public Task OnTestStartAsync(TestInfo test) => Task.CompletedTask;
+        public Task OnTestEndAsync(TestInfo test, Motus.Abstractions.TestResult result) => Task.CompletedTask;
+        public Task OnTestRunEndAsync(TestRunSummary summary) => Task.CompletedTask;
+
+        public Task OnAccessibilityViolationAsync(AccessibilityViolation violation, TestInfo test)
+        {
+            ViolationCalls.Add((violation.RuleId, test.TestName));
+            return Task.CompletedTask;
+        }
     }
 }
