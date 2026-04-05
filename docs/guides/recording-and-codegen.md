@@ -10,7 +10,7 @@ Motus ships two CLI commands that eliminate the need to write browser test boile
 
 ### How it works
 
-1. **Browser launch.** A headed browser instance is launched (or an existing one is attached to via `--connect`). A new page is opened at the viewport size 1024x768.
+1. **Browser launch.** A headed browser instance is launched (or an existing one is attached to via `--connect`). A new page is opened at the configured viewport size (default 1024x768, adjustable with `--width` and `--height`).
 2. **Script injection.** The `ActionCaptureEngine` registers a DOM binding and injects the recorder script via `AddInitScript` so that the listener survives page navigations automatically. The script is also evaluated immediately on the current page if one is already loaded.
 3. **Event capture.** The `InputStateMachine` receives raw DOM events (mouse, keyboard, form changes) through the binding callback and the CDP session. Navigation events are captured via the `FrameNavigated` page event. Dialog open/close state is tracked across the `Dialog` page event and the `Page.javascriptDialogClosed` CDP event. File chooser activations are captured via the `FileChooser` page event.
 4. **Selector inference.** For actions that target a specific element (click, fill, select, check, file upload), the `SelectorInferenceEngine` resolves the element and walks registered selector strategies in priority order until it finds a selector that matches exactly one node in the DOM.
@@ -29,6 +29,8 @@ Motus ships two CLI commands that eliminate the need to write browser test boile
 | `--method-name` | `RecordedScenario` | Name of the generated test method |
 | `--namespace` | `Motus.Generated` | Namespace for the generated file |
 | `--preserve-timing` | `false` | Emit `Task.Delay` calls between actions matching the original timing gaps (gaps shorter than 250 ms are omitted) |
+| `--width` | `1024` | Viewport width in pixels |
+| `--height` | `768` | Viewport height in pixels |
 
 When `--connect` is not provided, the command always launches a headed browser regardless of any other flags. There is no `--headless` option for `motus record`.
 

@@ -18,6 +18,8 @@ public static class RecordCommand
         var methodNameOpt = new Option<string>("--method-name") { Description = "Generated test method name", DefaultValueFactory = _ => "RecordedScenario" };
         var namespaceOpt = new Option<string>("--namespace") { Description = "Generated test namespace", DefaultValueFactory = _ => "Motus.Generated" };
         var preserveTimingOpt = new Option<bool>("--preserve-timing") { Description = "Emit delays between actions matching the original user timing" };
+        var widthOpt = new Option<int>("--width") { Description = "Viewport width in pixels", DefaultValueFactory = _ => 1024 };
+        var heightOpt = new Option<int>("--height") { Description = "Viewport height in pixels", DefaultValueFactory = _ => 768 };
 
         var cmd = new Command("record", "Record browser interactions and generate test code")
         {
@@ -30,6 +32,8 @@ public static class RecordCommand
             methodNameOpt,
             namespaceOpt,
             preserveTimingOpt,
+            widthOpt,
+            heightOpt,
         };
 
         cmd.SetAction(async (parseResult, ct) =>
@@ -42,6 +46,8 @@ public static class RecordCommand
             var methodName = parseResult.GetValue(methodNameOpt)!;
             var ns = parseResult.GetValue(namespaceOpt)!;
             var preserveTiming = parseResult.GetValue(preserveTimingOpt);
+            var width = parseResult.GetValue(widthOpt);
+            var height = parseResult.GetValue(heightOpt);
 
             IBrowser browser;
             if (connect is not null)
@@ -63,7 +69,7 @@ public static class RecordCommand
             {
                 var page = await browser.NewPageAsync(new ContextOptions
                 {
-                    Viewport = new ViewportSize(1024, 768),
+                    Viewport = new ViewportSize(width, height),
                 });
                 var engine = new ActionCaptureEngine();
                 await engine.StartAsync(page, ct);
