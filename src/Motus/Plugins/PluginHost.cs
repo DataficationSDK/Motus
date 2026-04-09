@@ -21,6 +21,7 @@ internal sealed class PluginHost
             new BuiltinSelectorsPlugin(),
             new AccessibilityRulesPlugin(),
             new AccessibilityAuditHook(options.Accessibility),
+            new PerformanceMetricsCollector(options.Performance),
         };
         foreach (var plugin in builtins)
         {

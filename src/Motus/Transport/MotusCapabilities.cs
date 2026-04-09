@@ -27,6 +27,9 @@ internal enum MotusCapabilities
     /// <summary>Supports CDP Accessibility domain (AX tree query).</summary>
     AccessibilityTree = 1 << 8,
 
+    /// <summary>Supports CDP Performance domain (metrics collection).</summary>
+    PerformanceMetrics = 1 << 9,
+
     /// <summary>Supports WebDriver BiDi native network intercept.</summary>
     BiDiNetworkIntercept = 1 << 4,
 
@@ -38,7 +41,7 @@ internal enum MotusCapabilities
 
     /// <summary>Full CDP feature set.</summary>
     AllCdp = TargetMultiplexing | FetchInterception | EmulationOverrides | Tracing
-           | SecurityOverrides | AccessibilityTree,
+           | SecurityOverrides | AccessibilityTree | PerformanceMetrics,
 
     /// <summary>Full BiDi feature set.</summary>
     AllBiDi = BiDiNetworkIntercept | BiDiScriptEvaluation | BiDiInputActions

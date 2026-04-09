@@ -43,4 +43,7 @@ public sealed record LaunchOptions
 
     /// <summary>Accessibility audit hook configuration. Disabled by default.</summary>
     public AccessibilityOptions? Accessibility { get; init; }
+
+    /// <summary>Performance metrics collector configuration. Disabled by default.</summary>
+    public PerformanceOptions? Performance { get; init; }
 }

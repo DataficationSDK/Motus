@@ -202,6 +202,10 @@ namespace Motus;
 [JsonSerializable(typeof(DomDebuggerGetEventListenersParams))]
 [JsonSerializable(typeof(DomDebuggerGetEventListenersResult))]
 [JsonSerializable(typeof(DomDebuggerEventListener))]
+// --- Performance domain ---
+[JsonSerializable(typeof(PerformanceEnableResult))]
+[JsonSerializable(typeof(PerformanceGetMetricsResult))]
+[JsonSerializable(typeof(PerformanceMetricEntry))]
 // --- Tracing domain ---
 [JsonSerializable(typeof(TracingStartParams))]
 [JsonSerializable(typeof(TracingStartResult))]
@@ -1055,6 +1059,16 @@ internal sealed record IoReadResult(
 internal sealed record IoCloseParams(string Handle);
 
 internal sealed record IoCloseResult();
+
+// ============================================================================
+// Performance domain
+// ============================================================================
+
+internal sealed record PerformanceEnableResult();
+
+internal sealed record PerformanceMetricEntry(string Name, double Value);
+
+internal sealed record PerformanceGetMetricsResult(PerformanceMetricEntry[] Metrics);
 
 // ============================================================================
 // DOMDebugger domain
