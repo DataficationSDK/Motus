@@ -68,7 +68,7 @@ internal sealed class Download : IDownload
     }
 
     public Task CancelAsync()
-        => throw new NotSupportedException("Download cancellation requires Fetch domain (Phase 1J).");
+        => throw new NotSupportedException("Download cancellation requires Fetch domain support.");
 
     private readonly record struct DownloadOutcome(bool Success, string? Error);
 }

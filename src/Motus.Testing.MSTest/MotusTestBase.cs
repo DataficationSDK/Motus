@@ -1,3 +1,4 @@
+using System.Reflection;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Motus.Abstractions;
 
@@ -73,6 +74,15 @@ public abstract class MotusTestBase
 
         _failureTracing = new FailureTracing();
         await _failureTracing.StartIfEnabledAsync(_context).ConfigureAwait(false);
+
+        var testMethodName = TestContext?.TestName;
+        var methodInfo = testMethodName is not null
+            ? GetType().GetMethod(testMethodName, BindingFlags.Public | BindingFlags.Instance)
+            : null;
+        var methodAttr = methodInfo?.GetCustomAttribute<PerformanceBudgetAttribute>();
+        var classAttr = GetType().GetCustomAttribute<PerformanceBudgetAttribute>();
+        var activeAttr = methodAttr ?? classAttr;
+        PerformanceBudgetContext.Push(activeAttr?.ToBudget());
     }
 
     [TestCleanup]
@@ -88,5 +98,7 @@ public abstract class MotusTestBase
             _context = null;
             _page = null;
         }
+
+        PerformanceBudgetContext.Clear();
     }
 }

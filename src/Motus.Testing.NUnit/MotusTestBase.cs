@@ -1,3 +1,4 @@
+using System.Reflection;
 using Motus.Abstractions;
 using NUnit.Framework;
 
@@ -66,6 +67,12 @@ public abstract class MotusTestBase
 
         _failureTracing = new FailureTracing();
         await _failureTracing.StartIfEnabledAsync(_context);
+
+        var methodInfo = TestContext.CurrentContext.Test.Method?.MethodInfo;
+        var methodAttr = methodInfo?.GetCustomAttribute<PerformanceBudgetAttribute>();
+        var classAttr = GetType().GetCustomAttribute<PerformanceBudgetAttribute>();
+        var activeAttr = methodAttr ?? classAttr;
+        PerformanceBudgetContext.Push(activeAttr?.ToBudget());
     }
 
     [TearDown]
@@ -81,5 +88,7 @@ public abstract class MotusTestBase
             _context = null;
             _page = null;
         }
+
+        PerformanceBudgetContext.Clear();
     }
 }

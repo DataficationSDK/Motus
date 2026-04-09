@@ -323,4 +323,123 @@ public class MotusConfigTests
         // file value preserved when no env override
         Assert.AreEqual(50, config.Launch.SlowMo);
     }
+
+    // ── Group 5: Performance config section ──
+
+    [TestMethod]
+    public void Deserialize_PerformanceSection_AllFieldsPopulated()
+    {
+        var json = """
+        {
+            "performance": {
+                "enable": true,
+                "collectAfterNavigation": false,
+                "lcp": 2500,
+                "fcp": 1800,
+                "ttfb": 600,
+                "cls": 0.1,
+                "inp": 200,
+                "jsHeapSize": 50000000,
+                "domNodeCount": 1500
+            }
+        }
+        """;
+
+        var config = MotusConfigLoader.LoadFrom(json, _ => null);
+
+        Assert.IsNotNull(config.Performance);
+        Assert.AreEqual(true, config.Performance.Enable);
+        Assert.AreEqual(false, config.Performance.CollectAfterNavigation);
+        Assert.AreEqual(2500.0, config.Performance.Lcp);
+        Assert.AreEqual(1800.0, config.Performance.Fcp);
+        Assert.AreEqual(600.0, config.Performance.Ttfb);
+        Assert.AreEqual(0.1, config.Performance.Cls);
+        Assert.AreEqual(200.0, config.Performance.Inp);
+        Assert.AreEqual(50000000L, config.Performance.JsHeapSize);
+        Assert.AreEqual(1500, config.Performance.DomNodeCount);
+    }
+
+    [TestMethod]
+    public void Deserialize_PerformanceSection_PartialFields()
+    {
+        var json = """{ "performance": { "lcp": 2500, "cls": 0.1 } }""";
+
+        var config = MotusConfigLoader.LoadFrom(json, _ => null);
+
+        Assert.IsNotNull(config.Performance);
+        Assert.AreEqual(2500.0, config.Performance.Lcp);
+        Assert.AreEqual(0.1, config.Performance.Cls);
+        Assert.IsNull(config.Performance.Enable);
+        Assert.IsNull(config.Performance.Fcp);
+        Assert.IsNull(config.Performance.Inp);
+        Assert.IsNull(config.Performance.JsHeapSize);
+    }
+
+    [TestMethod]
+    public void EnvVar_Performance_Enable()
+    {
+        var config = MotusConfigLoader.LoadFrom(null, name =>
+            name == "MOTUS_PERFORMANCE_ENABLE" ? "true" : null);
+
+        Assert.IsNotNull(config.Performance);
+        Assert.AreEqual(true, config.Performance.Enable);
+    }
+
+    [TestMethod]
+    public void EnvVar_Performance_Lcp()
+    {
+        var config = MotusConfigLoader.LoadFrom(null, name =>
+            name == "MOTUS_PERFORMANCE_LCP" ? "2500" : null);
+
+        Assert.IsNotNull(config.Performance);
+        Assert.AreEqual(2500.0, config.Performance.Lcp);
+    }
+
+    [TestMethod]
+    public void EnvVar_Performance_Cls()
+    {
+        var config = MotusConfigLoader.LoadFrom(null, name =>
+            name == "MOTUS_PERFORMANCE_CLS" ? "0.1" : null);
+
+        Assert.IsNotNull(config.Performance);
+        Assert.AreEqual(0.1, config.Performance.Cls);
+    }
+
+    [TestMethod]
+    public void EnvVar_Performance_OverridesFileValue()
+    {
+        var json = """{ "performance": { "lcp": 2500 } }""";
+        var config = MotusConfigLoader.LoadFrom(json, name =>
+            name == "MOTUS_PERFORMANCE_LCP" ? "3000" : null);
+
+        Assert.AreEqual(3000.0, config.Performance!.Lcp);
+    }
+
+    [TestMethod]
+    public void ConfigMerge_ToBudget_WithThresholds_ReturnsBudget()
+    {
+        var cfg = new MotusPerformanceConfig(Lcp: 2500, Cls: 0.1);
+        var budget = ConfigMerge.ToBudget(cfg);
+
+        Assert.IsNotNull(budget);
+        Assert.AreEqual(2500.0, budget.Lcp);
+        Assert.AreEqual(0.1, budget.Cls);
+        Assert.IsNull(budget.Fcp);
+    }
+
+    [TestMethod]
+    public void ConfigMerge_ToBudget_NoThresholds_ReturnsNull()
+    {
+        var cfg = new MotusPerformanceConfig(Enable: true);
+        var budget = ConfigMerge.ToBudget(cfg);
+
+        Assert.IsNull(budget);
+    }
+
+    [TestMethod]
+    public void ConfigMerge_ToBudget_NullConfig_ReturnsNull()
+    {
+        var budget = ConfigMerge.ToBudget(null);
+        Assert.IsNull(budget);
+    }
 }

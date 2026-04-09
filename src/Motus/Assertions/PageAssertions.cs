@@ -81,6 +81,105 @@ public sealed class PageAssertions
         }
     }
 
+    public async Task ToMeetPerformanceBudgetAsync(AssertionOptions? options = null)
+    {
+        var budget = ResolveBudget();
+
+        await RetryAsync(async ct =>
+        {
+            var metrics = _page.LastPerformanceMetrics;
+            if (metrics is null)
+                return (false, "<no metrics collected>");
+
+            var result = budget.Evaluate(metrics);
+            var actual = result.Passed
+                ? "all metrics within budget"
+                : FormatBudgetFailures(result);
+            return (result.Passed, actual);
+        }, "ToMeetPerformanceBudget", "all metrics within budget", options)
+            .ConfigureAwait(false);
+    }
+
+    public Task ToHaveLcpBelowAsync(double thresholdMs, AssertionOptions? options = null) =>
+        RetryAsync(async ct =>
+        {
+            var metrics = _page.LastPerformanceMetrics;
+            if (metrics?.Lcp is null)
+                return (false, "<LCP not collected>");
+            var actual = metrics.Lcp.Value;
+            return (actual <= thresholdMs, $"{actual:F1}ms");
+        }, "ToHaveLcpBelow", $"< {thresholdMs}ms", options);
+
+    public Task ToHaveFcpBelowAsync(double thresholdMs, AssertionOptions? options = null) =>
+        RetryAsync(async ct =>
+        {
+            var metrics = _page.LastPerformanceMetrics;
+            if (metrics?.Fcp is null)
+                return (false, "<FCP not collected>");
+            var actual = metrics.Fcp.Value;
+            return (actual <= thresholdMs, $"{actual:F1}ms");
+        }, "ToHaveFcpBelow", $"< {thresholdMs}ms", options);
+
+    public Task ToHaveTtfbBelowAsync(double thresholdMs, AssertionOptions? options = null) =>
+        RetryAsync(async ct =>
+        {
+            var metrics = _page.LastPerformanceMetrics;
+            if (metrics?.Ttfb is null)
+                return (false, "<TTFB not collected>");
+            var actual = metrics.Ttfb.Value;
+            return (actual <= thresholdMs, $"{actual:F1}ms");
+        }, "ToHaveTtfbBelow", $"< {thresholdMs}ms", options);
+
+    public Task ToHaveClsBelowAsync(double threshold, AssertionOptions? options = null) =>
+        RetryAsync(async ct =>
+        {
+            var metrics = _page.LastPerformanceMetrics;
+            if (metrics?.Cls is null)
+                return (false, "<CLS not collected>");
+            var actual = metrics.Cls.Value;
+            return (actual <= threshold, $"{actual:F3}");
+        }, "ToHaveClsBelow", $"< {threshold}", options);
+
+    public Task ToHaveInpBelowAsync(double thresholdMs, AssertionOptions? options = null) =>
+        RetryAsync(async ct =>
+        {
+            var metrics = _page.LastPerformanceMetrics;
+            if (metrics?.Inp is null)
+                return (false, "<INP not collected>");
+            var actual = metrics.Inp.Value;
+            return (actual <= thresholdMs, $"{actual:F1}ms");
+        }, "ToHaveInpBelow", $"< {thresholdMs}ms", options);
+
+    private static PerformanceBudget ResolveBudget()
+    {
+        if (PerformanceBudgetContext.Current is { } ambient)
+            return ambient;
+
+        var configBudget = ConfigMerge.ToBudget(MotusConfigLoader.Config.Performance);
+        if (configBudget is not null)
+            return configBudget;
+
+        throw new InvalidOperationException(
+            "No performance budget is active. Apply [PerformanceBudget] to the test method or class, " +
+            "or configure budget thresholds in motus.config.json under the \"performance\" key.");
+    }
+
+    private static string FormatBudgetFailures(PerformanceBudgetResult result)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("Performance budget exceeded:");
+        foreach (var entry in result.Entries)
+        {
+            if (!entry.Passed)
+            {
+                var actualStr = entry.ActualValue.HasValue ? $"{entry.ActualValue.Value:F1}" : "null";
+                var deltaStr = entry.Delta.HasValue ? $"{entry.Delta.Value:F1}" : "?";
+                sb.AppendLine($"  {entry.MetricName}: {actualStr} (budget: {entry.Threshold:F1}, over by {deltaStr})");
+            }
+        }
+        return sb.ToString().TrimEnd();
+    }
+
     private static IReadOnlyList<IAccessibilityRule> FilterRules(
         IReadOnlyList<IAccessibilityRule> rules, IReadOnlyList<string> skippedRules)
     {

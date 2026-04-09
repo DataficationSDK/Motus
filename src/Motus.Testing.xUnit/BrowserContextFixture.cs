@@ -1,3 +1,4 @@
+using System.Reflection;
 using Motus.Abstractions;
 using Xunit;
 
@@ -42,6 +43,9 @@ public class BrowserContextFixture : IAsyncLifetime
     {
         _context = await _browserFixture.NewContextAsync(ContextOptions);
         _page = await _context.NewPageAsync();
+
+        var classAttr = GetType().GetCustomAttribute<PerformanceBudgetAttribute>();
+        PerformanceBudgetContext.Push(classAttr?.ToBudget());
     }
 
     public async Task DisposeAsync()
@@ -52,5 +56,7 @@ public class BrowserContextFixture : IAsyncLifetime
             _context = null;
             _page = null;
         }
+
+        PerformanceBudgetContext.Clear();
     }
 }

@@ -46,7 +46,42 @@ internal static class ConfigMerge
             };
         }
 
+        var perf = MotusConfigLoader.Config.Performance;
+        if (perf is not null && options.Performance is null)
+        {
+            result = result with
+            {
+                Performance = new PerformanceOptions
+                {
+                    Enable = perf.Enable ?? false,
+                    CollectAfterNavigation = perf.CollectAfterNavigation ?? true,
+                }
+            };
+        }
+
         return result;
+    }
+
+    internal static PerformanceBudget? ToBudget(MotusPerformanceConfig? cfg)
+    {
+        if (cfg is null)
+            return null;
+
+        if (cfg.Lcp is null && cfg.Fcp is null && cfg.Ttfb is null &&
+            cfg.Cls is null && cfg.Inp is null && cfg.JsHeapSize is null &&
+            cfg.DomNodeCount is null)
+            return null;
+
+        return new PerformanceBudget
+        {
+            Lcp = cfg.Lcp,
+            Fcp = cfg.Fcp,
+            Ttfb = cfg.Ttfb,
+            Cls = cfg.Cls,
+            Inp = cfg.Inp,
+            JsHeapSize = cfg.JsHeapSize,
+            DomNodeCount = cfg.DomNodeCount,
+        };
     }
 
     internal static ContextOptions ApplyConfig(ContextOptions options)

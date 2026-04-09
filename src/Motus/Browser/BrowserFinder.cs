@@ -10,7 +10,7 @@ internal static class BrowserFinder
 {
     /// <summary>
     /// When set, this path is prepended to candidate lists for all channels.
-    /// Used by the install system (Phase 3D) to register downloaded binaries.
+    /// Used by the install system to register downloaded binaries.
     /// </summary>
     internal static string? InstalledBinariesPath { get; set; }
 

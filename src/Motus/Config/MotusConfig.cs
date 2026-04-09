@@ -49,6 +49,17 @@ internal sealed record MotusAccessibilityConfig(
     bool? IncludeWarnings = null,
     string[]? SkipRules = null);
 
+internal sealed record MotusPerformanceConfig(
+    bool? Enable = null,
+    bool? CollectAfterNavigation = null,
+    double? Lcp = null,
+    double? Fcp = null,
+    double? Ttfb = null,
+    double? Cls = null,
+    double? Inp = null,
+    long? JsHeapSize = null,
+    int? DomNodeCount = null);
+
 internal sealed record MotusRootConfig(
     string? Motus = null,
     MotusLaunchConfig? Launch = null,
@@ -58,7 +69,8 @@ internal sealed record MotusRootConfig(
     MotusAssertionsConfig? Assertions = null,
     MotusRecorderConfig? Recorder = null,
     MotusFailureConfig? Failure = null,
-    MotusAccessibilityConfig? Accessibility = null);
+    MotusAccessibilityConfig? Accessibility = null,
+    MotusPerformanceConfig? Performance = null);
 
 internal static class MotusConfigLoader
 {
@@ -177,6 +189,33 @@ internal static class MotusConfigLoader
         if (envReader("MOTUS_ACCESSIBILITY_MODE") is { Length: > 0 } a11yMode)
         { accessibility = accessibility with { Mode = a11yMode }; accessibilityChanged = true; }
 
+        var performance = config.Performance ?? new MotusPerformanceConfig();
+        var performanceChanged = false;
+
+        if (TryParseBool(envReader("MOTUS_PERFORMANCE_ENABLE"), out var perfEnable))
+        { performance = performance with { Enable = perfEnable }; performanceChanged = true; }
+
+        if (TryParseDouble(envReader("MOTUS_PERFORMANCE_LCP"), out var perfLcp))
+        { performance = performance with { Lcp = perfLcp }; performanceChanged = true; }
+
+        if (TryParseDouble(envReader("MOTUS_PERFORMANCE_FCP"), out var perfFcp))
+        { performance = performance with { Fcp = perfFcp }; performanceChanged = true; }
+
+        if (TryParseDouble(envReader("MOTUS_PERFORMANCE_TTFB"), out var perfTtfb))
+        { performance = performance with { Ttfb = perfTtfb }; performanceChanged = true; }
+
+        if (TryParseDouble(envReader("MOTUS_PERFORMANCE_CLS"), out var perfCls))
+        { performance = performance with { Cls = perfCls }; performanceChanged = true; }
+
+        if (TryParseDouble(envReader("MOTUS_PERFORMANCE_INP"), out var perfInp))
+        { performance = performance with { Inp = perfInp }; performanceChanged = true; }
+
+        if (TryParseLong(envReader("MOTUS_PERFORMANCE_JS_HEAP_SIZE"), out var perfHeap))
+        { performance = performance with { JsHeapSize = perfHeap }; performanceChanged = true; }
+
+        if (TryParseInt(envReader("MOTUS_PERFORMANCE_DOM_NODE_COUNT"), out var perfDom))
+        { performance = performance with { DomNodeCount = perfDom }; performanceChanged = true; }
+
         return config with
         {
             Launch = launchChanged ? launch : config.Launch,
@@ -185,6 +224,7 @@ internal static class MotusConfigLoader
             Assertions = assertionsChanged ? assertions : config.Assertions,
             Failure = failureChanged ? failure : config.Failure,
             Accessibility = accessibilityChanged ? accessibility : config.Accessibility,
+            Performance = performanceChanged ? performance : config.Performance,
         };
     }
 
@@ -203,6 +243,22 @@ internal static class MotusConfigLoader
     private static bool TryParseInt(string? value, out int result)
     {
         if (value is not null && int.TryParse(value.Trim(), out result))
+            return true;
+        result = default;
+        return false;
+    }
+
+    private static bool TryParseDouble(string? value, out double result)
+    {
+        if (value is not null && double.TryParse(value.Trim(), System.Globalization.CultureInfo.InvariantCulture, out result))
+            return true;
+        result = default;
+        return false;
+    }
+
+    private static bool TryParseLong(string? value, out long result)
+    {
+        if (value is not null && long.TryParse(value.Trim(), out result))
             return true;
         result = default;
         return false;
