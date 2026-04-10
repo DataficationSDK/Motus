@@ -40,6 +40,7 @@ public class PerformanceTests : MotusTestBase
     }
 
     [TestMethod]
+    [TestCategory("Integration")]
     public async Task LcpBelow_IndividualMetricAssertion()
     {
         await Fixtures.SetPageContentAsync(Page, SimplePage);
@@ -47,6 +48,7 @@ public class PerformanceTests : MotusTestBase
     }
 
     [TestMethod]
+    [TestCategory("Integration")]
     public async Task FcpBelow_IndividualMetricAssertion()
     {
         await Fixtures.SetPageContentAsync(Page, SimplePage);
@@ -54,6 +56,7 @@ public class PerformanceTests : MotusTestBase
     }
 
     [TestMethod]
+    [TestCategory("Integration")]
     public async Task ClsBelow_NoLayoutShift()
     {
         await Fixtures.SetPageContentAsync(Page, SimplePage);

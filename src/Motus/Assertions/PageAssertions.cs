@@ -150,8 +150,11 @@ public sealed class PageAssertions
             return (actual <= thresholdMs, $"{actual:F1}ms");
         }, "ToHaveInpBelow", $"< {thresholdMs}ms", options);
 
-    private static PerformanceBudget ResolveBudget()
+    private PerformanceBudget ResolveBudget()
     {
+        if (_page.ActivePerformanceBudget is { } pageBudget)
+            return pageBudget;
+
         if (PerformanceBudgetContext.Current is { } ambient)
             return ambient;
 

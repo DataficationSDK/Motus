@@ -45,18 +45,22 @@ public class BrowserContextFixture : IAsyncLifetime
         _page = await _context.NewPageAsync();
 
         var classAttr = GetType().GetCustomAttribute<PerformanceBudgetAttribute>();
-        PerformanceBudgetContext.Push(classAttr?.ToBudget());
+        var budget = classAttr?.ToBudget();
+        PerformanceBudgetContext.Push(budget);
+        PerformanceBudgetContext.SetBudget(_page, budget);
     }
 
     public async Task DisposeAsync()
     {
+        if (_page is not null)
+            PerformanceBudgetContext.ClearBudget(_page);
+        PerformanceBudgetContext.Clear();
+
         if (_context is not null)
         {
             await _context.CloseAsync();
             _context = null;
             _page = null;
         }
-
-        PerformanceBudgetContext.Clear();
     }
 }

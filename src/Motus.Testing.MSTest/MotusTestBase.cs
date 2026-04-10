@@ -82,12 +82,18 @@ public abstract class MotusTestBase
         var methodAttr = methodInfo?.GetCustomAttribute<PerformanceBudgetAttribute>();
         var classAttr = GetType().GetCustomAttribute<PerformanceBudgetAttribute>();
         var activeAttr = methodAttr ?? classAttr;
-        PerformanceBudgetContext.Push(activeAttr?.ToBudget());
+        var budget = activeAttr?.ToBudget();
+        PerformanceBudgetContext.Push(budget);
+        PerformanceBudgetContext.SetBudget(_page, budget);
     }
 
     [TestCleanup]
     public async Task MotusTestCleanup()
     {
+        if (_page is not null)
+            PerformanceBudgetContext.ClearBudget(_page);
+        PerformanceBudgetContext.Clear();
+
         if (_context is not null)
         {
             var testFailed = TestContext?.CurrentTestOutcome != UnitTestOutcome.Passed;
@@ -98,7 +104,5 @@ public abstract class MotusTestBase
             _context = null;
             _page = null;
         }
-
-        PerformanceBudgetContext.Clear();
     }
 }

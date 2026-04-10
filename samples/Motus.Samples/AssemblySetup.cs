@@ -5,7 +5,11 @@ public class AssemblySetup
 {
     [AssemblyInitialize]
     public static async Task Initialize(TestContext _) =>
-        await MotusTestBase.LaunchBrowserAsync(new LaunchOptions { Headless = true });
+        await MotusTestBase.LaunchBrowserAsync(new LaunchOptions
+        {
+            Headless = true,
+            Performance = new PerformanceOptions { Enable = true },
+        });
 
     [AssemblyCleanup]
     public static async Task Cleanup() =>
