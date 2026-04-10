@@ -43,7 +43,8 @@ public class PerformanceTests : MotusTestBase
     [TestCategory("Integration")]
     public async Task LcpBelow_IndividualMetricAssertion()
     {
-        await Fixtures.SetPageContentAsync(Page, SimplePage);
+        // Individual metric assertions require a real HTTP origin for Web Vitals to fire.
+        await Page.GotoAsync("https://example.com");
         await Expect.That(Page).ToHaveLcpBelowAsync(5000);
     }
 
@@ -51,7 +52,7 @@ public class PerformanceTests : MotusTestBase
     [TestCategory("Integration")]
     public async Task FcpBelow_IndividualMetricAssertion()
     {
-        await Fixtures.SetPageContentAsync(Page, SimplePage);
+        await Page.GotoAsync("https://example.com");
         await Expect.That(Page).ToHaveFcpBelowAsync(5000);
     }
 
@@ -59,7 +60,7 @@ public class PerformanceTests : MotusTestBase
     [TestCategory("Integration")]
     public async Task ClsBelow_NoLayoutShift()
     {
-        await Fixtures.SetPageContentAsync(Page, SimplePage);
+        await Page.GotoAsync("https://example.com");
         await Expect.That(Page).ToHaveClsBelowAsync(0.5);
     }
 
