@@ -43,6 +43,8 @@ motus run MyTests.dll --reporter junit --output results.xml
 | `--workers` | auto | Number of parallel workers (auto = processor count) |
 | `--visual` | false | Launch the visual runner on port 5100 |
 | `--verbose` | false | Show detailed ASP.NET Core log output (visual runner) |
+| `--a11y` | none | Enable accessibility audits: `warn` (report only) or `enforce` (fail on violations) |
+| `--perf-budget` | false | Enable performance budget enforcement from config |
 
 ### `motus record`
 

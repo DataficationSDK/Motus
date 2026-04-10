@@ -66,6 +66,17 @@ When Motus initializes, it walks up from `Environment.CurrentDirectory`, checkin
     "auditAfterActions": false,
     "includeWarnings": true,
     "skipRules": []
+  },
+  "performance": {
+    "enable": false,
+    "collectAfterNavigation": true,
+    "lcp": null,
+    "fcp": null,
+    "ttfb": null,
+    "cls": null,
+    "inp": null,
+    "jsHeapSize": null,
+    "domNodeCount": null
   }
 }
 ```
@@ -154,6 +165,22 @@ Controls the built-in accessibility audit hook. When enabled, Motus runs axe-sty
 | `includeWarnings` | `bool` | `true` | Treat warning-severity findings as failures alongside errors (when mode is `Enforce`). |
 | `skipRules` | `string[]` | `null` | Rule IDs to exclude from every audit, e.g. `["a11y-color-contrast"]`. |
 
+### `performance` Section
+
+Controls the built-in performance metrics collector and budget thresholds. When enabled, Motus collects Core Web Vitals and supplementary metrics during test execution. Setting metric thresholds activates budget enforcement.
+
+| Property | Type | Default | Description |
+|---|---|---|---|
+| `enable` | `bool` | `false` | Enable the performance metrics collector. |
+| `collectAfterNavigation` | `bool` | `true` | Collect metrics after each page navigation. |
+| `lcp` | `number` | `null` | Maximum Largest Contentful Paint in milliseconds. |
+| `fcp` | `number` | `null` | Maximum First Contentful Paint in milliseconds. |
+| `ttfb` | `number` | `null` | Maximum Time to First Byte in milliseconds. |
+| `cls` | `number` | `null` | Maximum Cumulative Layout Shift score (unitless). |
+| `inp` | `number` | `null` | Maximum Interaction to Next Paint in milliseconds. |
+| `jsHeapSize` | `number` | `null` | Maximum JavaScript heap size in bytes. |
+| `domNodeCount` | `number` | `null` | Maximum DOM node count. |
+
 ---
 
 ## Environment Variables
@@ -179,8 +206,16 @@ Boolean variables accept `true`, `false`, `1`, or `0` (case-insensitive). Intege
 | `MOTUS_FAILURES_TRACE_PATH` | `failure.tracePath` | `string` | Directory for trace archives. |
 | `MOTUS_ACCESSIBILITY_ENABLE` | `accessibility.enable` | `bool` | Enable the accessibility audit hook. |
 | `MOTUS_ACCESSIBILITY_MODE` | `accessibility.mode` | `string` | Audit violation handling mode (`Off`, `Warn`, `Enforce`). |
+| `MOTUS_PERFORMANCE_ENABLE` | `performance.enable` | `bool` | Enable the performance metrics collector. |
+| `MOTUS_PERFORMANCE_LCP` | `performance.lcp` | `double` | Maximum LCP in milliseconds. |
+| `MOTUS_PERFORMANCE_FCP` | `performance.fcp` | `double` | Maximum FCP in milliseconds. |
+| `MOTUS_PERFORMANCE_TTFB` | `performance.ttfb` | `double` | Maximum TTFB in milliseconds. |
+| `MOTUS_PERFORMANCE_CLS` | `performance.cls` | `double` | Maximum CLS score. |
+| `MOTUS_PERFORMANCE_INP` | `performance.inp` | `double` | Maximum INP in milliseconds. |
+| `MOTUS_PERFORMANCE_JS_HEAP_SIZE` | `performance.jsHeapSize` | `long` | Maximum JS heap size in bytes. |
+| `MOTUS_PERFORMANCE_DOM_NODE_COUNT` | `performance.domNodeCount` | `int` | Maximum DOM node count. |
 
-> Not all config file sections have environment variable coverage. `reporter`, `recorder`, and the locator `selectorPriority` arrays are file-only settings. Use the config file for those.
+> Not all config file sections have environment variable coverage. `reporter`, `recorder`, the locator `selectorPriority` arrays, and `performance.collectAfterNavigation` are file-only settings. Use the config file for those.
 
 ---
 
@@ -215,6 +250,7 @@ The merge checks are per-property:
 - `IgnoreHTTPSErrors` -- a config value of `true` is applied when `options.IgnoreHTTPSErrors` is `false`. A config value of `false` never overrides a caller-set `true`.
 - `Viewport` -- applied only when `options.Viewport is null`. Both `width` and `height` must be non-null in the config for a viewport to be applied.
 - `Accessibility` -- the entire `AccessibilityOptions` object is applied only when `options.Accessibility is null`.
+- `Performance` -- the entire `PerformanceOptions` object is applied only when `options.Performance is null`.
 
 ---
 
@@ -237,6 +273,7 @@ The merge checks are per-property:
 | `DownloadsPath` | `string?` | `null` | Directory for browser-initiated file downloads. |
 | `Plugins` | `IReadOnlyList<IPlugin>?` | `null` | Plugin instances loaded into every browser context created from this launch. |
 | `Accessibility` | `AccessibilityOptions?` | `null` | Accessibility audit hook configuration. Disabled when `null`. |
+| `Performance` | `PerformanceOptions?` | `null` | Performance metrics collector configuration. Disabled when `null`. |
 
 ### AccessibilityOptions
 
@@ -250,6 +287,17 @@ Nested under `LaunchOptions.Accessibility`. A `null` value disables the hook ent
 | `AuditAfterActions` | `bool` | `false` | Run an audit after click, fill, and selectOption. |
 | `IncludeWarnings` | `bool` | `true` | Count warning-severity findings as failures when mode is `Enforce`. |
 | `SkipRules` | `IReadOnlyList<string>?` | `null` | Rule IDs excluded from every audit. |
+
+### PerformanceOptions
+
+Nested under `LaunchOptions.Performance`. A `null` value disables the collector entirely.
+
+| Property | Type | Default | Description |
+|---|---|---|---|
+| `Enable` | `bool` | `false` | Enable the performance metrics collector. |
+| `CollectAfterNavigation` | `bool` | `true` | Collect metrics after each page navigation. |
+
+Budget thresholds are not part of `PerformanceOptions`. They are configured via the `[PerformanceBudget]` attribute or the `performance` section in `motus.config.json`.
 
 ---
 
@@ -292,6 +340,9 @@ export MOTUS_FAILURES_TRACE=true
 export MOTUS_FAILURES_TRACE_PATH=test-results/traces
 export MOTUS_ACCESSIBILITY_ENABLE=true
 export MOTUS_ACCESSIBILITY_MODE=Enforce
+export MOTUS_PERFORMANCE_ENABLE=true
+export MOTUS_PERFORMANCE_LCP=2500
+export MOTUS_PERFORMANCE_CLS=0.1
 ```
 
 No `motus.config.json` is required on the CI agent. These variables provide a complete runtime configuration without touching source control.
@@ -335,4 +386,5 @@ Commit this file or add it to `.gitignore` depending on whether the whole team u
 - [Getting Started](../getting-started.md)
 - [Plugins and Extensibility](../extensions/getting-started.md)
 - [Accessibility Testing](./accessibility-testing.md)
+- [Performance Testing](./performance-testing.md)
 - [Testing Frameworks](./testing-frameworks.md)

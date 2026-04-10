@@ -188,10 +188,13 @@ The sequence:
 
 `CloseAsync` is the graceful shutdown path:
 
-1. All contexts are closed in sequence by calling `context.CloseAsync()`.
-2. `Browser.close` is sent over the browser-level CDP session. A `CdpDisconnectedException` is expected and caught because the browser closes the WebSocket as part of its shutdown.
-3. The owned OS process (if any) is awaited for up to **5 seconds**. If it has not exited within that window, `process.Kill(entireProcessTree: true)` is called.
-4. `IsConnected` is set to `false`.
+1. `IsConnected` is set to `false`.
+2. The `BrowserHeartbeat` (if running) is disposed, stopping background health pings.
+3. Signal handlers and the `Process.Exited` handler are unregistered.
+4. All contexts are closed in sequence by calling `context.CloseAsync()`.
+5. `Browser.close` is sent over the browser-level CDP session. A `CdpDisconnectedException` is expected and caught because the browser closes the WebSocket as part of its shutdown.
+6. The transport is disposed.
+7. The owned OS process (if any) is awaited for up to **5 seconds**. If it has not exited within that window, `process.Kill(entireProcessTree: true)` is called.
 
 ### `IBrowserContext.CloseAsync`
 
@@ -204,12 +207,25 @@ The sequence:
 
 `DisposeAsync` is the non-graceful teardown path, used when an exception occurs during launch or when the pool discards a disconnected browser:
 
-1. Signal handlers are unregistered.
-2. `IsConnected` is set to `false`.
-3. The transport is disposed asynchronously.
-4. If the process has not exited, `process.Kill(entireProcessTree: true)` is called immediately, without the 5-second grace period.
-5. The process handle is disposed.
-6. If a temp user data directory is owned, `Directory.Delete(path, recursive: true)` is attempted. Failures are silently ignored (best-effort cleanup).
+1. The `BrowserHeartbeat` (if running) is disposed.
+2. Signal handlers and the `Process.Exited` handler are unregistered.
+3. `IsConnected` is set to `false`.
+4. The transport is disposed asynchronously.
+5. If the process has not exited, `process.Kill(entireProcessTree: true)` is called immediately, without the 5-second grace period.
+6. The process handle is disposed.
+7. If a temp user data directory is owned, `Directory.Delete(path, recursive: true)` is attempted. Failures are silently ignored (best-effort cleanup).
+
+### Health detection
+
+When a browser is launched (not connected via `ConnectAsync`), Motus monitors the browser process for two failure modes: crashes and freezes.
+
+**Crash detection via `Process.Exited`.** The `Browser` constructor subscribes to `_process.Exited`. When Chrome crashes or is killed externally, the handler fires immediately, sets `IsConnected = false`, disposes the transport (which faults all pending CDP commands with `CdpDisconnectedException`), and raises the `Disconnected` event. This is faster than waiting for the WebSocket receive loop to detect the broken connection.
+
+**Freeze detection via `BrowserHeartbeat`.** After `InitializeAsync` completes, a background `BrowserHeartbeat` is started for launched browsers. The heartbeat sends `Browser.getVersion` every 5 seconds with a 10-second timeout. If the ping times out or fails (and the browser has not been intentionally shut down), the `OnHeartbeatFailed` callback triggers the same disconnect path as `Process.Exited`. This catches cases where Chrome becomes unresponsive without closing the WebSocket, such as GPU process hangs or runaway JavaScript.
+
+Both handlers are guarded by an `Interlocked.CompareExchange` on `_disconnectedFlag` so that only one path fires the `Disconnected` event, regardless of which detection mechanism triggers first.
+
+**`IBrowser.IsHealthy`.** The `IsHealthy` property (defined as a default interface member on `IBrowser`) returns `true` when the browser is connected. The `Browser` implementation overrides this with a process-aware check: `_isConnected && (_process is null || !_process.HasExited)`. For browsers obtained via `ConnectAsync` (no process ownership), `IsHealthy` is equivalent to `IsConnected`.
 
 ### Signal handlers
 
@@ -267,6 +283,8 @@ IPage page = await lease.Browser.NewPageAsync();
 4. Any idle browser that is found to be disconnected is disposed and its semaphore slot released.
 
 The returned `IBrowserLease` holds the browser and a return callback. Disposing the lease returns the browser to the idle channel if it is still connected and the pool has not been disposed. A disconnected or post-dispose browser is discarded and the semaphore slot is released.
+
+**Proactive replenishment.** The pool subscribes to each browser's `Disconnected` event. When a browser crashes or becomes unresponsive, `OnBrowserDisconnected` disposes the dead browser, releases its capacity semaphore slot, and (if the idle count has dropped below `MinInstances`) launches a replacement in the background. A `ConcurrentDictionary<IBrowser, byte>` deduplicates the disconnect and lease-return paths to prevent double-dispose when both fire for the same browser.
 
 `IBrowserPool.ActiveCount` and `IdleCount` expose live counters for observability.
 

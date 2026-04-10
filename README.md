@@ -127,6 +127,48 @@ Or in `motus.config.json`:
 }
 ```
 
+### Performance Testing
+
+Motus collects Core Web Vitals (LCP, FCP, TTFB, CLS, INP) and supplementary metrics (JS heap size, DOM node count) directly from the browser during test execution. Set budget thresholds via attributes or config, and performance regressions fail your tests automatically.
+
+```csharp
+// Assert all metrics are within the class-level budget
+[PerformanceBudget(Lcp = 2500, Fcp = 1800, Cls = 0.1)]
+[TestClass]
+public class DashboardTests : MotusTestBase
+{
+    [TestMethod]
+    public async Task DashboardLoadsWithinBudget()
+    {
+        await Page.GotoAsync("https://app.example.com/dashboard");
+        await Expect.That(Page).ToMeetPerformanceBudgetAsync();
+    }
+}
+
+// Or assert individual metrics
+await Expect.That(page).ToHaveLcpBelowAsync(2500);
+await Expect.That(page).ToHaveClsBelowAsync(0.1);
+```
+
+Enable budget enforcement from the CLI:
+
+```bash
+motus run ./bin/Debug/net8.0/MyTests.dll --perf-budget
+```
+
+Or in `motus.config.json`:
+
+```json
+{
+  "performance": {
+    "enable": true,
+    "lcp": 2500,
+    "cls": 0.1,
+    "inp": 200
+  }
+}
+```
+
 ## How It Works
 
 Motus communicates directly with the browser over WebSocket. For Chromium-based browsers, it speaks the Chrome DevTools Protocol (CDP). For Firefox, it uses WebDriver BiDi. There is no Node.js sidecar, no driver binary, and no process boundary between your test code and the protocol layer.
@@ -158,6 +200,7 @@ Five interfaces define every point of extensibility, all registered through `IPl
 | `IReporter` | Receive test run events for custom reporting (multiple reporters run simultaneously) |
 | `IAccessibilityRule` | Define custom WCAG accessibility rules evaluated against the browser's accessibility tree |
 | `IAccessibilityReporter` | Opt-in interface for reporters to receive per-violation accessibility events |
+| `IPerformanceReporter` | Opt-in interface for reporters to receive performance metrics and budget results |
 | `IMotusLogger` | Structured logging for plugin diagnostics |
 
 ### Plugin Discovery
@@ -228,6 +271,7 @@ Launch the Blazor-based visual runner with `motus run --visual`:
 | **Recording** | Capture browser interactions and emit idiomatic C# test code (MSTest, xUnit, NUnit) |
 | **Codegen** | Generate Page Object Model classes from live pages with selector inference |
 | **Accessibility** | Built-in WCAG 2.1 Level A/AA audits via CDP accessibility tree, lifecycle hook, page and locator assertions, custom rules via `IAccessibilityRule` |
+| **Performance** | Core Web Vitals collection (LCP, FCP, TTFB, CLS, INP), configurable budgets via `[PerformanceBudget]` attribute or config, auto-retry assertions, reporter integration via `IPerformanceReporter` |
 | **Reporters** | Console, HTML, JUnit XML, TRX, plus custom reporters via `IReporter` (with opt-in `IAccessibilityReporter` for violation events) |
 | **Tracing** | Screenshots, DOM snapshots, network logs, HAR export, and WebM video recording |
 | **Parallel** | Context-level, browser-level, and worker-level parallel execution |
@@ -237,7 +281,7 @@ Launch the Blazor-based visual runner with `motus run --visual`:
 ## CLI Reference
 
 ```
-motus run <assemblies>  Run tests with optional --visual, --filter, --workers, --reporter, --a11y
+motus run <assemblies>  Run tests with optional --visual, --filter, --workers, --reporter, --a11y, --perf-budget
 motus record           Record a browser session and emit test code
 motus codegen          Generate POM classes from live pages (--headed, --connect, --detect-listeners)
 motus screenshot       Capture a screenshot (--full-page, --delay, --hide-banners, --width, --height)

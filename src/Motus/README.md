@@ -11,7 +11,8 @@ Motus communicates directly with Chromium-based browsers over CDP and Firefox ov
 - **Direct WebSocket communication** with Chromium (CDP) and Firefox (WebDriver BiDi)
 - **Source-generated protocol bindings** for NativeAOT and trimming support
 - **Plugin system** where all built-in selector strategies, lifecycle hooks, wait conditions, and reporters use the same `IPluginContext` as extensions
-- **Browser pool** for parallel test execution with configurable concurrency
+- **Browser pool** for parallel test execution with configurable concurrency and proactive replenishment on crash
+- **Health detection** via process monitoring and background heartbeat pings for fast crash and freeze recovery
 - **Automatic browser lifecycle** management including temp profile cleanup
 
 ## Installation

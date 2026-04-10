@@ -320,9 +320,11 @@ await fixture.DisposeAsync();
 
 Key behaviors:
 
-- `InitializeAsync` retries browser launch up to three times with increasing delays (1 s, 2 s). This avoids flaky failures on CI runners where antivirus software can delay process creation.
+- **Launch retry.** `InitializeAsync` retries browser launch up to three times with increasing delays (1 s, 2 s). This avoids flaky failures on CI runners where antivirus software can delay process creation.
+- **Auto-restart on crash.** The fixture subscribes to `IBrowser.Disconnected`. When Chrome crashes or becomes unresponsive (detected by the heartbeat or `Process.Exited`), the fixture automatically disposes the dead browser and launches a replacement with retry. The test that was running when the crash occurred fails normally; subsequent tests proceed against the fresh browser.
+- **Restart coordination.** A `SemaphoreSlim` gate ensures that `NewContextAsync` callers block briefly if a restart is in progress rather than racing against a dead browser. This is transparent to test code and works correctly with parallel test execution (`[Parallelize]`, `[Parallelizable]`, and xUnit parallel collections).
 - `Browser` throws `InvalidOperationException` if accessed before `InitializeAsync` completes.
-- `DisposeAsync` closes and releases the browser process.
+- `DisposeAsync` unsubscribes from browser events, closes, and releases the browser process.
 
 ---
 

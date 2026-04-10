@@ -1,6 +1,6 @@
 # Plugin Interfaces
 
-Motus exposes seven extensibility interfaces that plugins can implement to participate in browser automation, test reporting, and accessibility auditing. All interfaces live in the `Motus.Abstractions` NuGet package. Plugins register their implementations through `IPluginContext` during initialization.
+Motus exposes eight extensibility interfaces that plugins can implement to participate in browser automation, test reporting, accessibility auditing, and performance monitoring. All interfaces live in the `Motus.Abstractions` NuGet package. Plugins register their implementations through `IPluginContext` during initialization.
 
 ---
 
@@ -271,6 +271,55 @@ public sealed class A11yReporter : IReporter, IAccessibilityReporter
 
 ---
 
+## IPerformanceReporter
+
+`IPerformanceReporter` is an opt-in companion to `IReporter` for reporters that want to receive performance metrics collected during test execution. Motus checks `reporter is IPerformanceReporter` at runtime on each registered reporter; only those that implement both interfaces receive performance callbacks. This follows the same NativeAOT-safe pattern as `IAccessibilityReporter`.
+
+### Members
+
+| Member | Return Type | Description |
+|---|---|---|
+| `OnPerformanceMetricsCollectedAsync(PerformanceMetrics metrics, PerformanceBudgetResult? budgetResult, TestInfo test)` | `Task` | Called when performance metrics have been collected for a test. |
+
+### Supporting Types
+
+`PerformanceMetrics` carries the collected values: `Lcp`, `Fcp`, `Ttfb`, `Cls`, `Inp` (all `double?`), `JsHeapSize` (`long?`), `DomNodeCount` (`int?`), `LayoutShifts` (`IReadOnlyList<LayoutShiftEntry>`), `CollectedAtUtc` (`DateTime`), and `DiagnosticMessage` (`string?`).
+
+`PerformanceBudgetResult` carries the evaluation: `Entries` (`IReadOnlyList<PerformanceBudgetEntry>`) and `Passed` (`bool`). Each `PerformanceBudgetEntry` has `MetricName`, `Threshold`, `ActualValue`, `Passed`, and `Delta`.
+
+`budgetResult` is `null` when no budget is configured.
+
+### Lifecycle Notes
+
+`OnPerformanceMetricsCollectedAsync` is called once per test when metrics have been collected (typically after a navigation). It is called before `OnTestEndAsync` for the same test. Exceptions are caught and logged; they do not suppress remaining reporter events.
+
+### Example
+
+```csharp
+using Motus.Abstractions;
+
+public sealed class PerfReporter : IReporter, IPerformanceReporter
+{
+    public Task OnTestRunStartAsync(TestSuiteInfo suite) => Task.CompletedTask;
+    public Task OnTestStartAsync(TestInfo test) => Task.CompletedTask;
+    public Task OnTestEndAsync(TestInfo test, TestResult result) => Task.CompletedTask;
+    public Task OnTestRunEndAsync(TestRunSummary summary) => Task.CompletedTask;
+
+    public Task OnPerformanceMetricsCollectedAsync(
+        PerformanceMetrics metrics,
+        PerformanceBudgetResult? budgetResult,
+        TestInfo test)
+    {
+        Console.WriteLine(
+            $"[{test.TestName}] LCP={metrics.Lcp:F0}ms " +
+            $"Budget: {(budgetResult?.Passed == true ? "PASS" : budgetResult?.Passed == false ? "FAIL" : "none")}");
+        return Task.CompletedTask;
+    }
+}
+```
+
+---
+
 ## IAccessibilityRule
 
 `IAccessibilityRule` evaluates a single WCAG rule against one node in the accessibility tree. The engine walks every non-ignored node in the tree and calls each registered rule's `Evaluate` method. Rules are synchronous to keep the audit loop efficient; use the `AccessibilityAuditContext` for any cross-node data rather than performing additional async page queries.
@@ -384,7 +433,7 @@ public sealed class MyPlugin : IMotusPlugin
 | `RegisterSelectorStrategy(ISelectorStrategy strategy)` | `void` | Registers a custom selector strategy. |
 | `RegisterWaitCondition(IWaitCondition condition)` | `void` | Registers a custom wait condition. |
 | `RegisterLifecycleHook(ILifecycleHook hook)` | `void` | Registers a lifecycle hook. |
-| `RegisterReporter(IReporter reporter)` | `void` | Registers a test reporter. Reporters that also implement `IAccessibilityReporter` automatically receive violation events. |
+| `RegisterReporter(IReporter reporter)` | `void` | Registers a test reporter. Reporters that also implement `IAccessibilityReporter` or `IPerformanceReporter` automatically receive the corresponding events. |
 | `RegisterAccessibilityRule(IAccessibilityRule rule)` | `void` | Registers a custom accessibility rule that is invoked during accessibility audits. |
 | `CreateLogger(string categoryName)` | `IMotusLogger` | Creates a logger scoped to the given category name. |
 

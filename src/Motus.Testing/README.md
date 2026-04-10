@@ -10,7 +10,7 @@ Provides the framework-agnostic `BrowserFixture` that manages browser launch, re
 
 | Class | Description |
 |-------|-------------|
-| `BrowserFixture` | Launches a browser with up to 3 retry attempts, exposes `NewContextAsync` for per-test isolation |
+| `BrowserFixture` | Launches a browser with up to 3 retry attempts, auto-restarts on crash, exposes `NewContextAsync` for per-test isolation |
 | `FailureTracing` | Starts tracing before a test and saves the trace ZIP to `test-results/traces/` only when the test fails |
 
 ### Failure Tracing Configuration
