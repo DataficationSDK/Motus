@@ -40,27 +40,23 @@ public class PerformanceTests : MotusTestBase
     }
 
     [TestMethod]
-    [TestCategory("Integration")]
     public async Task LcpBelow_IndividualMetricAssertion()
     {
-        // Individual metric assertions require a real HTTP origin for Web Vitals to fire.
-        await Page.GotoAsync("https://example.com");
+        await Fixtures.SetPageContentAsync(Page, SimplePage);
         await Expect.That(Page).ToHaveLcpBelowAsync(5000);
     }
 
     [TestMethod]
-    [TestCategory("Integration")]
     public async Task FcpBelow_IndividualMetricAssertion()
     {
-        await Page.GotoAsync("https://example.com");
+        await Fixtures.SetPageContentAsync(Page, SimplePage);
         await Expect.That(Page).ToHaveFcpBelowAsync(5000);
     }
 
     [TestMethod]
-    [TestCategory("Integration")]
     public async Task ClsBelow_NoLayoutShift()
     {
-        await Page.GotoAsync("https://example.com");
+        await Fixtures.SetPageContentAsync(Page, SimplePage);
         await Expect.That(Page).ToHaveClsBelowAsync(0.5);
     }
 
