@@ -75,7 +75,7 @@ public abstract class MotusTestBase
         _failureTracing = new FailureTracing();
         await _failureTracing.StartIfEnabledAsync(_context).ConfigureAwait(false);
 
-        var testMethodName = TestContext?.TestName;
+        var testMethodName = TestContext?.TestName ?? TestMethodNameContext.Current;
         var methodInfo = testMethodName is not null
             ? GetType().GetMethod(testMethodName, BindingFlags.Public | BindingFlags.Instance)
             : null;

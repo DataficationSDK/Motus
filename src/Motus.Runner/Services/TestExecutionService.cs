@@ -208,6 +208,10 @@ public sealed class TestExecutionService(ILogger<TestExecutionService> logger)
         {
             instance = Activator.CreateInstance(test.TestClass)!;
 
+            // Publish the test method name so MotusTestBase can resolve
+            // per-method attributes (e.g. [PerformanceBudget]) without TestContext
+            TestMethodNameContext.Set(test.TestMethod.Name);
+
             // Run [TestInitialize] methods
             await ExecuteLifecycleMethodAsync(instance, test.TestClass, "TestInitializeAttribute");
             // Also support NUnit [SetUp]
@@ -252,6 +256,8 @@ public sealed class TestExecutionService(ILogger<TestExecutionService> logger)
                 else if (instance is IDisposable disposable)
                     disposable.Dispose();
             }
+
+            TestMethodNameContext.Clear();
         }
     }
 }

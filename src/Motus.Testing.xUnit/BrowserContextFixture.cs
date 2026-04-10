@@ -44,8 +44,14 @@ public class BrowserContextFixture : IAsyncLifetime
         _context = await _browserFixture.NewContextAsync(ContextOptions);
         _page = await _context.NewPageAsync();
 
+        var testMethodName = TestMethodNameContext.Current;
+        var methodInfo = testMethodName is not null
+            ? GetType().GetMethod(testMethodName, BindingFlags.Public | BindingFlags.Instance)
+            : null;
+        var methodAttr = methodInfo?.GetCustomAttribute<PerformanceBudgetAttribute>();
         var classAttr = GetType().GetCustomAttribute<PerformanceBudgetAttribute>();
-        var budget = classAttr?.ToBudget();
+        var activeAttr = methodAttr ?? classAttr;
+        var budget = activeAttr?.ToBudget();
         PerformanceBudgetContext.Push(budget);
         PerformanceBudgetContext.SetBudget(_page, budget);
     }

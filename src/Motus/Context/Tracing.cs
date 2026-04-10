@@ -48,19 +48,24 @@ internal sealed class Tracing : ITracing
             categories.Add("disabled-by-default-devtools.timeline.picture");
         }
 
+        // Cancel any lingering pumps from a previous run before starting new ones
+        _pumpCts?.Cancel();
+
         // Drain any leftover data from a previous run
         while (_dataChannel.Reader.TryRead(out _)) { }
 
-        _completeTcs = new TaskCompletionSource<TracingTracingCompleteEvent>(
+        var completeTcs = new TaskCompletionSource<TracingTracingCompleteEvent>(
             TaskCreationOptions.RunContinuationsAsynchronously);
+        _completeTcs = completeTcs;
 
         _pumpCts = new CancellationTokenSource();
 
         // Start background pump for dataCollected events
         _ = PumpDataCollectedAsync(_pumpCts.Token);
 
-        // Subscribe to tracingComplete
-        _ = PumpTracingCompleteAsync(_pumpCts.Token);
+        // Subscribe to tracingComplete; capture the local TCS so cancellation
+        // of an old pump cannot poison a newer TCS via the shared field.
+        _ = PumpTracingCompleteAsync(completeTcs, _pumpCts.Token);
 
         await _browserSession.SendAsync(
             "Tracing.start",
@@ -79,6 +84,7 @@ internal sealed class Tracing : ITracing
             return;
 
         var completeTcs = _completeTcs!;
+        var pumpCts = _pumpCts;
 
         // Send Tracing.end
         await _browserSession.SendAsync(
@@ -86,8 +92,25 @@ internal sealed class Tracing : ITracing
             CdpJsonContext.Default.TracingEndResult,
             CancellationToken.None).ConfigureAwait(false);
 
-        // Wait for tracingComplete event
-        var completeEvent = await completeTcs.Task.ConfigureAwait(false);
+        // Wait for tracingComplete event with a timeout to prevent indefinite hangs
+        using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var reg = timeoutCts.Token.Register(() => completeTcs.TrySetCanceled());
+
+        TracingTracingCompleteEvent completeEvent;
+        try
+        {
+            completeEvent = await completeTcs.Task.ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested)
+        {
+            throw new TimeoutException(
+                "Timed out waiting for Tracing.tracingComplete event after 30 seconds.");
+        }
+        finally
+        {
+            // Cancel background pumps immediately so they don't race with future runs
+            pumpCts?.Cancel();
+        }
 
         // Collect all accumulated data chunks
         var allEvents = new List<JsonElement>();
@@ -103,9 +126,6 @@ internal sealed class Tracing : ITracing
             var streamEvents = await ReadStreamAsync(completeEvent.Stream).ConfigureAwait(false);
             allEvents.AddRange(streamEvents);
         }
-
-        // Cancel background pumps
-        _pumpCts?.Cancel();
 
         // Extract screenshots from trace events
         var screenshots = ExtractScreenshots(allEvents);
@@ -139,7 +159,9 @@ internal sealed class Tracing : ITracing
         catch (OperationCanceledException) { }
     }
 
-    private async Task PumpTracingCompleteAsync(CancellationToken ct)
+    private async Task PumpTracingCompleteAsync(
+        TaskCompletionSource<TracingTracingCompleteEvent> completeTcs,
+        CancellationToken ct)
     {
         try
         {
@@ -148,13 +170,13 @@ internal sealed class Tracing : ITracing
                 CdpJsonContext.Default.TracingTracingCompleteEvent,
                 ct).ConfigureAwait(false))
             {
-                _completeTcs?.TrySetResult(evt);
+                completeTcs.TrySetResult(evt);
                 break;
             }
         }
         catch (OperationCanceledException)
         {
-            _completeTcs?.TrySetCanceled();
+            completeTcs.TrySetCanceled();
         }
     }
 

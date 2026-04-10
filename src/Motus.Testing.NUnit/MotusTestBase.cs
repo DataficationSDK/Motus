@@ -68,7 +68,10 @@ public abstract class MotusTestBase
         _failureTracing = new FailureTracing();
         await _failureTracing.StartIfEnabledAsync(_context);
 
-        var methodInfo = TestContext.CurrentContext.Test.Method?.MethodInfo;
+        var testMethodName = TestMethodNameContext.Current;
+        var methodInfo = testMethodName is not null
+            ? GetType().GetMethod(testMethodName, BindingFlags.Public | BindingFlags.Instance)
+            : TestContext.CurrentContext.Test.Method?.MethodInfo;
         var methodAttr = methodInfo?.GetCustomAttribute<PerformanceBudgetAttribute>();
         var classAttr = GetType().GetCustomAttribute<PerformanceBudgetAttribute>();
         var activeAttr = methodAttr ?? classAttr;
