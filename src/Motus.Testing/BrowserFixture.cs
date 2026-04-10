@@ -13,7 +13,7 @@ public sealed class BrowserFixture : IAsyncDisposable
 {
     private IBrowser? _browser;
     private LaunchOptions? _launchOptions;
-    private readonly SemaphoreSlim _restartGate = new(1, 1);
+    private SemaphoreSlim _restartGate = new(1, 1);
     private int _disposed;
 
     /// <summary>
@@ -28,6 +28,11 @@ public sealed class BrowserFixture : IAsyncDisposable
     /// </summary>
     public async Task InitializeAsync(LaunchOptions? options = null)
     {
+        // Reset disposed state so the fixture can be reused across runs
+        // (e.g. visual runner clicking Run All a second time).
+        if (Interlocked.CompareExchange(ref _disposed, 0, 1) == 1)
+            _restartGate = new SemaphoreSlim(1, 1);
+
         _launchOptions = options;
         await LaunchWithRetryAsync(options).ConfigureAwait(false);
         SubscribeDisconnected(_browser!);
