@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Threading.Channels;
 using Motus.Abstractions;
 
@@ -6,12 +7,15 @@ namespace Motus;
 /// <summary>
 /// Manages a pool of browser instances with configurable min/max capacity.
 /// Uses a semaphore for capacity control and a channel as the idle queue.
+/// When a browser crashes, it is automatically disposed and a replacement
+/// is launched if the pool is below <see cref="BrowserPoolOptions.MinInstances"/>.
 /// </summary>
 internal sealed class BrowserPool : IBrowserPool
 {
     private readonly BrowserPoolOptions _options;
     private readonly SemaphoreSlim _capacitySemaphore;
     private readonly Channel<IBrowser> _idleChannel = Channel.CreateUnbounded<IBrowser>();
+    private readonly ConcurrentDictionary<IBrowser, byte> _disconnected = new();
     private int _activeCount;
     private int _idleCount;
     private int _disposed;
@@ -129,6 +133,10 @@ internal sealed class BrowserPool : IBrowserPool
             return ValueTask.CompletedTask;
         }
 
+        // If OnBrowserDisconnected already handled disposal, just return
+        if (_disconnected.TryRemove(browser, out _))
+            return ValueTask.CompletedTask;
+
         // Disconnected or pool disposed; discard the browser
         _capacitySemaphore.Release();
         return browser.DisposeAsync();
@@ -141,8 +149,31 @@ internal sealed class BrowserPool : IBrowserPool
 
     private void OnBrowserDisconnected(object? sender, EventArgs e)
     {
-        // Nothing to do actively here. The browser will be detected as disconnected
-        // when it is dequeued from the idle channel or when the lease is returned.
+        if (sender is not IBrowser dead)
+            return;
+
+        // Deduplicate: ReturnAsync also handles dead browsers on lease return.
+        // Only one path should dispose and release capacity.
+        if (!_disconnected.TryAdd(dead, 0))
+            return;
+
+        dead.Disconnected -= OnBrowserDisconnected;
+
+        _ = Task.Run(async () =>
+        {
+            try { await dead.DisposeAsync().ConfigureAwait(false); }
+            catch { /* already dead */ }
+
+            _capacitySemaphore.Release();
+
+            // Proactively replenish toward MinInstances
+            if (Volatile.Read(ref _idleCount) < _options.MinInstances
+                && Volatile.Read(ref _disposed) == 0)
+            {
+                try { await WarmUpOneAsync(CancellationToken.None).ConfigureAwait(false); }
+                catch { /* best-effort; AcquireAsync will handle on demand */ }
+            }
+        });
     }
 
     public async ValueTask DisposeAsync()

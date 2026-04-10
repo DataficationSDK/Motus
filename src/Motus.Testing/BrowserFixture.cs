@@ -6,10 +6,15 @@ namespace Motus.Testing;
 /// Manages a single browser instance for use in test fixtures.
 /// Call <see cref="InitializeAsync"/> once (typically in assembly/collection setup),
 /// then create isolated contexts per test via <see cref="NewContextAsync"/>.
+/// If the browser crashes or becomes unresponsive, the fixture automatically
+/// restarts Chrome so subsequent tests proceed against a fresh browser.
 /// </summary>
 public sealed class BrowserFixture : IAsyncDisposable
 {
     private IBrowser? _browser;
+    private LaunchOptions? _launchOptions;
+    private readonly SemaphoreSlim _restartGate = new(1, 1);
+    private int _disposed;
 
     /// <summary>
     /// Maximum number of launch attempts before giving up.
@@ -22,6 +27,96 @@ public sealed class BrowserFixture : IAsyncDisposable
     /// Launches a browser instance with the given options, retrying on transient failures.
     /// </summary>
     public async Task InitializeAsync(LaunchOptions? options = null)
+    {
+        _launchOptions = options;
+        await LaunchWithRetryAsync(options).ConfigureAwait(false);
+        SubscribeDisconnected(_browser!);
+    }
+
+    /// <summary>
+    /// The launched browser instance.
+    /// </summary>
+    public IBrowser Browser => _browser ?? throw new InvalidOperationException(
+        "Browser not initialized. Call InitializeAsync first.");
+
+    /// <summary>
+    /// Creates a new isolated browser context. If a restart is in progress
+    /// (due to a browser crash), callers block until the new browser is ready.
+    /// </summary>
+    public async Task<IBrowserContext> NewContextAsync(ContextOptions? options = null)
+    {
+        await _restartGate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            return await Browser.NewContextAsync(options).ConfigureAwait(false);
+        }
+        finally
+        {
+            _restartGate.Release();
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (Interlocked.CompareExchange(ref _disposed, 1, 0) != 0)
+            return;
+
+        await _restartGate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (_browser is not null)
+            {
+                _browser.Disconnected -= OnBrowserDisconnected;
+                await _browser.DisposeAsync().ConfigureAwait(false);
+                _browser = null;
+            }
+        }
+        finally
+        {
+            _restartGate.Release();
+            _restartGate.Dispose();
+        }
+    }
+
+    private void OnBrowserDisconnected(object? sender, EventArgs e)
+    {
+        if (sender is IBrowser old)
+            old.Disconnected -= OnBrowserDisconnected;
+
+        _ = Task.Run(RestartAsync);
+    }
+
+    private async Task RestartAsync()
+    {
+        if (Volatile.Read(ref _disposed) != 0)
+            return;
+
+        await _restartGate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (Volatile.Read(ref _disposed) != 0)
+                return;
+
+            // Dispose the dead browser (best-effort)
+            var old = Interlocked.Exchange(ref _browser, null);
+            if (old is not null)
+            {
+                try { await old.DisposeAsync().ConfigureAwait(false); }
+                catch { /* already dead */ }
+            }
+
+            await LaunchWithRetryAsync(_launchOptions).ConfigureAwait(false);
+
+            if (_browser is not null)
+                SubscribeDisconnected(_browser);
+        }
+        finally
+        {
+            _restartGate.Release();
+        }
+    }
+
+    private async Task LaunchWithRetryAsync(LaunchOptions? options)
     {
         for (int attempt = 1; attempt <= MaxLaunchAttempts; attempt++)
         {
@@ -37,24 +132,6 @@ public sealed class BrowserFixture : IAsyncDisposable
         }
     }
 
-    /// <summary>
-    /// The launched browser instance.
-    /// </summary>
-    public IBrowser Browser => _browser ?? throw new InvalidOperationException(
-        "Browser not initialized. Call InitializeAsync first.");
-
-    /// <summary>
-    /// Creates a new isolated browser context.
-    /// </summary>
-    public async Task<IBrowserContext> NewContextAsync(ContextOptions? options = null)
-        => await Browser.NewContextAsync(options);
-
-    public async ValueTask DisposeAsync()
-    {
-        if (_browser is not null)
-        {
-            await _browser.DisposeAsync();
-            _browser = null;
-        }
-    }
+    private void SubscribeDisconnected(IBrowser browser)
+        => browser.Disconnected += OnBrowserDisconnected;
 }

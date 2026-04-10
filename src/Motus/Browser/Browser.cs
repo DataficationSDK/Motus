@@ -19,6 +19,8 @@ internal sealed class Browser : IBrowser
     private readonly List<BrowserContext> _contexts = [];
 
     private volatile bool _isConnected;
+    private int _disconnectedFlag;
+    private BrowserHeartbeat? _heartbeat;
     private ConsoleCancelEventHandler? _cancelHandler;
     private EventHandler? _processExitHandler;
 
@@ -40,9 +42,17 @@ internal sealed class Browser : IBrowser
         _launchOptions = launchOptions ?? new LaunchOptions();
 
         _transport.Disconnected += OnTransportDisconnected;
+
+        if (_process is not null)
+        {
+            _process.EnableRaisingEvents = true;
+            _process.Exited += OnProcessExited;
+        }
     }
 
     public bool IsConnected => _isConnected;
+
+    public bool IsHealthy => _isConnected && (_process is null || !_process.HasExited);
 
     public string Version { get; private set; } = string.Empty;
 
@@ -68,6 +78,12 @@ internal sealed class Browser : IBrowser
         _isConnected = true;
 
         RegisterSignalHandlers();
+
+        if (_process is not null)
+        {
+            _heartbeat = new BrowserHeartbeat(_registry.BrowserSession, OnHeartbeatFailed);
+            _heartbeat.Start();
+        }
     }
 
     public async Task CloseAsync()
@@ -77,7 +93,11 @@ internal sealed class Browser : IBrowser
 
         _isConnected = false;
 
+        if (_heartbeat is not null)
+            await _heartbeat.DisposeAsync().ConfigureAwait(false);
+
         UnregisterSignalHandlers();
+        UnregisterProcessExitHandler();
 
         // Close all contexts first
         List<BrowserContext> contextsToClose;
@@ -123,7 +143,11 @@ internal sealed class Browser : IBrowser
 
     public async ValueTask DisposeAsync()
     {
+        if (_heartbeat is not null)
+            await _heartbeat.DisposeAsync().ConfigureAwait(false);
+
         UnregisterSignalHandlers();
+        UnregisterProcessExitHandler();
 
         _isConnected = false;
 
@@ -201,8 +225,43 @@ internal sealed class Browser : IBrowser
 
     private void OnTransportDisconnected(Exception? ex)
     {
+        if (Interlocked.CompareExchange(ref _disconnectedFlag, 1, 0) != 0)
+            return;
+
         _isConnected = false;
         Disconnected?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void OnProcessExited(object? sender, EventArgs e)
+    {
+        if (Interlocked.CompareExchange(ref _disconnectedFlag, 1, 0) != 0)
+            return;
+
+        _isConnected = false;
+
+        // Dispose transport to fault all pending CDP commands immediately
+        _ = _transport.DisposeAsync().AsTask();
+
+        Disconnected?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void OnHeartbeatFailed(Exception? ex)
+    {
+        if (Interlocked.CompareExchange(ref _disconnectedFlag, 1, 0) != 0)
+            return;
+
+        _isConnected = false;
+
+        // Dispose transport to fault all pending CDP commands (browser is frozen)
+        _ = _transport.DisposeAsync().AsTask();
+
+        Disconnected?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void UnregisterProcessExitHandler()
+    {
+        if (_process is not null)
+            _process.Exited -= OnProcessExited;
     }
 
     private void RegisterSignalHandlers()

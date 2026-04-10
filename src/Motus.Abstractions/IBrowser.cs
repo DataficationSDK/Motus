@@ -11,6 +11,12 @@ public interface IBrowser : IAsyncDisposable
     bool IsConnected { get; }
 
     /// <summary>
+    /// Gets whether the browser is connected and its process is alive.
+    /// For browsers connected via ConnectAsync (no process ownership), equivalent to IsConnected.
+    /// </summary>
+    bool IsHealthy => IsConnected;
+
+    /// <summary>
     /// Gets all browser contexts.
     /// </summary>
     IReadOnlyList<IBrowserContext> Contexts { get; }
