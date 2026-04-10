@@ -106,4 +106,46 @@ public class ConsoleReporterTests
         Assert.IsTrue(output.Contains("[A11Y Warning]"), $"Expected warning label, got: {output}");
         Assert.IsFalse(output.Contains("("), "No selector should omit parentheses.");
     }
+
+    [TestMethod]
+    public async Task OnPerformanceMetrics_PrintsMetricsTable()
+    {
+        var sw = new StringWriter();
+        var reporter = new ConsoleReporter(sw, useColor: false);
+
+        var metrics = new PerformanceMetrics(
+            Lcp: 2345.6, Fcp: 1200.0, Ttfb: 150.0, Cls: 0.05, Inp: null,
+            JsHeapSize: null, DomNodeCount: null, LayoutShifts: [], CollectedAtUtc: DateTime.UtcNow);
+        var test = new TestInfo("MyTest", "Suite1");
+
+        await reporter.OnPerformanceMetricsCollectedAsync(metrics, null, test);
+
+        var output = sw.ToString();
+        Assert.IsTrue(output.Contains("Performance Metrics"), $"Expected header, got: {output}");
+        Assert.IsTrue(output.Contains("LCP"), $"Expected LCP label, got: {output}");
+        Assert.IsTrue(output.Contains("2345.6"), $"Expected LCP value, got: {output}");
+        Assert.IsTrue(output.Contains("FCP"), $"Expected FCP label, got: {output}");
+        Assert.IsTrue(output.Contains("TTFB"), $"Expected TTFB label, got: {output}");
+        Assert.IsTrue(output.Contains("CLS"), $"Expected CLS label, got: {output}");
+    }
+
+    [TestMethod]
+    public async Task OnPerformanceMetrics_WithBudget_ShowsPassFail()
+    {
+        var sw = new StringWriter();
+        var reporter = new ConsoleReporter(sw, useColor: false);
+
+        var metrics = new PerformanceMetrics(
+            Lcp: 3000.0, Fcp: 1000.0, Ttfb: null, Cls: null, Inp: null,
+            JsHeapSize: null, DomNodeCount: null, LayoutShifts: [], CollectedAtUtc: DateTime.UtcNow);
+        var budget = new PerformanceBudget { Lcp = 2500, Fcp = 1800 };
+        var budgetResult = budget.Evaluate(metrics);
+        var test = new TestInfo("MyTest", "Suite1");
+
+        await reporter.OnPerformanceMetricsCollectedAsync(metrics, budgetResult, test);
+
+        var output = sw.ToString();
+        Assert.IsTrue(output.Contains("[FAIL]"), $"Expected FAIL for LCP over budget, got: {output}");
+        Assert.IsTrue(output.Contains("[PASS]"), $"Expected PASS for FCP within budget, got: {output}");
+    }
 }

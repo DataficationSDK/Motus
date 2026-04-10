@@ -168,4 +168,48 @@ public class JUnitReporterTests
         var doc = XDocument.Load(_outputPath);
         Assert.IsNull(doc.Descendants("testcase").First().Element("failure"));
     }
+
+    [TestMethod]
+    public async Task PerformanceMetrics_AddPropertyElements()
+    {
+        var reporter = new JUnitReporter(_outputPath);
+
+        var testInfo = new TestInfo("Ns.PerfTest", "Suite1");
+        var metrics = new PerformanceMetrics(
+            Lcp: 2345.6, Fcp: 1200.0, Ttfb: 150.0, Cls: 0.05, Inp: null,
+            JsHeapSize: null, DomNodeCount: null, LayoutShifts: [], CollectedAtUtc: DateTime.UtcNow);
+
+        await reporter.OnTestEndAsync(testInfo, new TestResult("Ns.PerfTest", true, 100));
+        await reporter.OnPerformanceMetricsCollectedAsync(metrics, null, testInfo);
+        await reporter.OnTestRunEndAsync(new TestRunSummary("Suite1", 1, 0, 0, 100));
+
+        var doc = XDocument.Load(_outputPath);
+        var props = doc.Descendants("testcase").First().Element("properties");
+        Assert.IsNotNull(props, "Expected properties element for perf metrics.");
+
+        var lcpProp = props!.Elements("property").FirstOrDefault(p => p.Attribute("name")?.Value == "perf.lcp");
+        Assert.IsNotNull(lcpProp, "Expected perf.lcp property.");
+        Assert.AreEqual("2345.6", lcpProp!.Attribute("value")!.Value);
+
+        var fcpProp = props.Elements("property").FirstOrDefault(p => p.Attribute("name")?.Value == "perf.fcp");
+        Assert.IsNotNull(fcpProp, "Expected perf.fcp property.");
+
+        // INP is null so should not have a property
+        var inpProp = props.Elements("property").FirstOrDefault(p => p.Attribute("name")?.Value == "perf.inp");
+        Assert.IsNull(inpProp, "Null INP should not produce a property.");
+    }
+
+    [TestMethod]
+    public async Task NoPerformanceMetrics_NoPropertiesElement()
+    {
+        var reporter = new JUnitReporter(_outputPath);
+
+        await reporter.OnTestEndAsync(
+            new TestInfo("Ns.NoPerfTest", "Suite1"),
+            new TestResult("Ns.NoPerfTest", true, 50));
+        await reporter.OnTestRunEndAsync(new TestRunSummary("Suite1", 1, 0, 0, 50));
+
+        var doc = XDocument.Load(_outputPath);
+        Assert.IsNull(doc.Descendants("testcase").First().Element("properties"));
+    }
 }

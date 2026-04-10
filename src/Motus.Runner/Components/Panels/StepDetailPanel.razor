@@ -74,6 +74,48 @@
                 </div>
             </details>
         }
+
+        @if (entry.PerformanceMetrics is { } pm)
+        {
+            <details class="step-section" open>
+                <summary>Performance</summary>
+                <table class="network-table">
+                    <thead>
+                        <tr><th>Metric</th><th>Value</th></tr>
+                    </thead>
+                    <tbody>
+                        @if (pm.Lcp is not null)
+                        {
+                            <tr><td>LCP</td><td>@($"{pm.Lcp:F1}ms")</td></tr>
+                        }
+                        @if (pm.Fcp is not null)
+                        {
+                            <tr><td>FCP</td><td>@($"{pm.Fcp:F1}ms")</td></tr>
+                        }
+                        @if (pm.Ttfb is not null)
+                        {
+                            <tr><td>TTFB</td><td>@($"{pm.Ttfb:F1}ms")</td></tr>
+                        }
+                        @if (pm.Cls is not null)
+                        {
+                            <tr><td>CLS</td><td>@($"{pm.Cls:F4}")</td></tr>
+                        }
+                        @if (pm.Inp is not null)
+                        {
+                            <tr><td>INP</td><td>@($"{pm.Inp:F1}ms")</td></tr>
+                        }
+                        @if (pm.JsHeapSize is not null)
+                        {
+                            <tr><td>JS Heap</td><td>@($"{pm.JsHeapSize:N0} bytes")</td></tr>
+                        }
+                        @if (pm.DomNodeCount is not null)
+                        {
+                            <tr><td>DOM Nodes</td><td>@pm.DomNodeCount</td></tr>
+                        }
+                    </tbody>
+                </table>
+            </details>
+        }
     </div>
 }
 else

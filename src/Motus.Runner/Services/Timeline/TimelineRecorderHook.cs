@@ -140,6 +140,9 @@ internal sealed class TimelineRecorderHook : ILifecycleHook
         lock (_pendingConsole)
             console = [.. _pendingConsole];
 
+        // Capture performance metrics from the page if available
+        var perfMetrics = (page as Motus.Page)?.LastPerformanceMetrics;
+
         var entries = _timeline.Entries;
         var entry = new TimelineEntry(
             Index: entries.Count,
@@ -153,7 +156,8 @@ internal sealed class TimelineRecorderHook : ILifecycleHook
             ErrorMessage: response is not null && !response.Ok ? $"HTTP {response.Status}" : null,
             NetworkRequests: network,
             ConsoleMessages: console,
-            TestName: _timeline.CurrentTestName);
+            TestName: _timeline.CurrentTestName,
+            PerformanceMetrics: perfMetrics);
 
         _timeline.AddEntry(entry);
         _screenshotBefore = null;

@@ -202,4 +202,44 @@ public class TrxReporterTests
         Assert.IsNull(unitTest.Element(TrxNs + "TestCategory"),
             "Test without violations should not have a TestCategory element.");
     }
+
+    [TestMethod]
+    public async Task PerformanceMetrics_AppearInStdOut()
+    {
+        var reporter = new TrxReporter(_outputPath);
+
+        var testInfo = new TestInfo("Ns.PerfTest", "Suite1");
+        var metrics = new PerformanceMetrics(
+            Lcp: 2345.6, Fcp: 1200.0, Ttfb: null, Cls: 0.05, Inp: null,
+            JsHeapSize: null, DomNodeCount: null, LayoutShifts: [], CollectedAtUtc: DateTime.UtcNow);
+
+        await reporter.OnTestEndAsync(testInfo, new TestResult("Ns.PerfTest", true, 100));
+        await reporter.OnPerformanceMetricsCollectedAsync(metrics, null, testInfo);
+        await reporter.OnTestRunEndAsync(new TestRunSummary("Suite1", 1, 0, 0, 100));
+
+        var doc = XDocument.Load(_outputPath);
+        var result = doc.Descendants(TrxNs + "UnitTestResult").First();
+        var stdOut = result.Descendants(TrxNs + "StdOut").FirstOrDefault();
+        Assert.IsNotNull(stdOut, "Expected StdOut element with performance metrics.");
+        Assert.IsTrue(stdOut!.Value.Contains("Performance Metrics"), "Expected performance header.");
+        Assert.IsTrue(stdOut.Value.Contains("LCP: 2345.6ms"), "Expected LCP value.");
+        Assert.IsTrue(stdOut.Value.Contains("FCP: 1200.0ms"), "Expected FCP value.");
+        Assert.IsTrue(stdOut.Value.Contains("CLS: 0.0500"), "Expected CLS value.");
+    }
+
+    [TestMethod]
+    public async Task NoPerformanceMetrics_NoStdOut()
+    {
+        var reporter = new TrxReporter(_outputPath);
+
+        await reporter.OnTestEndAsync(
+            new TestInfo("Ns.NoPerfTest", "Suite1"),
+            new TestResult("Ns.NoPerfTest", true, 50));
+        await reporter.OnTestRunEndAsync(new TestRunSummary("Suite1", 1, 0, 0, 50));
+
+        var doc = XDocument.Load(_outputPath);
+        var result = doc.Descendants(TrxNs + "UnitTestResult").First();
+        Assert.IsNull(result.Element(TrxNs + "Output"),
+            "Test without perf metrics should not have Output element.");
+    }
 }

@@ -1,3 +1,5 @@
+using Motus.Abstractions;
+
 namespace Motus.Runner.Services.Timeline;
 
 public sealed record TimelineEntry(
@@ -12,4 +14,5 @@ public sealed record TimelineEntry(
     string? ErrorMessage,
     IReadOnlyList<NetworkCapture> NetworkRequests,
     IReadOnlyList<ConsoleCapture> ConsoleMessages,
-    string? TestName = null);
+    string? TestName = null,
+    PerformanceMetrics? PerformanceMetrics = null);

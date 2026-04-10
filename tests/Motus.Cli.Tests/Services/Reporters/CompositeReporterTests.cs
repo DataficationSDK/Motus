@@ -7,7 +7,7 @@ namespace Motus.Cli.Tests.Services.Reporters;
 [TestClass]
 public class CompositeReporterTests
 {
-    private sealed class RecordingReporter : IReporter, IAccessibilityReporter
+    private sealed class RecordingReporter : IReporter, IAccessibilityReporter, IPerformanceReporter
     {
         internal List<string> Calls { get; } = [];
 
@@ -18,6 +18,11 @@ public class CompositeReporterTests
         public Task OnAccessibilityViolationAsync(AccessibilityViolation violation, TestInfo test)
         {
             Calls.Add($"A11Y:{violation.RuleId}");
+            return Task.CompletedTask;
+        }
+        public Task OnPerformanceMetricsCollectedAsync(PerformanceMetrics metrics, PerformanceBudgetResult? budgetResult, TestInfo test)
+        {
+            Calls.Add($"Perf:LCP={metrics.Lcp}");
             return Task.CompletedTask;
         }
     }
@@ -91,6 +96,25 @@ public class CompositeReporterTests
 
         Assert.AreEqual(1, a11yReporter.Calls.Count);
         Assert.AreEqual("A11Y:a11y-alt-text", a11yReporter.Calls[0]);
+        Assert.AreEqual(0, plainReporter.Calls.Count);
+    }
+
+    [TestMethod]
+    public async Task PerformanceMetrics_DispatchedToPerfReportersOnly()
+    {
+        var perfReporter = new RecordingReporter();
+        var plainReporter = new PlainReporter();
+        var composite = new CompositeReporter([perfReporter, plainReporter]);
+
+        var metrics = new PerformanceMetrics(
+            Lcp: 2345.6, Fcp: null, Ttfb: null, Cls: null, Inp: null,
+            JsHeapSize: null, DomNodeCount: null, LayoutShifts: [], CollectedAtUtc: DateTime.UtcNow);
+        var test = new TestInfo("Test1", "Suite1");
+
+        await composite.OnPerformanceMetricsCollectedAsync(metrics, null, test);
+
+        Assert.AreEqual(1, perfReporter.Calls.Count);
+        Assert.AreEqual("Perf:LCP=2345.6", perfReporter.Calls[0]);
         Assert.AreEqual(0, plainReporter.Calls.Count);
     }
 }

@@ -186,4 +186,48 @@ public class HtmlReporterTests
         var html = await File.ReadAllTextAsync(_outputPath);
         Assert.IsTrue(html.Contains("violation warning"), "Expected warning severity CSS class.");
     }
+
+    [TestMethod]
+    public async Task PerformanceMetrics_RenderedInTestDetails()
+    {
+        var reporter = new HtmlReporter(_outputPath);
+
+        var testInfo = new TestInfo("Ns.PerfTest", "S");
+        var metrics = new PerformanceMetrics(
+            Lcp: 2345.6, Fcp: 1200.0, Ttfb: 150.0, Cls: 0.05, Inp: null,
+            JsHeapSize: null, DomNodeCount: null, LayoutShifts: [], CollectedAtUtc: DateTime.UtcNow);
+
+        await reporter.OnTestEndAsync(testInfo, new TestResult("Ns.PerfTest", true, 100));
+        await reporter.OnPerformanceMetricsCollectedAsync(metrics, null, testInfo);
+        await reporter.OnTestRunEndAsync(new TestRunSummary("S", 1, 0, 0, 100));
+
+        var html = await File.ReadAllTextAsync(_outputPath);
+        Assert.IsTrue(html.Contains("Performance Metrics"),
+            $"Expected performance heading in HTML.");
+        Assert.IsTrue(html.Contains("LCP"), "Expected LCP in metrics table.");
+        Assert.IsTrue(html.Contains("2345.6"), "Expected LCP value in metrics table.");
+        Assert.IsTrue(html.Contains("<details>"),
+            "Test with performance data should have collapsible details.");
+    }
+
+    [TestMethod]
+    public async Task PerformanceMetrics_WithBudget_ShowsPassFail()
+    {
+        var reporter = new HtmlReporter(_outputPath);
+
+        var testInfo = new TestInfo("Ns.PerfBudgetTest", "S");
+        var metrics = new PerformanceMetrics(
+            Lcp: 3000.0, Fcp: 1000.0, Ttfb: null, Cls: null, Inp: null,
+            JsHeapSize: null, DomNodeCount: null, LayoutShifts: [], CollectedAtUtc: DateTime.UtcNow);
+        var budget = new PerformanceBudget { Lcp = 2500, Fcp = 1800 };
+        var budgetResult = budget.Evaluate(metrics);
+
+        await reporter.OnTestEndAsync(testInfo, new TestResult("Ns.PerfBudgetTest", true, 100));
+        await reporter.OnPerformanceMetricsCollectedAsync(metrics, budgetResult, testInfo);
+        await reporter.OnTestRunEndAsync(new TestRunSummary("S", 1, 0, 0, 100));
+
+        var html = await File.ReadAllTextAsync(_outputPath);
+        Assert.IsTrue(html.Contains("perf-fail"), "Expected fail CSS class for LCP over budget.");
+        Assert.IsTrue(html.Contains("perf-pass"), "Expected pass CSS class for FCP within budget.");
+    }
 }

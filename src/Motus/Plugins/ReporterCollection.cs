@@ -65,4 +65,16 @@ public sealed class ReporterCollection
             }
         }
     }
+
+    public async Task FireOnPerformanceMetricsCollectedAsync(PerformanceMetrics metrics, PerformanceBudgetResult? budgetResult, TestInfo test)
+    {
+        foreach (var reporter in Snapshot())
+        {
+            if (reporter is IPerformanceReporter perf)
+            {
+                try { await perf.OnPerformanceMetricsCollectedAsync(metrics, budgetResult, test).ConfigureAwait(false); }
+                catch { }
+            }
+        }
+    }
 }

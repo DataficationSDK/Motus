@@ -4,17 +4,24 @@ using Motus.Abstractions;
 
 namespace Motus.Cli.Services.Reporters;
 
-public sealed class HtmlReporter(string outputPath) : IReporter, IAccessibilityReporter
+public sealed class HtmlReporter(string outputPath) : IReporter, IAccessibilityReporter, IPerformanceReporter
 {
     private static readonly HashSet<string> ImageExtensions =
         new([".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".svg"], StringComparer.OrdinalIgnoreCase);
 
     private readonly List<(TestInfo Info, Abstractions.TestResult Result)> _results = [];
     private readonly Dictionary<string, List<AccessibilityViolation>> _violations = new();
+    private readonly Dictionary<string, (PerformanceMetrics Metrics, PerformanceBudgetResult? Budget)> _perfMetrics = new();
 
     public Task OnTestRunStartAsync(TestSuiteInfo suite) => Task.CompletedTask;
 
     public Task OnTestStartAsync(TestInfo test) => Task.CompletedTask;
+
+    public Task OnPerformanceMetricsCollectedAsync(PerformanceMetrics metrics, PerformanceBudgetResult? budgetResult, TestInfo test)
+    {
+        _perfMetrics[test.TestName] = (metrics, budgetResult);
+        return Task.CompletedTask;
+    }
 
     public Task OnAccessibilityViolationAsync(AccessibilityViolation violation, TestInfo test)
     {
@@ -76,6 +83,13 @@ pre.stack-trace { background: #f6f8fa; padding: 1rem; border-radius: 4px; overfl
 .badge.a11y-error { background: #ffeef0; color: #cb2431; }
 .badge.a11y-warning { background: #fff8c5; color: #735c0f; }
 .badge.a11y-info { background: #f1f8ff; color: #0366d6; }
+.performance { margin-top: 0.75rem; }
+.performance h4 { margin: 0 0 0.5rem; font-size: 0.875rem; }
+.perf-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+.perf-table th, .perf-table td { padding: 0.3rem 0.6rem; text-align: left; border-bottom: 1px solid #e1e4e8; }
+.perf-table th { font-weight: 600; color: #586069; }
+.perf-pass { color: #22863a; }
+.perf-fail { color: #cb2431; font-weight: 600; }
 """);
         sb.AppendLine("</style></head><body>");
         sb.AppendLine("<h1>Motus Test Report</h1>");
@@ -96,7 +110,8 @@ pre.stack-trace { background: #f6f8fa; padding: 1rem; border-radius: 4px; overfl
             var badgeClass = r.Passed ? "pass" : "fail";
             var badgeText = r.Passed ? "PASS" : "FAIL";
             var hasA11y = _violations.TryGetValue(r.TestName, out var testViolations) && testViolations.Count > 0;
-            var hasDetails = !r.Passed || r.Attachments is { Count: > 0 } || hasA11y;
+            var hasPerf = _perfMetrics.TryGetValue(r.TestName, out var perfData);
+            var hasDetails = !r.Passed || r.Attachments is { Count: > 0 } || hasA11y || hasPerf;
 
             sb.AppendLine("<li class=\"test-item\">");
 
@@ -159,6 +174,23 @@ pre.stack-trace { background: #f6f8fa; padding: 1rem; border-radius: 4px; overfl
                     sb.AppendLine("</div>");
                 }
 
+                if (hasPerf)
+                {
+                    var (pm, br) = perfData;
+                    sb.AppendLine("<div class=\"performance\"><h4>Performance Metrics</h4>");
+                    sb.AppendLine("<table class=\"perf-table\"><thead><tr><th>Metric</th><th>Value</th><th>Budget</th><th>Status</th></tr></thead><tbody>");
+                    AppendPerfRow(sb, "LCP", pm.Lcp, "ms", br);
+                    AppendPerfRow(sb, "FCP", pm.Fcp, "ms", br);
+                    AppendPerfRow(sb, "TTFB", pm.Ttfb, "ms", br);
+                    AppendPerfRow(sb, "CLS", pm.Cls, "", br);
+                    AppendPerfRow(sb, "INP", pm.Inp, "ms", br);
+                    if (pm.JsHeapSize is not null)
+                        AppendPerfRow(sb, "JSHeapSize", pm.JsHeapSize, "bytes", br);
+                    if (pm.DomNodeCount is not null)
+                        AppendPerfRow(sb, "DOMNodeCount", pm.DomNodeCount, "", br);
+                    sb.AppendLine("</tbody></table></div>");
+                }
+
                 sb.AppendLine("</div></details>");
             }
             else
@@ -177,5 +209,24 @@ pre.stack-trace { background: #f6f8fa; padding: 1rem; border-radius: 4px; overfl
             Directory.CreateDirectory(dir);
         await File.WriteAllTextAsync(outputPath, sb.ToString());
         Console.WriteLine($"HTML report written to {outputPath}");
+    }
+
+    private static void AppendPerfRow(StringBuilder sb, string name, double? value, string unit, PerformanceBudgetResult? budgetResult)
+    {
+        if (value is null) return;
+
+        var entry = budgetResult?.Entries.FirstOrDefault(e => e.MetricName.Equals(name, StringComparison.OrdinalIgnoreCase));
+        var valueStr = HttpUtility.HtmlEncode($"{value:F1}{unit}");
+
+        if (entry is not null)
+        {
+            var cssClass = entry.Passed ? "perf-pass" : "perf-fail";
+            var status = entry.Passed ? "PASS" : "FAIL";
+            sb.AppendLine($"<tr><td>{name}</td><td>{valueStr}</td><td>{entry.Threshold:F1}{HttpUtility.HtmlEncode(unit)}</td><td class=\"{cssClass}\">{status}</td></tr>");
+        }
+        else
+        {
+            sb.AppendLine($"<tr><td>{name}</td><td>{valueStr}</td><td>-</td><td>-</td></tr>");
+        }
     }
 }

@@ -2,7 +2,7 @@ using Motus.Abstractions;
 
 namespace Motus.Cli.Services.Reporters;
 
-public sealed class ConsoleReporter(TextWriter writer, bool useColor) : IReporter, IAccessibilityReporter
+public sealed class ConsoleReporter(TextWriter writer, bool useColor) : IReporter, IAccessibilityReporter, IPerformanceReporter
 {
     private const string Green = "\x1b[32m";
     private const string Red = "\x1b[31m";
@@ -65,6 +65,52 @@ public sealed class ConsoleReporter(TextWriter writer, bool useColor) : IReporte
         }
 
         return Task.CompletedTask;
+    }
+
+    public Task OnPerformanceMetricsCollectedAsync(PerformanceMetrics metrics, PerformanceBudgetResult? budgetResult, TestInfo test)
+    {
+        writer.WriteLine("         Performance Metrics:");
+
+        WriteMetricLine("LCP", metrics.Lcp, "ms", budgetResult);
+        WriteMetricLine("FCP", metrics.Fcp, "ms", budgetResult);
+        WriteMetricLine("TTFB", metrics.Ttfb, "ms", budgetResult);
+        WriteMetricLine("CLS", metrics.Cls, "", budgetResult);
+        WriteMetricLine("INP", metrics.Inp, "ms", budgetResult);
+
+        if (metrics.JsHeapSize is not null)
+            WriteMetricLine("JSHeapSize", metrics.JsHeapSize, "bytes", budgetResult);
+        if (metrics.DomNodeCount is not null)
+            WriteMetricLine("DOMNodeCount", metrics.DomNodeCount, "", budgetResult);
+
+        return Task.CompletedTask;
+    }
+
+    private void WriteMetricLine(string name, double? value, string unit, PerformanceBudgetResult? budgetResult)
+    {
+        if (value is null) return;
+
+        var entry = budgetResult?.Entries.FirstOrDefault(e => e.MetricName.Equals(name, StringComparison.OrdinalIgnoreCase));
+        var valueStr = $"{value:F1}{unit}";
+
+        if (entry is not null)
+        {
+            var status = entry.Passed ? "PASS" : "FAIL";
+            var budgetStr = $"{entry.Threshold:F1}{unit}";
+
+            if (useColor)
+            {
+                var color = entry.Passed ? Green : Red;
+                writer.WriteLine($"           {name,-14} {valueStr,12}  budget: {budgetStr,12}  {color}[{status}]{Reset}");
+            }
+            else
+            {
+                writer.WriteLine($"           {name,-14} {valueStr,12}  budget: {budgetStr,12}  [{status}]");
+            }
+        }
+        else
+        {
+            writer.WriteLine($"           {name,-14} {valueStr,12}");
+        }
     }
 
     public Task OnTestRunEndAsync(TestRunSummary summary)

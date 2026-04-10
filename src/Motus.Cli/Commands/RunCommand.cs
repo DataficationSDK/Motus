@@ -24,6 +24,7 @@ public static class RunCommand
         var workersOpt = new Option<string>("--workers") { Description = "Number of parallel workers (or 'auto')", DefaultValueFactory = _ => "auto" };
         var visualOpt = new Option<bool>("--visual") { Description = "Launch visual test runner" };
         var a11yOpt = new Option<string?>("--a11y") { Description = "Enable accessibility audits (warn or enforce)" };
+        var perfBudgetOpt = new Option<bool>("--perf-budget") { Description = "Enable performance budget enforcement from config" };
 
         var cmd = new Command("run", "Discover and execute tests from assemblies")
         {
@@ -33,6 +34,7 @@ public static class RunCommand
             workersOpt,
             visualOpt,
             a11yOpt,
+            perfBudgetOpt,
         };
 
         cmd.SetAction(async (parseResult, ct) =>
@@ -43,11 +45,17 @@ public static class RunCommand
             var workersSpec = parseResult.GetValue(workersOpt)!;
             var visual = parseResult.GetValue(visualOpt);
             var a11yMode = parseResult.GetValue(a11yOpt);
+            var perfBudget = parseResult.GetValue(perfBudgetOpt);
 
             if (a11yMode is not null)
             {
                 Environment.SetEnvironmentVariable("MOTUS_ACCESSIBILITY_ENABLE", "true");
                 Environment.SetEnvironmentVariable("MOTUS_ACCESSIBILITY_MODE", a11yMode);
+            }
+
+            if (perfBudget)
+            {
+                Environment.SetEnvironmentVariable("MOTUS_PERFORMANCE_ENABLE", "true");
             }
 
             if (visual)
@@ -71,7 +79,7 @@ public static class RunCommand
             var tests = discovery.Discover(assemblies, filter);
 
             var runner = new TestRunner(workers);
-            await runner.RunAsync(tests, reporter, a11yMode);
+            await runner.RunAsync(tests, reporter, a11yMode, perfBudget);
         });
 
         return cmd;

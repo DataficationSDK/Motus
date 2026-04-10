@@ -141,12 +141,25 @@
         else if (selector.Length > 80)
             selector = selector[..77] + "...";
 
-        return $"{entry.ActionType} {selector}";
+        var tooltip = $"{entry.ActionType} {selector}";
+
+        if (entry.PerformanceMetrics is { } pm)
+        {
+            var parts = new List<string>();
+            if (pm.Lcp is not null) parts.Add($"LCP:{pm.Lcp:F0}ms");
+            if (pm.Fcp is not null) parts.Add($"FCP:{pm.Fcp:F0}ms");
+            if (pm.Cls is not null) parts.Add($"CLS:{pm.Cls:F3}");
+            if (parts.Count > 0)
+                tooltip += $" [{string.Join(" ", parts)}]";
+        }
+
+        return tooltip;
     }
 
     private static string GetMarkerClass(TimelineEntry entry)
     {
         if (entry.HasError) return "marker-error";
+        if (entry.ActionType == "navigate" && entry.PerformanceMetrics is not null) return "marker-navigate marker-perf";
         if (entry.ActionType == "navigate") return "marker-navigate";
         return "marker-success";
     }

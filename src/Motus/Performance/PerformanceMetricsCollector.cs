@@ -280,7 +280,7 @@ internal sealed class PerformanceMetricsCollector : IPlugin, ILifecycleHook
             // TTFB collection is best-effort
         }
 
-        concrete.LastPerformanceMetrics = new PerformanceMetrics(
+        var metrics = new PerformanceMetrics(
             Lcp: lcp,
             Fcp: fcp,
             Ttfb: ttfb,
@@ -290,5 +290,8 @@ internal sealed class PerformanceMetricsCollector : IPlugin, ILifecycleHook
             DomNodeCount: domNodeCount,
             LayoutShifts: layoutShifts,
             CollectedAtUtc: DateTime.UtcNow);
+
+        concrete.LastPerformanceMetrics = metrics;
+        PerformanceMetricsSink.Add(metrics);
     }
 }

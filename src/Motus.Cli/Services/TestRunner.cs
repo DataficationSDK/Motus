@@ -17,9 +17,9 @@ public sealed class TestRunner(int maxWorkers)
     private readonly ConcurrentDictionary<Type, bool> _initializedClasses = new();
 
     public Task<TestRunResult> RunAsync(List<DiscoveredTest> tests, IReporter reporter) =>
-        RunAsync(tests, reporter, a11yMode: null);
+        RunAsync(tests, reporter, a11yMode: null, enforcePerfBudget: false);
 
-    public async Task<TestRunResult> RunAsync(List<DiscoveredTest> tests, IReporter reporter, string? a11yMode)
+    public async Task<TestRunResult> RunAsync(List<DiscoveredTest> tests, IReporter reporter, string? a11yMode, bool enforcePerfBudget = false)
     {
         var suiteName = tests.Count > 0
             ? tests[0].TestClass.Assembly.GetName().Name ?? "Motus Tests"
@@ -66,6 +66,7 @@ public sealed class TestRunner(int maxWorkers)
                 await reporter.OnTestStartAsync(testInfo);
 
                 AccessibilityViolationSink.Begin();
+                PerformanceMetricsSink.Begin();
 
                 CliTestResult result;
 
@@ -80,6 +81,7 @@ public sealed class TestRunner(int maxWorkers)
                 }
 
                 var violations = AccessibilityViolationSink.End();
+                var perfMetrics = PerformanceMetricsSink.End();
 
                 // Dispatch violations to IAccessibilityReporter reporters
                 if (violations.Count > 0 && reporter is IAccessibilityReporter a11yReporter)
@@ -88,6 +90,30 @@ public sealed class TestRunner(int maxWorkers)
                     {
                         try { await a11yReporter.OnAccessibilityViolationAsync(violation, testInfo); }
                         catch { }
+                    }
+                }
+
+                // Dispatch performance metrics to IPerformanceReporter reporters
+                if (perfMetrics is not null)
+                {
+                    var budget = ConfigMerge.ToBudget(MotusConfigLoader.Config.Performance);
+                    var budgetResult = budget?.Evaluate(perfMetrics);
+
+                    if (reporter is IPerformanceReporter perfReporter)
+                    {
+                        try { await perfReporter.OnPerformanceMetricsCollectedAsync(perfMetrics, budgetResult, testInfo); }
+                        catch { }
+                    }
+
+                    // In enforce mode, override a passing test to failed when budget is exceeded
+                    if (result.Passed && enforcePerfBudget && budgetResult is { Passed: false })
+                    {
+                        var failedCount = budgetResult.Entries.Count(e => !e.Passed);
+                        result = result with
+                        {
+                            Passed = false,
+                            ErrorMessage = $"Performance budget exceeded: {failedCount} metric(s) over budget.",
+                        };
                     }
                 }
 
