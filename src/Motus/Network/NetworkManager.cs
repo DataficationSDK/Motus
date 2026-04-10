@@ -113,6 +113,9 @@ internal sealed class NetworkManager
         cts.Token.Register(() => tcs.TrySetException(
             new TimeoutException($"WaitForRequest timed out after {timeout.TotalMilliseconds}ms.")));
 
+        // Dispose the linked CTS once the waiter completes (success, timeout, or cancellation)
+        tcs.Task.ContinueWith(_ => cts.Dispose(), TaskContinuationOptions.ExecuteSynchronously);
+
         return tcs.Task;
     }
 
@@ -126,6 +129,9 @@ internal sealed class NetworkManager
         cts.CancelAfter(timeout);
         cts.Token.Register(() => tcs.TrySetException(
             new TimeoutException($"WaitForResponse timed out after {timeout.TotalMilliseconds}ms.")));
+
+        // Dispose the linked CTS once the waiter completes (success, timeout, or cancellation)
+        tcs.Task.ContinueWith(_ => cts.Dispose(), TaskContinuationOptions.ExecuteSynchronously);
 
         return tcs.Task;
     }

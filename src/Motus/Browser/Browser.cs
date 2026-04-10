@@ -75,6 +75,10 @@ internal sealed class Browser : IBrowser
         if (!_isConnected)
             return;
 
+        _isConnected = false;
+
+        UnregisterSignalHandlers();
+
         // Close all contexts first
         List<BrowserContext> contextsToClose;
         lock (_contexts)
@@ -100,19 +104,21 @@ internal sealed class Browser : IBrowser
             // Expected: browser closes the WebSocket on shutdown
         }
 
+        // Dispose the transport to terminate the WebSocket receive loop
+        await _transport.DisposeAsync().ConfigureAwait(false);
+
         if (_process is not null && !_process.HasExited)
         {
+            using var exitCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
             try
             {
-                await _process.WaitForExitAsync(new CancellationTokenSource(TimeSpan.FromSeconds(5)).Token).ConfigureAwait(false);
+                await _process.WaitForExitAsync(exitCts.Token).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
                 _process.Kill(entireProcessTree: true);
             }
         }
-
-        _isConnected = false;
     }
 
     public async ValueTask DisposeAsync()

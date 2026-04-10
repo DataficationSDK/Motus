@@ -46,7 +46,14 @@ internal sealed class ScreencastService : IScreencastService, IAsyncDisposable
 
     private void OnPageClose(object? sender, EventArgs e)
     {
-        _ = StopAsync();
+        // Unsubscribe immediately and cancel the frame pump.
+        // Full cleanup (awaiting _pumpTask, StopScreencastAsync) happens in
+        // StopAsync/DisposeAsync to avoid a circular dependency where the pump
+        // blocks on a CDP channel that is only completed after page disposal.
+        if (sender is InternalPage page)
+            page.Close -= OnPageClose;
+
+        _pumpCts?.Cancel();
     }
 
     public async Task HighlightElementAsync(string? objectId, CancellationToken ct = default)
