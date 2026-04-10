@@ -87,7 +87,7 @@ public sealed class PageAssertions
 
         await RetryAsync(async ct =>
         {
-            await _page.RefreshPerformanceMetricsAsync().ConfigureAwait(false);
+            await _page.RefreshPerformanceMetricsAsync(ct).ConfigureAwait(false);
             var metrics = _page.LastPerformanceMetrics;
             if (metrics is null)
                 return (false, "<no metrics collected>");
@@ -104,7 +104,7 @@ public sealed class PageAssertions
     public Task ToHaveLcpBelowAsync(double thresholdMs, AssertionOptions? options = null) =>
         RetryAsync(async ct =>
         {
-            await _page.RefreshPerformanceMetricsAsync().ConfigureAwait(false);
+            await _page.RefreshPerformanceMetricsAsync(ct).ConfigureAwait(false);
             var metrics = _page.LastPerformanceMetrics;
             if (metrics?.Lcp is null)
                 return (false, "<LCP not collected>");
@@ -115,7 +115,7 @@ public sealed class PageAssertions
     public Task ToHaveFcpBelowAsync(double thresholdMs, AssertionOptions? options = null) =>
         RetryAsync(async ct =>
         {
-            await _page.RefreshPerformanceMetricsAsync().ConfigureAwait(false);
+            await _page.RefreshPerformanceMetricsAsync(ct).ConfigureAwait(false);
             var metrics = _page.LastPerformanceMetrics;
             if (metrics?.Fcp is null)
                 return (false, "<FCP not collected>");
@@ -126,7 +126,7 @@ public sealed class PageAssertions
     public Task ToHaveTtfbBelowAsync(double thresholdMs, AssertionOptions? options = null) =>
         RetryAsync(async ct =>
         {
-            await _page.RefreshPerformanceMetricsAsync().ConfigureAwait(false);
+            await _page.RefreshPerformanceMetricsAsync(ct).ConfigureAwait(false);
             var metrics = _page.LastPerformanceMetrics;
             if (metrics?.Ttfb is null)
                 return (false, "<TTFB not collected>");
@@ -137,7 +137,7 @@ public sealed class PageAssertions
     public Task ToHaveClsBelowAsync(double threshold, AssertionOptions? options = null) =>
         RetryAsync(async ct =>
         {
-            await _page.RefreshPerformanceMetricsAsync().ConfigureAwait(false);
+            await _page.RefreshPerformanceMetricsAsync(ct).ConfigureAwait(false);
             var metrics = _page.LastPerformanceMetrics;
             if (metrics?.Cls is null)
                 return (false, "<CLS not collected>");
@@ -148,7 +148,7 @@ public sealed class PageAssertions
     public Task ToHaveInpBelowAsync(double thresholdMs, AssertionOptions? options = null) =>
         RetryAsync(async ct =>
         {
-            await _page.RefreshPerformanceMetricsAsync().ConfigureAwait(false);
+            await _page.RefreshPerformanceMetricsAsync(ct).ConfigureAwait(false);
             var metrics = _page.LastPerformanceMetrics;
             if (metrics?.Inp is null)
                 return (false, "<INP not collected>");

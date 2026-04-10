@@ -58,6 +58,20 @@ public class PerformanceAssertionTests
             LayoutShifts: Array.Empty<LayoutShiftEntry>(),
             CollectedAtUtc: DateTime.UtcNow);
 
+    /// <summary>
+    /// Queues Runtime.evaluate responses so RefreshPerformanceMetricsAsync completes
+    /// instantly instead of blocking for the 60-second CDP command timeout.
+    /// </summary>
+    private void QueueRefreshResponses(int startId, int count)
+    {
+        for (int i = 0; i < count; i++)
+        {
+            var id = startId + i;
+            _socket.QueueResponse(
+                $@"{{""id"": {id}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""string"", ""value"": ""{{}}"" }}}}}}");
+        }
+    }
+
     // ── ToMeetPerformanceBudgetAsync ──
 
     [TestMethod]
@@ -67,6 +81,7 @@ public class PerformanceAssertionTests
         page.LastPerformanceMetrics = MakeMetrics(lcp: 2000, cls: 0.05);
 
         PerformanceBudgetContext.Push(new PerformanceBudget { Lcp = 2500, Cls = 0.1 });
+        QueueRefreshResponses(9, 1);
         var assertions = new PageAssertions(page);
 
         await assertions.ToMeetPerformanceBudgetAsync();
@@ -79,6 +94,7 @@ public class PerformanceAssertionTests
         page.LastPerformanceMetrics = MakeMetrics(lcp: 3200, cls: 0.05);
 
         PerformanceBudgetContext.Push(new PerformanceBudget { Lcp = 2500, Cls = 0.1 });
+        QueueRefreshResponses(9, 5);
         var assertions = new PageAssertions(page);
 
         var ex = await Assert.ThrowsExceptionAsync<MotusAssertionException>(
@@ -95,6 +111,7 @@ public class PerformanceAssertionTests
         page.LastPerformanceMetrics = MakeMetrics(lcp: 3200, cls: 0.25, inp: 350);
 
         PerformanceBudgetContext.Push(new PerformanceBudget { Lcp = 2500, Cls = 0.1, Inp = 200 });
+        QueueRefreshResponses(9, 5);
         var assertions = new PageAssertions(page);
 
         var ex = await Assert.ThrowsExceptionAsync<MotusAssertionException>(
@@ -123,6 +140,8 @@ public class PerformanceAssertionTests
     {
         var page = await CreatePageAsync();
         // LastPerformanceMetrics is null
+        // No refresh responses queued: the 300ms assertion timeout cancels the
+        // CDP send via the forwarded CancellationToken, keeping metrics null.
 
         PerformanceBudgetContext.Push(new PerformanceBudget { Lcp = 2500 });
         var assertions = new PageAssertions(page);
@@ -142,6 +161,7 @@ public class PerformanceAssertionTests
         var page = await CreatePageAsync();
         page.LastPerformanceMetrics = MakeMetrics(lcp: 2000);
 
+        QueueRefreshResponses(9, 1);
         var assertions = new PageAssertions(page);
         await assertions.ToHaveLcpBelowAsync(2500);
     }
@@ -152,6 +172,7 @@ public class PerformanceAssertionTests
         var page = await CreatePageAsync();
         page.LastPerformanceMetrics = MakeMetrics(lcp: 3200);
 
+        QueueRefreshResponses(9, 5);
         var assertions = new PageAssertions(page);
 
         var ex = await Assert.ThrowsExceptionAsync<MotusAssertionException>(
@@ -166,6 +187,7 @@ public class PerformanceAssertionTests
         var page = await CreatePageAsync();
         page.LastPerformanceMetrics = MakeMetrics(lcp: 2500);
 
+        QueueRefreshResponses(9, 1);
         var assertions = new PageAssertions(page);
         await assertions.ToHaveLcpBelowAsync(2500);
     }
@@ -176,6 +198,7 @@ public class PerformanceAssertionTests
         var page = await CreatePageAsync();
         page.LastPerformanceMetrics = MakeMetrics(cls: 0.05);
 
+        QueueRefreshResponses(9, 1);
         var assertions = new PageAssertions(page);
         await assertions.ToHaveClsBelowAsync(0.1);
     }
@@ -186,6 +209,7 @@ public class PerformanceAssertionTests
         var page = await CreatePageAsync();
         page.LastPerformanceMetrics = MakeMetrics(cls: 0.25);
 
+        QueueRefreshResponses(9, 5);
         var assertions = new PageAssertions(page);
 
         var ex = await Assert.ThrowsExceptionAsync<MotusAssertionException>(
@@ -200,6 +224,7 @@ public class PerformanceAssertionTests
         var page = await CreatePageAsync();
         page.LastPerformanceMetrics = MakeMetrics(inp: 150);
 
+        QueueRefreshResponses(9, 1);
         var assertions = new PageAssertions(page);
         await assertions.ToHaveInpBelowAsync(200);
     }
@@ -210,6 +235,7 @@ public class PerformanceAssertionTests
         var page = await CreatePageAsync();
         page.LastPerformanceMetrics = MakeMetrics(inp: 350);
 
+        QueueRefreshResponses(9, 5);
         var assertions = new PageAssertions(page);
 
         var ex = await Assert.ThrowsExceptionAsync<MotusAssertionException>(
@@ -224,6 +250,7 @@ public class PerformanceAssertionTests
         var page = await CreatePageAsync();
         page.LastPerformanceMetrics = MakeMetrics(fcp: 1500);
 
+        QueueRefreshResponses(9, 1);
         var assertions = new PageAssertions(page);
         await assertions.ToHaveFcpBelowAsync(1800);
     }
@@ -234,6 +261,7 @@ public class PerformanceAssertionTests
         var page = await CreatePageAsync();
         page.LastPerformanceMetrics = MakeMetrics(ttfb: 400);
 
+        QueueRefreshResponses(9, 1);
         var assertions = new PageAssertions(page);
         await assertions.ToHaveTtfbBelowAsync(600);
     }
@@ -246,6 +274,7 @@ public class PerformanceAssertionTests
         var page = await CreatePageAsync();
         page.LastPerformanceMetrics = MakeMetrics(lcp: 3200);
 
+        QueueRefreshResponses(9, 1);
         var assertions = new PageAssertions(page);
         await assertions.Not.ToHaveLcpBelowAsync(2500);
     }
@@ -256,6 +285,7 @@ public class PerformanceAssertionTests
         var page = await CreatePageAsync();
         page.LastPerformanceMetrics = MakeMetrics(lcp: 2000);
 
+        QueueRefreshResponses(9, 5);
         var assertions = new PageAssertions(page);
 
         await Assert.ThrowsExceptionAsync<MotusAssertionException>(

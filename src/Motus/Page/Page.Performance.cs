@@ -26,7 +26,7 @@ internal sealed partial class Page
     /// <see cref="LastPerformanceMetrics"/>. Called by assertions during retry
     /// to pick up metrics that arrived after the initial post-navigation collection.
     /// </summary>
-    internal async Task RefreshPerformanceMetricsAsync()
+    internal async Task RefreshPerformanceMetricsAsync(CancellationToken ct = default)
     {
         try
         {
@@ -35,7 +35,7 @@ internal sealed partial class Page
                 new RuntimeEvaluateParams(ReadPerfScript, ReturnByValue: true),
                 CdpJsonContext.Default.RuntimeEvaluateParams,
                 CdpJsonContext.Default.RuntimeEvaluateResult,
-                CancellationToken.None).ConfigureAwait(false);
+                ct).ConfigureAwait(false);
 
             if (evalResult.ExceptionDetails is not null || evalResult.Result.Value is not { } jsonValue)
                 return;

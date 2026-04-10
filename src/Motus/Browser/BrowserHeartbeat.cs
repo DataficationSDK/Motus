@@ -15,6 +15,7 @@ internal sealed class BrowserHeartbeat : IAsyncDisposable
     private readonly Action<Exception?> _onUnhealthy;
     private readonly CancellationTokenSource _cts = new();
     private Task? _loop;
+    private int _disposed;
 
     internal BrowserHeartbeat(IMotusSession session, Action<Exception?> onUnhealthy)
     {
@@ -66,6 +67,9 @@ internal sealed class BrowserHeartbeat : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        if (Interlocked.CompareExchange(ref _disposed, 1, 0) != 0)
+            return;
+
         await _cts.CancelAsync().ConfigureAwait(false);
 
         if (_loop is not null)
