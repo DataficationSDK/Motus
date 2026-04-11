@@ -109,104 +109,172 @@ internal sealed class BrowserContext : IBrowserContext
     public event EventHandler<IPage>? Page;
     public event EventHandler? Close;
 
+    /// <summary>
+    /// Maximum time to wait for a new page's CDP domains to initialize.
+    /// Page.enable and Runtime.enable respond in milliseconds under normal
+    /// conditions; a prolonged wait means the renderer crashed or is wedged.
+    /// </summary>
+    private static readonly TimeSpan PageInitTimeout = TimeSpan.FromSeconds(10);
+
     public async Task<IPage> NewPageAsync()
     {
-        // Create a target in this browser context
-        var createResult = await _registry.BrowserSession.SendAsync(
-            "Target.createTarget",
-            new TargetCreateTargetParams("about:blank", BrowserContextId: _browserContextId),
-            CdpJsonContext.Default.TargetCreateTargetParams,
-            CdpJsonContext.Default.TargetCreateTargetResult,
-            CancellationToken.None).ConfigureAwait(false);
+        const int maxAttempts = 3;
 
-        // Attach to the target to get a session
-        var attachResult = await _registry.BrowserSession.SendAsync(
-            "Target.attachToTarget",
-            new TargetAttachToTargetParams(createResult.TargetId, Flatten: true),
-            CdpJsonContext.Default.TargetAttachToTargetParams,
-            CdpJsonContext.Default.TargetAttachToTargetResult,
-            CancellationToken.None).ConfigureAwait(false);
-
-        var session = _registry.CreateSession(attachResult.SessionId);
-        var page = new Page(session, this, createResult.TargetId);
-        await page.InitializeAsync(CancellationToken.None).ConfigureAwait(false);
-
-        // Apply context options (viewport, locale, timezone, etc.)
-        await ApplyContextOptionsToPageAsync(page).ConfigureAwait(false);
-
-        // Propagate context-level extra headers to the new page
-        Dictionary<string, string> extraHeaders;
-        lock (_extraHeaders)
-            extraHeaders = new Dictionary<string, string>(_extraHeaders);
-        if (extraHeaders.Count > 0)
+        for (int attempt = 1; ; attempt++)
         {
-            await page.Session.SendAsync(
-                "Network.setExtraHTTPHeaders",
-                new NetworkSetExtraHttpHeadersParams(extraHeaders),
-                CdpJsonContext.Default.NetworkSetExtraHttpHeadersParams,
-                CdpJsonContext.Default.NetworkSetExtraHttpHeadersResult,
-                CancellationToken.None).ConfigureAwait(false);
-        }
-
-        // Propagate context-level offline state to the new page
-        if (_offline)
-        {
-            await page.Session.SendAsync(
-                "Network.emulateNetworkConditions",
-                new NetworkEmulateNetworkConditionsParams(
-                    Offline: true, Latency: 0,
-                    DownloadThroughput: -1, UploadThroughput: -1),
-                CdpJsonContext.Default.NetworkEmulateNetworkConditionsParams,
-                CdpJsonContext.Default.NetworkEmulateNetworkConditionsResult,
-                CancellationToken.None).ConfigureAwait(false);
-        }
-
-        // Restore storage state (one-time per context)
-        if (_options?.StorageState is not null && Interlocked.CompareExchange(ref _storageStateRestored, 1, 0) == 0)
-        {
-            var state = _options.StorageState;
-
-            if (state.Cookies.Count > 0)
-                await AddCookiesInternalAsync(page, state.Cookies).ConfigureAwait(false);
-
-            if (state.Origins.Count > 0)
+            try
             {
-                foreach (var origin in state.Origins)
-                {
-                    if (origin.LocalStorage.Count == 0)
-                        continue;
-
-                    var script = string.Join("\n", origin.LocalStorage.Select(kv =>
-                        $"localStorage.setItem({System.Text.Json.JsonSerializer.Serialize(kv.Key)}, {System.Text.Json.JsonSerializer.Serialize(kv.Value)});"));
-
-                    await page.Session.SendAsync(
-                        "Runtime.evaluate",
-                        new RuntimeEvaluateParams(Expression: script, ReturnByValue: true),
-                        CdpJsonContext.Default.RuntimeEvaluateParams,
-                        CdpJsonContext.Default.RuntimeEvaluateResult,
-                        CancellationToken.None).ConfigureAwait(false);
-                }
+                return await CreatePageCoreAsync().ConfigureAwait(false);
+            }
+            catch (TaskCanceledException) when (attempt < maxAttempts)
+            {
+                // Chrome occasionally drops a CDP response under parallel load
+                // (page session suspended during initial navigation). Retry with
+                // a fresh target. Non-timeout errors (disconnects) propagate
+                // immediately since the browser itself is dead.
+                await Task.Delay(200 * attempt).ConfigureAwait(false);
             }
         }
+    }
 
-        // Start video recording if configured
-        if (_options?.RecordVideo is { } videoOpts)
+    private async Task<Page> CreatePageCoreAsync()
+    {
+        string? targetId = null;
+        string? sessionId = null;
+        Page? page = null;
+
+        try
         {
-            var size = videoOpts.Size ?? DeriveVideoSize(_options.Viewport);
-            var path = Path.Combine(videoOpts.Dir, $"video-{Guid.NewGuid():N}.avi");
-            var recorder = new VideoRecorder(page, path, size.Width, size.Height);
-            await recorder.StartAsync(CancellationToken.None).ConfigureAwait(false);
-            page.SetVideoRecorder(recorder);
+            // Create a target in this browser context
+            var createResult = await _registry.BrowserSession.SendAsync(
+                "Target.createTarget",
+                new TargetCreateTargetParams("about:blank", BrowserContextId: _browserContextId),
+                CdpJsonContext.Default.TargetCreateTargetParams,
+                CdpJsonContext.Default.TargetCreateTargetResult,
+                CancellationToken.None).ConfigureAwait(false);
+
+            targetId = createResult.TargetId;
+
+            // Attach to the target to get a session
+            var attachResult = await _registry.BrowserSession.SendAsync(
+                "Target.attachToTarget",
+                new TargetAttachToTargetParams(createResult.TargetId, Flatten: true),
+                CdpJsonContext.Default.TargetAttachToTargetParams,
+                CdpJsonContext.Default.TargetAttachToTargetResult,
+                CancellationToken.None).ConfigureAwait(false);
+
+            sessionId = attachResult.SessionId;
+            var session = _registry.CreateSession(attachResult.SessionId);
+            page = new Page(session, this, createResult.TargetId);
+
+            using var initCts = new CancellationTokenSource(PageInitTimeout);
+            await page.InitializeAsync(initCts.Token).ConfigureAwait(false);
+
+            // Apply context options (viewport, locale, timezone, etc.)
+            await ApplyContextOptionsToPageAsync(page).ConfigureAwait(false);
+
+            // Propagate context-level extra headers to the new page
+            Dictionary<string, string> extraHeaders;
+            lock (_extraHeaders)
+                extraHeaders = new Dictionary<string, string>(_extraHeaders);
+            if (extraHeaders.Count > 0)
+            {
+                await page.Session.SendAsync(
+                    "Network.setExtraHTTPHeaders",
+                    new NetworkSetExtraHttpHeadersParams(extraHeaders),
+                    CdpJsonContext.Default.NetworkSetExtraHttpHeadersParams,
+                    CdpJsonContext.Default.NetworkSetExtraHttpHeadersResult,
+                    CancellationToken.None).ConfigureAwait(false);
+            }
+
+            // Propagate context-level offline state to the new page
+            if (_offline)
+            {
+                await page.Session.SendAsync(
+                    "Network.emulateNetworkConditions",
+                    new NetworkEmulateNetworkConditionsParams(
+                        Offline: true, Latency: 0,
+                        DownloadThroughput: -1, UploadThroughput: -1),
+                    CdpJsonContext.Default.NetworkEmulateNetworkConditionsParams,
+                    CdpJsonContext.Default.NetworkEmulateNetworkConditionsResult,
+                    CancellationToken.None).ConfigureAwait(false);
+            }
+
+            // Restore storage state (one-time per context)
+            if (_options?.StorageState is not null && Interlocked.CompareExchange(ref _storageStateRestored, 1, 0) == 0)
+            {
+                var state = _options.StorageState;
+
+                if (state.Cookies.Count > 0)
+                    await AddCookiesInternalAsync(page, state.Cookies).ConfigureAwait(false);
+
+                if (state.Origins.Count > 0)
+                {
+                    foreach (var origin in state.Origins)
+                    {
+                        if (origin.LocalStorage.Count == 0)
+                            continue;
+
+                        var script = string.Join("\n", origin.LocalStorage.Select(kv =>
+                            $"localStorage.setItem({System.Text.Json.JsonSerializer.Serialize(kv.Key)}, {System.Text.Json.JsonSerializer.Serialize(kv.Value)});"));
+
+                        await page.Session.SendAsync(
+                            "Runtime.evaluate",
+                            new RuntimeEvaluateParams(Expression: script, ReturnByValue: true),
+                            CdpJsonContext.Default.RuntimeEvaluateParams,
+                            CdpJsonContext.Default.RuntimeEvaluateResult,
+                            CancellationToken.None).ConfigureAwait(false);
+                    }
+                }
+            }
+
+            // Start video recording if configured
+            if (_options?.RecordVideo is { } videoOpts)
+            {
+                var size = videoOpts.Size ?? DeriveVideoSize(_options.Viewport);
+                var path = Path.Combine(videoOpts.Dir, $"video-{Guid.NewGuid():N}.avi");
+                var recorder = new VideoRecorder(page, path, size.Width, size.Height);
+                await recorder.StartAsync(CancellationToken.None).ConfigureAwait(false);
+                page.SetVideoRecorder(recorder);
+            }
+
+            lock (_pages)
+                _pages.Add(page);
+
+            await _lifecycleHooks.FireOnPageCreatedAsync(page).ConfigureAwait(false);
+            Page?.Invoke(this, page);
+            GlobalPageCreated?.Invoke(page);
+
+            return page;
         }
+        catch
+        {
+            // Clean up partially-created resources so they don't leak in Chrome.
+            if (page is not null)
+                await page.DisposeAsync().ConfigureAwait(false);
 
-        lock (_pages)
-            _pages.Add(page);
+            if (sessionId is not null)
+                _registry.RemoveSession(sessionId);
 
-        await _lifecycleHooks.FireOnPageCreatedAsync(page).ConfigureAwait(false);
-        Page?.Invoke(this, page);
-        GlobalPageCreated?.Invoke(page);
+            if (targetId is not null)
+            {
+                try
+                {
+                    await _registry.BrowserSession.SendAsync(
+                        "Target.closeTarget",
+                        new TargetCloseTargetParams(targetId),
+                        CdpJsonContext.Default.TargetCloseTargetParams,
+                        CdpJsonContext.Default.TargetCloseTargetResult,
+                        CancellationToken.None).ConfigureAwait(false);
+                }
+                catch
+                {
+                    // Best-effort cleanup
+                }
+            }
 
-        return page;
+            throw;
+        }
     }
 
     private static ViewportSize DeriveVideoSize(ViewportSize? viewport)
@@ -238,7 +306,7 @@ internal sealed class BrowserContext : IBrowserContext
                 CdpJsonContext.Default.TargetCloseTargetResult,
                 CancellationToken.None).ConfigureAwait(false);
         }
-        catch (CdpDisconnectedException)
+        catch (Exception ex) when (ex is CdpDisconnectedException or MotusTargetClosedException)
         {
             // Target already gone
         }
@@ -294,7 +362,7 @@ internal sealed class BrowserContext : IBrowserContext
                 CdpJsonContext.Default.TargetDisposeBrowserContextResult,
                 CancellationToken.None).ConfigureAwait(false);
         }
-        catch (CdpDisconnectedException)
+        catch (Exception ex) when (ex is CdpDisconnectedException or MotusTargetClosedException)
         {
             // Browser already closed
         }

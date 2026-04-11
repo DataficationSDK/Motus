@@ -17,6 +17,7 @@ internal sealed class CdpTransport : IMotusTransport
 {
     private readonly ICdpSocket _socket;
     private readonly TimeSpan _slowMo;
+    private readonly SemaphoreSlim _sendLock = new(1, 1);
     private readonly CancellationTokenSource _cts = new();
     private Task? _receiveLoop;
     private bool _disposed;
@@ -60,7 +61,8 @@ internal sealed class CdpTransport : IMotusTransport
     internal async Task<JsonElement> SendRawAsync(
         string method, JsonElement paramsElement, string? sessionId, CancellationToken ct)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_disposed)
+            throw new CdpDisconnectedException();
 
         var id = Interlocked.Increment(ref _nextId);
         var tcs = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -79,7 +81,17 @@ internal sealed class CdpTransport : IMotusTransport
 
             var envelope = new CdpCommandEnvelope(id, method, paramsElement, sessionId);
             var bytes = JsonSerializer.SerializeToUtf8Bytes(envelope, CdpJsonContext.Default.CdpCommandEnvelope);
-            await _socket.SendAsync(bytes, effectiveCt).ConfigureAwait(false);
+
+            // ClientWebSocket does not support concurrent sends; serialize access.
+            await _sendLock.WaitAsync(effectiveCt).ConfigureAwait(false);
+            try
+            {
+                await _socket.SendAsync(bytes, effectiveCt).ConfigureAwait(false);
+            }
+            finally
+            {
+                _sendLock.Release();
+            }
 
             // Link cancellation (caller + timeout) to the pending TCS
             await using var reg = effectiveCt.Register(() => tcs.TrySetCanceled(effectiveCt));
@@ -139,10 +151,14 @@ internal sealed class CdpTransport : IMotusTransport
                     return;
                 }
 
+                // Copy from the shared socket buffer so the next ReceiveAsync
+                // cannot overwrite data still referenced by JsonElement values.
+                var messageBytes = message.ToArray();
+
                 try
                 {
                     var envelope = JsonSerializer.Deserialize(
-                        message.Span,
+                        messageBytes.AsSpan(),
                         CdpJsonContext.Default.CdpInboundEnvelope);
 
                     if (envelope is not null)
@@ -244,10 +260,11 @@ internal sealed class CdpTransport : IMotusTransport
             catch { /* Swallow; loop already handled cleanup */ }
         }
 
-        FaultAllPending(new ObjectDisposedException(nameof(CdpTransport)));
+        FaultAllPending(new CdpDisconnectedException());
         CompleteAllChannels();
 
         await _socket.DisposeAsync().ConfigureAwait(false);
         _cts.Dispose();
+        _sendLock.Dispose();
     }
 }

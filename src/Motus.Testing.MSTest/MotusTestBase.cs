@@ -69,8 +69,25 @@ public abstract class MotusTestBase
     [TestInitialize]
     public async Task MotusTestInitialize()
     {
-        _context = await s_fixture.NewContextAsync(ContextOptions).ConfigureAwait(false);
-        _page = await _context.NewPageAsync().ConfigureAwait(false);
+        // If Chrome crashed during a previous test, the fixture auto-restarts.
+        // Retry context+page creation to ride through the restart window.
+        const int maxAttempts = 3;
+        for (int attempt = 1; ; attempt++)
+        {
+            try
+            {
+                _context = await s_fixture.NewContextAsync(ContextOptions).ConfigureAwait(false);
+                _page = await _context.NewPageAsync().ConfigureAwait(false);
+                break;
+            }
+            catch when (attempt < maxAttempts)
+            {
+                // Give the browser fixture time to restart Chrome.
+                _context = null;
+                _page = null;
+                await Task.Delay(1000 * attempt).ConfigureAwait(false);
+            }
+        }
 
         _failureTracing = new FailureTracing();
         await _failureTracing.StartIfEnabledAsync(_context).ConfigureAwait(false);
@@ -96,13 +113,24 @@ public abstract class MotusTestBase
 
         if (_context is not null)
         {
-            var testFailed = TestContext?.CurrentTestOutcome != UnitTestOutcome.Passed;
-            if (_failureTracing is not null)
-                await _failureTracing.StopAsync(_context, testFailed).ConfigureAwait(false);
+            try
+            {
+                var testFailed = TestContext?.CurrentTestOutcome != UnitTestOutcome.Passed;
+                if (_failureTracing is not null)
+                    await _failureTracing.StopAsync(_context, testFailed).ConfigureAwait(false);
 
-            await _context.CloseAsync().ConfigureAwait(false);
-            _context = null;
-            _page = null;
+                await s_fixture.CloseContextAsync(_context).ConfigureAwait(false);
+            }
+            catch (Exception) when (_context is not null)
+            {
+                // Browser may have crashed or disconnected; swallow so we don't
+                // mask the original test failure with a cleanup exception.
+            }
+            finally
+            {
+                _context = null;
+                _page = null;
+            }
         }
     }
 }

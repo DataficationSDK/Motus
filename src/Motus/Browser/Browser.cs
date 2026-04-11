@@ -119,7 +119,7 @@ internal sealed class Browser : IBrowser
                 CdpJsonContext.Default.BrowserCloseResult,
                 CancellationToken.None).ConfigureAwait(false);
         }
-        catch (CdpDisconnectedException)
+        catch (Exception ex) when (ex is CdpDisconnectedException or MotusTargetClosedException)
         {
             // Expected: browser closes the WebSocket on shutdown
         }

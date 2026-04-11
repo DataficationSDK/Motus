@@ -62,8 +62,22 @@ public abstract class MotusTestBase
     [SetUp]
     public async Task SetUp()
     {
-        _context = await _fixture.NewContextAsync(ContextOptions);
-        _page = await _context.NewPageAsync();
+        const int maxAttempts = 3;
+        for (int attempt = 1; ; attempt++)
+        {
+            try
+            {
+                _context = await _fixture.NewContextAsync(ContextOptions);
+                _page = await _context.NewPageAsync();
+                break;
+            }
+            catch when (attempt < maxAttempts)
+            {
+                _context = null;
+                _page = null;
+                await Task.Delay(1000 * attempt);
+            }
+        }
 
         _failureTracing = new FailureTracing();
         await _failureTracing.StartIfEnabledAsync(_context);
@@ -89,13 +103,24 @@ public abstract class MotusTestBase
 
         if (_context is not null)
         {
-            var testFailed = TestContext.CurrentContext.Result.Outcome.Status == global::NUnit.Framework.Interfaces.TestStatus.Failed;
-            if (_failureTracing is not null)
-                await _failureTracing.StopAsync(_context, testFailed);
+            try
+            {
+                var testFailed = TestContext.CurrentContext.Result.Outcome.Status == global::NUnit.Framework.Interfaces.TestStatus.Failed;
+                if (_failureTracing is not null)
+                    await _failureTracing.StopAsync(_context, testFailed);
 
-            await _context.CloseAsync();
-            _context = null;
-            _page = null;
+                await _fixture.CloseContextAsync(_context);
+            }
+            catch (Exception) when (_context is not null)
+            {
+                // Browser may have crashed or disconnected; swallow so we don't
+                // mask the original test failure with a cleanup exception.
+            }
+            finally
+            {
+                _context = null;
+                _page = null;
+            }
         }
     }
 }

@@ -17,6 +17,13 @@ public sealed class BrowserFixture : IAsyncDisposable
     private int _disposed;
 
     /// <summary>
+    /// Limits concurrent browser contexts to prevent Chrome from becoming
+    /// unresponsive under heavy parallel test load. Chrome's renderer process
+    /// model can stall when too many targets compete for resources.
+    /// </summary>
+    private static readonly SemaphoreSlim s_contextThrottle = new(4, 4);
+
+    /// <summary>
     /// Maximum number of launch attempts before giving up.
     /// Browser startup can fail transiently on CI runners or when antivirus
     /// delays process creation, so retrying avoids flaky test runs.
@@ -47,17 +54,41 @@ public sealed class BrowserFixture : IAsyncDisposable
     /// <summary>
     /// Creates a new isolated browser context. If a restart is in progress
     /// (due to a browser crash), callers block until the new browser is ready.
+    /// The context throttle limits concurrent contexts to avoid overwhelming Chrome.
     /// </summary>
     public async Task<IBrowserContext> NewContextAsync(ContextOptions? options = null)
     {
+        await s_contextThrottle.WaitAsync().ConfigureAwait(false);
+
         await _restartGate.WaitAsync().ConfigureAwait(false);
         try
         {
             return await Browser.NewContextAsync(options).ConfigureAwait(false);
         }
+        catch
+        {
+            s_contextThrottle.Release();
+            throw;
+        }
         finally
         {
             _restartGate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Closes a context and releases its concurrency throttle slot.
+    /// Always releases the slot even if close fails (browser crashed).
+    /// </summary>
+    public async Task CloseContextAsync(IBrowserContext context)
+    {
+        try
+        {
+            await context.CloseAsync().ConfigureAwait(false);
+        }
+        finally
+        {
+            s_contextThrottle.Release();
         }
     }
 

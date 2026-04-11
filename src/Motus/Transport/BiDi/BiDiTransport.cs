@@ -12,6 +12,7 @@ namespace Motus;
 internal sealed class BiDiTransport : IMotusTransport
 {
     private readonly ICdpSocket _socket;
+    private readonly SemaphoreSlim _sendLock = new(1, 1);
     private readonly CancellationTokenSource _cts = new();
     private Task? _receiveLoop;
     private bool _disposed;
@@ -67,7 +68,8 @@ internal sealed class BiDiTransport : IMotusTransport
     internal async Task<JsonElement> SendRawAsync(
         string method, JsonElement paramsElement, CancellationToken ct)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_disposed)
+            throw new BiDiDisconnectedException();
 
         var id = Interlocked.Increment(ref _nextId);
         var tcs = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -81,7 +83,17 @@ internal sealed class BiDiTransport : IMotusTransport
         {
             var envelope = new BiDiCommandEnvelope(id, method, paramsElement);
             var bytes = JsonSerializer.SerializeToUtf8Bytes(envelope, BiDiJsonContext.Default.BiDiCommandEnvelope);
-            await _socket.SendAsync(bytes, effectiveCt).ConfigureAwait(false);
+
+            // ClientWebSocket does not support concurrent sends; serialize access.
+            await _sendLock.WaitAsync(effectiveCt).ConfigureAwait(false);
+            try
+            {
+                await _socket.SendAsync(bytes, effectiveCt).ConfigureAwait(false);
+            }
+            finally
+            {
+                _sendLock.Release();
+            }
 
             await using var reg = effectiveCt.Register(() => tcs.TrySetCanceled(effectiveCt));
             return await tcs.Task.ConfigureAwait(false);
@@ -139,10 +151,12 @@ internal sealed class BiDiTransport : IMotusTransport
                     return;
                 }
 
+                var messageBytes = message.ToArray();
+
                 try
                 {
                     var discriminator = JsonSerializer.Deserialize(
-                        message.Span,
+                        messageBytes.AsSpan(),
                         BiDiJsonContext.Default.BiDiInboundDiscriminator);
 
                     if (discriminator is not null)
@@ -257,10 +271,11 @@ internal sealed class BiDiTransport : IMotusTransport
             catch { /* Swallow; loop already handled cleanup */ }
         }
 
-        FaultAllPending(new ObjectDisposedException(nameof(BiDiTransport)));
+        FaultAllPending(new BiDiDisconnectedException());
         CompleteAllChannels();
 
         await _socket.DisposeAsync().ConfigureAwait(false);
         _cts.Dispose();
+        _sendLock.Dispose();
     }
 }

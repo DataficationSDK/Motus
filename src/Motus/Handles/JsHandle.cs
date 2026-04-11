@@ -112,7 +112,7 @@ internal class JsHandle : IJSHandle
                 CdpJsonContext.Default.RuntimeReleaseObjectParams,
                 CancellationToken.None).ConfigureAwait(false);
         }
-        catch (CdpDisconnectedException)
+        catch (Exception ex) when (ex is CdpDisconnectedException or MotusTargetClosedException)
         {
             // Object already gone if browser disconnected
         }
