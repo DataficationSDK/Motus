@@ -10,15 +10,29 @@ public class SelectorManifestWriterTests
     [TestMethod]
     public void ManifestPathFor_ReplacesCsExtensionWithSelectorsJson()
     {
-        var path = SelectorManifestWriter.ManifestPathFor(Path.Combine("/tmp", "LoginTest.cs"));
-        Assert.AreEqual(Path.Combine("/tmp", "LoginTest.selectors.json"), path);
+        var tempDir = Path.GetTempPath();
+        var input = Path.Combine(tempDir, "LoginTest.cs");
+
+        var path = SelectorManifestWriter.ManifestPathFor(input);
+
+        Assert.AreEqual("LoginTest.selectors.json", Path.GetFileName(path));
+        Assert.AreEqual(
+            Path.GetFullPath(tempDir).TrimEnd(Path.DirectorySeparatorChar),
+            Path.GetFullPath(Path.GetDirectoryName(path)!).TrimEnd(Path.DirectorySeparatorChar));
     }
 
     [TestMethod]
     public void ManifestPathFor_StripsDotGSuffix()
     {
-        var path = SelectorManifestWriter.ManifestPathFor(Path.Combine("/tmp", "LoginPage.g.cs"));
-        Assert.AreEqual(Path.Combine("/tmp", "LoginPage.selectors.json"), path);
+        var tempDir = Path.GetTempPath();
+        var input = Path.Combine(tempDir, "LoginPage.g.cs");
+
+        var path = SelectorManifestWriter.ManifestPathFor(input);
+
+        Assert.AreEqual("LoginPage.selectors.json", Path.GetFileName(path));
+        Assert.AreEqual(
+            Path.GetFullPath(tempDir).TrimEnd(Path.DirectorySeparatorChar),
+            Path.GetFullPath(Path.GetDirectoryName(path)!).TrimEnd(Path.DirectorySeparatorChar));
     }
 
     [TestMethod]
