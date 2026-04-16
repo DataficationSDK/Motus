@@ -78,6 +78,7 @@ public sealed class PageAnalysisEngine
         {
             var info = allElements[i];
             string? selector = null;
+            int? backendNodeId = null;
 
             // Elements from listener pass have negative ElementIndex as a sentinel
             var handleJs = info.ElementIndex >= 0
@@ -86,8 +87,10 @@ public sealed class PageAnalysisEngine
 
             try
             {
-                selector = await InferSelectorForElement(
+                var inference = await InferSelectorForElement(
                     page, handleJs, orderedStrategies, info, linkedCt);
+                selector = inference.Selector;
+                backendNodeId = inference.BackendNodeId;
             }
             catch (OperationCanceledException)
             {
@@ -98,13 +101,13 @@ public sealed class PageAnalysisEngine
                 // Inference failed for this element
             }
 
-            results.Add(new DiscoveredElement(info, selector, names[i]));
+            results.Add(new DiscoveredElement(info, selector, names[i], backendNodeId));
         }
 
         return results;
     }
 
-    private async Task<string?> InferSelectorForElement(
+    private async Task<(string? Selector, int? BackendNodeId)> InferSelectorForElement(
         IPage page,
         string handleJs,
         IReadOnlyList<ISelectorStrategy> strategies,
@@ -115,9 +118,10 @@ public sealed class PageAnalysisEngine
         var handles = await SelectorStrategyHelpers.EvalToHandlesAsync(internalPage, handleJs, ct);
 
         if (handles.Count == 0)
-            return null;
+            return (null, null);
 
         var element = handles[0];
+        var backendNodeId = await TryGetBackendNodeIdAsync(internalPage, ((ElementHandle)element).ObjectId, ct);
 
         // Try each strategy in priority order (same pattern as SelectorInferenceEngine).
         // Individual strategy failures are caught so one slow strategy doesn't
@@ -134,7 +138,7 @@ public sealed class PageAnalysisEngine
                     selector, page.MainFrame, pierceShadow: true, ct);
 
                 if (matches.Count == 1)
-                    return selector;
+                    return (selector, backendNodeId);
             }
             catch (OperationCanceledException) when (!ct.IsCancellationRequested)
             {
@@ -162,7 +166,7 @@ public sealed class PageAnalysisEngine
                         candidate, page.MainFrame, pierceShadow: true, ct);
 
                     if (matches.Count == 1)
-                        return candidate;
+                        return (candidate, backendNodeId);
                 }
                 catch
                 {
@@ -171,7 +175,27 @@ public sealed class PageAnalysisEngine
             }
         }
 
-        return null;
+        return (null, backendNodeId);
+    }
+
+    private static async Task<int?> TryGetBackendNodeIdAsync(
+        Page page, string objectId, CancellationToken ct)
+    {
+        try
+        {
+            var describe = await page.Session.SendAsync(
+                "DOM.describeNode",
+                new DomDescribeNodeParams(ObjectId: objectId),
+                CdpJsonContext.Default.DomDescribeNodeParams,
+                CdpJsonContext.Default.DomDescribeNodeResult,
+                ct).ConfigureAwait(false);
+
+            return describe.Node.BackendNodeId;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private static IEnumerable<string> BuildAttributeFallbacks(PageElementInfo info)

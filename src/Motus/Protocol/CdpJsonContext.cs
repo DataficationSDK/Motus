@@ -193,6 +193,8 @@ namespace Motus;
 [JsonSerializable(typeof(DomGetAttributesResult))]
 [JsonSerializable(typeof(DomPushNodesByBackendIdsParams))]
 [JsonSerializable(typeof(DomPushNodesByBackendIdsResult))]
+[JsonSerializable(typeof(DomGetOuterHtmlParams))]
+[JsonSerializable(typeof(DomGetOuterHtmlResult))]
 // --- CSS domain ---
 [JsonSerializable(typeof(CssEnableResult))]
 [JsonSerializable(typeof(CssGetComputedStyleForNodeParams))]
@@ -649,12 +651,15 @@ internal sealed record DomResolveNodeResult(RuntimeRemoteObject Object);
 internal sealed record DomDescribeNodeParams(
     int? BackendNodeId = null,
     int? NodeId = null,
+    string? ObjectId = null,
     bool? Pierce = null);
 
 internal sealed record DomNodeDescription(
     string? LocalName = null,
     string? NodeName = null,
     int? NodeId = null,
+    int? ParentId = null,
+    int? BackendNodeId = null,
     JsonElement? Attributes = null);
 
 internal sealed record DomDescribeNodeResult(DomNodeDescription Node);
@@ -681,6 +686,13 @@ internal sealed record DomGetAttributesResult(string[] Attributes);
 internal sealed record DomPushNodesByBackendIdsParams(int[] BackendNodeIds);
 
 internal sealed record DomPushNodesByBackendIdsResult(int[] NodeIds);
+
+internal sealed record DomGetOuterHtmlParams(
+    int? NodeId = null,
+    int? BackendNodeId = null,
+    string? ObjectId = null);
+
+internal sealed record DomGetOuterHtmlResult(string OuterHTML);
 
 // ============================================================================
 // CSS domain

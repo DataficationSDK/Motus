@@ -189,13 +189,18 @@ public sealed class ActionCaptureEngine : IActionCaptureEngine
             await foreach (var action in _rawChannel.Reader.ReadAllAsync(ct))
             {
                 string? selector = null;
+                string? locatorMethod = null;
+                int? backendNodeId = null;
 
                 if (NeedsSelector(action) && action.X is not null && action.Y is not null)
                 {
                     try
                     {
-                        selector = await _inferenceEngine!.InferAsync(
+                        var inference = await _inferenceEngine!.InferDetailedAsync(
                             action.X.Value, action.Y.Value, action.TargetId, ct);
+                        selector = inference.Selector;
+                        locatorMethod = inference.LocatorMethod;
+                        backendNodeId = inference.BackendNodeId;
                     }
                     catch (OperationCanceledException)
                     {
@@ -207,7 +212,7 @@ public sealed class ActionCaptureEngine : IActionCaptureEngine
                     }
                 }
 
-                var resolved = new ResolvedAction(action, selector);
+                var resolved = new ResolvedAction(action, selector, locatorMethod, backendNodeId);
                 WriteResolved(resolved);
             }
         }

@@ -1,7 +1,10 @@
 using System.CommandLine;
+using Motus;
 using Motus.Abstractions;
+using Motus.Cli.Services;
 using Motus.Recorder.ActionCapture;
 using Motus.Recorder.CodeEmit;
+using Motus.Selectors;
 
 namespace Motus.Cli.Commands;
 
@@ -95,9 +98,14 @@ public static class RecordCommand
                 };
 
                 var emitter = new CodeEmitter();
-                var code = emitter.Emit(engine.CapturedActions, emitOptions);
-                await File.WriteAllTextAsync(output, code, ct);
+                var emitResult = emitter.EmitWithMetadata(engine.CapturedActions, emitOptions);
+                await File.WriteAllTextAsync(output, emitResult.Source, ct);
                 Console.WriteLine($"Test code saved to {output}");
+
+                var manifest = await BuildManifestAsync(page, Path.GetFullPath(output), emitResult.Locators, ct);
+                var manifestPath = SelectorManifestWriter.ManifestPathFor(output);
+                await SelectorManifestWriter.WriteAsync(manifest, manifestPath, ct);
+                Console.WriteLine($"Selector manifest saved to {manifestPath} ({manifest.Entries.Count} entries)");
             }
             finally
             {
@@ -107,4 +115,38 @@ public static class RecordCommand
 
         return cmd;
     }
+
+    private static async Task<SelectorManifest> BuildManifestAsync(
+        IPage page, string sourceFile, IReadOnlyList<EmittedLocator> locators, CancellationToken ct)
+    {
+        var session = ((Page)page).Session;
+        var entries = new List<SelectorEntry>(locators.Count);
+
+        foreach (var locator in locators)
+        {
+            DomFingerprint? fingerprint = null;
+            if (locator.BackendNodeId is int id)
+            {
+                fingerprint = await DomFingerprintBuilder.TryBuildAsync(session, id, ct);
+            }
+
+            entries.Add(new SelectorEntry(
+                Selector: locator.Selector,
+                LocatorMethod: locator.LocatorMethod,
+                SourceFile: sourceFile,
+                SourceLine: locator.SourceLine,
+                PageUrl: locator.PageUrl,
+                Fingerprint: fingerprint ?? EmptyFingerprint()));
+        }
+
+        return new SelectorManifest(entries);
+    }
+
+    private static DomFingerprint EmptyFingerprint()
+        => new(
+            TagName: string.Empty,
+            KeyAttributes: new Dictionary<string, string>(),
+            VisibleText: null,
+            AncestorPath: string.Empty,
+            Hash: string.Empty);
 }

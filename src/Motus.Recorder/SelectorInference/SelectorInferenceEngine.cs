@@ -29,25 +29,48 @@ internal sealed class SelectorInferenceEngine
     /// </summary>
     internal async Task<string?> InferAsync(double x, double y, int? targetId, CancellationToken ct)
     {
+        var result = await InferDetailedAsync(x, y, targetId, ct).ConfigureAwait(false);
+        return result.Selector;
+    }
+
+    /// <summary>
+    /// Same as <see cref="InferAsync"/> but also returns the CDP backend node ID and
+    /// the locator factory method name, for manifest/fingerprint emission.
+    /// </summary>
+    internal async Task<SelectorInferenceResult> InferDetailedAsync(
+        double x, double y, int? targetId, CancellationToken ct)
+    {
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeoutCts.CancelAfter(_options.InferenceTimeout);
         var linkedCt = timeoutCts.Token;
 
         try
         {
-            var element = targetId is not null
-                ? await ResolveTargetAsync(targetId.Value, linkedCt)
-                : null;
+            ElementHandle? element = null;
+            int? backendNodeId = null;
 
-            // Fall back to coordinate-based hit-test
-            element ??= await ResolveByCoordinatesAsync(x, y, linkedCt);
+            if (targetId is not null)
+            {
+                element = await ResolveTargetAsync(targetId.Value, linkedCt);
+            }
 
-            // Try each strategy in priority order
+            if (element is null)
+            {
+                var coord = await ResolveByCoordinatesAsync(x, y, linkedCt);
+                element = coord.Handle;
+                backendNodeId = coord.BackendNodeId;
+            }
+
+            if (backendNodeId is null)
+            {
+                backendNodeId = await TryGetBackendNodeIdAsync(element!, linkedCt);
+            }
+
             foreach (var strategy in _strategies)
             {
                 try
                 {
-                    var selector = await strategy.GenerateSelector(element, linkedCt);
+                    var selector = await strategy.GenerateSelector(element!, linkedCt);
                     if (selector is null || selector.Length > _options.MaxSelectorLength)
                         continue;
 
@@ -55,7 +78,7 @@ internal sealed class SelectorInferenceEngine
                         selector, _page.MainFrame, pierceShadow: true, linkedCt);
 
                     if (matches.Count == 1)
-                        return selector;
+                        return new SelectorInferenceResult(selector, "Locator", backendNodeId);
                 }
                 catch
                 {
@@ -63,21 +86,18 @@ internal sealed class SelectorInferenceEngine
                 }
             }
 
-            return null;
+            return new SelectorInferenceResult(null, null, backendNodeId);
         }
         catch (OperationCanceledException)
         {
-            return null;
+            return new SelectorInferenceResult(null, null, null);
         }
         catch
         {
-            return null;
+            return new SelectorInferenceResult(null, null, null);
         }
     }
 
-    /// <summary>
-    /// Retrieves an element stored by the recorder script at event time, then removes it from the map.
-    /// </summary>
     private async Task<ElementHandle?> ResolveTargetAsync(int targetId, CancellationToken ct)
     {
         try
@@ -103,7 +123,7 @@ internal sealed class SelectorInferenceEngine
         }
     }
 
-    private async Task<ElementHandle> ResolveByCoordinatesAsync(double x, double y, CancellationToken ct)
+    private async Task<CoordinateResolution> ResolveByCoordinatesAsync(double x, double y, CancellationToken ct)
     {
         var nodeResult = await _page.Session.SendAsync(
             "DOM.getNodeForLocation",
@@ -112,7 +132,35 @@ internal sealed class SelectorInferenceEngine
             CdpJsonContext.Default.DomGetNodeForLocationResult,
             ct);
 
-        return await SelectorStrategyHelpers.ResolveNodeToHandleAsync(
+        var handle = await SelectorStrategyHelpers.ResolveNodeToHandleAsync(
             _page, nodeResult.BackendNodeId, ct);
+
+        return new CoordinateResolution(handle, nodeResult.BackendNodeId);
     }
+
+    private async Task<int?> TryGetBackendNodeIdAsync(ElementHandle element, CancellationToken ct)
+    {
+        try
+        {
+            var describe = await _page.Session.SendAsync(
+                "DOM.describeNode",
+                new DomDescribeNodeParams(ObjectId: element.ObjectId),
+                CdpJsonContext.Default.DomDescribeNodeParams,
+                CdpJsonContext.Default.DomDescribeNodeResult,
+                ct).ConfigureAwait(false);
+
+            return describe.Node.BackendNodeId;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private readonly record struct CoordinateResolution(ElementHandle Handle, int BackendNodeId);
 }
+
+internal sealed record SelectorInferenceResult(
+    string? Selector,
+    string? LocatorMethod,
+    int? BackendNodeId);
