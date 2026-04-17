@@ -30,10 +30,26 @@ internal sealed record SelectorCheckResult(
     string PageUrl,
     int MatchCount,
     string? Suggestion,
-    string? Note);
+    string? Note)
+{
+    /// <summary>Ranked list of repair suggestions (first is top).</summary>
+    public IReadOnlyList<RepairSuggestion>? Suggestions { get; init; }
+
+    /// <summary>True when a repair was applied to the source file by <c>--fix</c>.</summary>
+    public bool Fixed { get; init; }
+
+    /// <summary>The suggestion fragment actually written to source (when <see cref="Fixed"/>).</summary>
+    public string? AppliedSuggestion { get; init; }
+
+    /// <summary>Diagnostic message if an attempted fix failed.</summary>
+    public string? FixError { get; init; }
+}
 
 [JsonSerializable(typeof(List<SelectorCheckResult>))]
 [JsonSerializable(typeof(SelectorCheckResult))]
+[JsonSerializable(typeof(RepairSuggestion))]
+[JsonSerializable(typeof(IReadOnlyList<RepairSuggestion>))]
+[JsonSerializable(typeof(List<RepairSuggestion>))]
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,

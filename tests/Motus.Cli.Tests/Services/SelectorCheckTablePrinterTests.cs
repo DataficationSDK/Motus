@@ -104,4 +104,64 @@ public class SelectorCheckTablePrinterTests
         StringAssert.Contains(output, "1 ambiguous");
         StringAssert.Contains(output, "1 skipped");
     }
+
+    [TestMethod]
+    public void Print_RankedSuggestions_EmitsOneLinePerSuggestionWithConfidenceAndStrategy()
+    {
+        var r = Make(SelectorCheckStatus.Broken, suggestion: "GetByTestId(\"a\")") with
+        {
+            Suggestions = new List<RepairSuggestion>
+            {
+                new("GetByTestId(\"a\")", "data-testid", Confidence.High),
+                new("GetByRole(\"button\")", "role", Confidence.High),
+            },
+        };
+        var writer = new StringWriter();
+        SelectorCheckTablePrinter.Print(new[] { r }, writer, useColor: false);
+
+        var output = writer.ToString();
+        StringAssert.Contains(output, "-> Suggestion (High, data-testid): GetByTestId(\"a\")");
+        StringAssert.Contains(output, "-> Suggestion (High, role): GetByRole(\"button\")");
+    }
+
+    [TestMethod]
+    public void Print_FixedRow_ShowsFixedStatusAndAppliedLine()
+    {
+        var r = Make(SelectorCheckStatus.Broken) with
+        {
+            Fixed = true,
+            AppliedSuggestion = "GetByTestId(\"new\")",
+        };
+        var writer = new StringWriter();
+        SelectorCheckTablePrinter.Print(new[] { r }, writer, useColor: false);
+
+        var output = writer.ToString();
+        StringAssert.Contains(output, "FIXED");
+        StringAssert.Contains(output, "-> Fixed: GetByTestId(\"new\")");
+    }
+
+    [TestMethod]
+    public void Print_RewriteReport_EmitsFixedSummaryLine()
+    {
+        var broken = Make(SelectorCheckStatus.Broken);
+        var fixed_ = Make(SelectorCheckStatus.Broken) with { Fixed = true, AppliedSuggestion = "x" };
+        var writer = new StringWriter();
+        SelectorCheckTablePrinter.Print(
+            new[] { broken, fixed_ },
+            writer,
+            useColor: false,
+            rewriteReport: new RewriteReport(FilesModified: 1, FixesApplied: 1, FixesAttempted: 1));
+
+        var output = writer.ToString();
+        StringAssert.Contains(output, "Fixed 1 of 2 broken selectors in 1 files");
+    }
+
+    [TestMethod]
+    public void Print_FixError_EmitsFixErrorLine()
+    {
+        var r = Make(SelectorCheckStatus.Broken) with { FixError = "source invocation not found" };
+        var writer = new StringWriter();
+        SelectorCheckTablePrinter.Print(new[] { r }, writer, useColor: false);
+        StringAssert.Contains(writer.ToString(), "-> Fix error: source invocation not found");
+    }
 }

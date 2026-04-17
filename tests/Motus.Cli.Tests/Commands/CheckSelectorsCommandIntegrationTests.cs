@@ -202,6 +202,84 @@ public class CheckSelectorsCommandIntegrationTests
         Assert.AreEqual(0, code);
         var output = stdout.ToString();
         StringAssert.Contains(output, "BROKEN");
-        StringAssert.Contains(output, "Suggestion: GetByTestId(\"new-id\")");
+        StringAssert.Contains(output, "GetByTestId(\"new-id\")");
+        StringAssert.Contains(output, "(High,",
+            "Ranked suggestion should be annotated with its confidence level");
+    }
+
+    [TestMethod]
+    public async Task Run_Fix_RewritesSourceAndBacksUp()
+    {
+        WriteSource("Fix.cs", "        page.GetByTestId(\"old-id\");");
+        var url = "data:text/html,<button data-testid='new-id'>Go</button>";
+
+        var fingerprint = new DomFingerprint(
+            TagName: "button",
+            KeyAttributes: new Dictionary<string, string> { ["data-testid"] = "new-id" },
+            VisibleText: "Go",
+            AncestorPath: "html > body",
+            Hash: DomFingerprintBuilder.ComputeHash(
+                "button",
+                new Dictionary<string, string> { ["data-testid"] = "new-id" },
+                "Go",
+                "html > body"));
+        var sourceFile = Path.Combine(_workDir, "Fix.cs");
+        var manifest = new SelectorManifest(new[]
+        {
+            new SelectorEntry("old-id", "GetByTestId", sourceFile, 3, url, fingerprint),
+        });
+        var manifestPath = Path.Combine(_workDir, "Fix.selectors.json");
+        await SelectorManifestWriter.WriteAsync(manifest, manifestPath);
+
+        var stdout = new StringWriter();
+        var runner = new CheckSelectorsRunner(stdout, new StringWriter(), useColor: false);
+
+        var code = await runner.RunAsync(
+            glob: "*.cs",
+            manifestPath: manifestPath,
+            baseUrl: null,
+            ci: true,
+            jsonOutputPath: null,
+            fix: true,
+            backup: true,
+            CancellationToken.None);
+
+        Assert.AreEqual(0, code, "Fixed selectors should not trigger a --ci failure");
+        var rewritten = await File.ReadAllTextAsync(sourceFile);
+        StringAssert.Contains(rewritten, "GetByTestId(\"new-id\")");
+        Assert.IsFalse(rewritten.Contains("\"old-id\""));
+        Assert.IsTrue(File.Exists(sourceFile + ".bak"));
+        StringAssert.Contains(stdout.ToString(), "Fixed 1 of 1 broken selectors in 1 files");
+    }
+
+    [TestMethod]
+    public async Task Run_Fix_NoBackup_SuppressesBakFile()
+    {
+        WriteSource("NoBak.cs", "        page.GetByTestId(\"old-id\");");
+        var url = "data:text/html,<button data-testid='new-id'>Go</button>";
+
+        var fingerprint = new DomFingerprint(
+            "button",
+            new Dictionary<string, string> { ["data-testid"] = "new-id" },
+            "Go",
+            "html > body",
+            DomFingerprintBuilder.ComputeHash(
+                "button",
+                new Dictionary<string, string> { ["data-testid"] = "new-id" },
+                "Go",
+                "html > body"));
+        var sourceFile = Path.Combine(_workDir, "NoBak.cs");
+        var manifest = new SelectorManifest(new[]
+        {
+            new SelectorEntry("old-id", "GetByTestId", sourceFile, 3, url, fingerprint),
+        });
+        var manifestPath = Path.Combine(_workDir, "NoBak.selectors.json");
+        await SelectorManifestWriter.WriteAsync(manifest, manifestPath);
+
+        var runner = new CheckSelectorsRunner(new StringWriter(), new StringWriter(), useColor: false);
+        await runner.RunAsync("*.cs", manifestPath, null, ci: false, null, fix: true, backup: false, CancellationToken.None);
+
+        Assert.IsFalse(File.Exists(sourceFile + ".bak"));
+        StringAssert.Contains(await File.ReadAllTextAsync(sourceFile), "new-id");
     }
 }

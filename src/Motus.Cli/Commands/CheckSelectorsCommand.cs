@@ -32,6 +32,16 @@ public static class CheckSelectorsCommand
             Description = "Write the full check results as JSON to the given path."
         };
 
+        var fixOpt = new Option<bool>("--fix")
+        {
+            Description = "Apply High-confidence repair suggestions to source files."
+        };
+
+        var noBackupOpt = new Option<bool>("--no-backup")
+        {
+            Description = "Do not write .bak files when applying fixes."
+        };
+
         var cmd = new Command("check-selectors", "Validate recorded selectors against live pages")
         {
             globArg,
@@ -39,6 +49,8 @@ public static class CheckSelectorsCommand
             baseUrlOpt,
             ciOpt,
             jsonOpt,
+            fixOpt,
+            noBackupOpt,
         };
 
         cmd.SetAction(async (parseResult, ct) =>
@@ -48,6 +60,8 @@ public static class CheckSelectorsCommand
             var baseUrl = parseResult.GetValue(baseUrlOpt);
             var ci = parseResult.GetValue(ciOpt);
             var jsonPath = parseResult.GetValue(jsonOpt);
+            var fix = parseResult.GetValue(fixOpt);
+            var noBackup = parseResult.GetValue(noBackupOpt);
 
             if (manifest is null && baseUrl is null)
             {
@@ -55,8 +69,14 @@ public static class CheckSelectorsCommand
                 return 2;
             }
 
+            if (fix && manifest is null)
+            {
+                Console.Error.WriteLine("error: --fix requires --manifest (fingerprint match is required for High-confidence repairs).");
+                return 2;
+            }
+
             var runner = new CheckSelectorsRunner();
-            return await runner.RunAsync(glob, manifest, baseUrl, ci, jsonPath, ct);
+            return await runner.RunAsync(glob, manifest, baseUrl, ci, jsonPath, fix, backup: !noBackup, ct);
         });
 
         return cmd;

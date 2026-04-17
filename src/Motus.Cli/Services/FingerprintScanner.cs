@@ -26,7 +26,7 @@ internal static class FingerprintScanner
 {
     private const int MaxCandidates = 20;
 
-    internal static async Task<FingerprintCandidate?> FindMatchAsync(
+    internal static async Task<FingerprintMatch?> FindMatchAsync(
         IPage page, DomFingerprint fingerprint, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(page);
@@ -53,18 +53,29 @@ internal static class FingerprintScanner
                 var hash = DomFingerprintBuilder.ComputeHash(
                     c.TagName, c.KeyAttributes, c.VisibleText, c.AncestorPath);
                 if (string.Equals(hash, fingerprint.Hash, StringComparison.Ordinal))
-                    return c;
+                    return new FingerprintMatch(c, FingerprintMatchQuality.Hash);
             }
 
-            // Fallback: same tag + every manifest key attribute present and equal.
-            // Tolerates benign outerHTML/whitespace differences between CDP capture
-            // and browser live query that would otherwise invalidate the hash.
+            // Attributes pass: same tag + every manifest key attribute present and equal,
+            // OR at least three key attributes match. Tolerates benign outerHTML/whitespace
+            // differences between CDP capture and browser live query.
             foreach (var c in candidates)
             {
                 if (!string.Equals(c.TagName, fingerprint.TagName, StringComparison.Ordinal))
                     continue;
-                if (AllAttributesMatch(fingerprint.KeyAttributes, c.KeyAttributes))
-                    return c;
+                if (AllAttributesMatch(fingerprint.KeyAttributes, c.KeyAttributes)
+                    || CountMatchingAttributes(fingerprint.KeyAttributes, c.KeyAttributes) >= 3)
+                    return new FingerprintMatch(c, FingerprintMatchQuality.Attributes);
+            }
+
+            // Ancestor pass: same tag + same ancestor path. Weakest match quality,
+            // reserved for pages where the element has been restyled but not moved.
+            foreach (var c in candidates)
+            {
+                if (!string.Equals(c.TagName, fingerprint.TagName, StringComparison.Ordinal))
+                    continue;
+                if (string.Equals(c.AncestorPath, fingerprint.AncestorPath, StringComparison.Ordinal))
+                    return new FingerprintMatch(c, FingerprintMatchQuality.Ancestor);
             }
 
             return null;
@@ -88,6 +99,19 @@ internal static class FingerprintScanner
                 return false;
         }
         return true;
+    }
+
+    private static int CountMatchingAttributes(
+        IReadOnlyDictionary<string, string> expected,
+        IReadOnlyDictionary<string, string> actual)
+    {
+        var hits = 0;
+        foreach (var kvp in expected)
+        {
+            if (actual.TryGetValue(kvp.Key, out var val) && val == kvp.Value)
+                hits++;
+        }
+        return hits;
     }
 
     internal static string BuildPreFilterSelector(DomFingerprint fingerprint)

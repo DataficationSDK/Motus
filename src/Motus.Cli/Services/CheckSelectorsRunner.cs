@@ -26,12 +26,23 @@ internal sealed class CheckSelectorsRunner
         _useColor = useColor ?? !Console.IsOutputRedirected;
     }
 
+    internal Task<int> RunAsync(
+        string glob,
+        string? manifestPath,
+        string? baseUrl,
+        bool ci,
+        string? jsonOutputPath,
+        CancellationToken ct) =>
+        RunAsync(glob, manifestPath, baseUrl, ci, jsonOutputPath, fix: false, backup: true, ct);
+
     internal async Task<int> RunAsync(
         string glob,
         string? manifestPath,
         string? baseUrl,
         bool ci,
         string? jsonOutputPath,
+        bool fix,
+        bool backup,
         CancellationToken ct)
     {
         // 1. Parse selectors from C# sources.
@@ -116,7 +127,7 @@ internal sealed class CheckSelectorsRunner
 
         if (groups.Count == 0)
         {
-            PrintAndWriteOutputs(results, jsonOutputPath);
+            PrintAndWriteOutputs(results, jsonOutputPath, rewriteReport: null);
             return ExitCodeFor(results, ci);
         }
 
@@ -178,7 +189,11 @@ internal sealed class CheckSelectorsRunner
                 await browser.CloseAsync().ConfigureAwait(false);
         }
 
-        PrintAndWriteOutputs(results, jsonOutputPath);
+        RewriteReport? rewriteReport = null;
+        if (fix)
+            rewriteReport = SelectorRewriter.Apply(results, backup, ct);
+
+        PrintAndWriteOutputs(results, jsonOutputPath, rewriteReport);
         return ExitCodeFor(results, ci);
     }
 
@@ -206,24 +221,34 @@ internal sealed class CheckSelectorsRunner
             _ => SelectorCheckStatus.Ambiguous,
         };
 
-        string? suggestion = null;
+        string? topSuggestion = null;
+        IReadOnlyList<RepairSuggestion>? suggestions = null;
         if (status == SelectorCheckStatus.Broken && entry is not null)
         {
-            var candidate = await FingerprintScanner.FindMatchAsync(page, entry.Fingerprint, ct)
+            var match = await FingerprintScanner.FindMatchAsync(page, entry.Fingerprint, ct)
                 .ConfigureAwait(false);
-            if (candidate is not null)
-                suggestion = SuggestionBuilder.Build(candidate);
+            if (match is not null)
+            {
+                suggestions = await RepairSuggestionPipeline.BuildAsync(
+                    page, entry.Fingerprint, match, ct).ConfigureAwait(false);
+                if (suggestions.Count > 0)
+                    topSuggestion = suggestions[0].Replacement;
+            }
         }
 
         return new SelectorCheckResult(
             status,
             parsed.Selector, parsed.LocatorMethod, parsed.SourceFile, parsed.SourceLine,
-            pageUrl, MatchCount: count, Suggestion: suggestion, Note: null);
+            pageUrl, MatchCount: count, Suggestion: topSuggestion, Note: null)
+        {
+            Suggestions = suggestions,
+        };
     }
 
-    private void PrintAndWriteOutputs(List<SelectorCheckResult> results, string? jsonOutputPath)
+    private void PrintAndWriteOutputs(
+        List<SelectorCheckResult> results, string? jsonOutputPath, RewriteReport? rewriteReport)
     {
-        SelectorCheckTablePrinter.Print(results, _stdout, _useColor);
+        SelectorCheckTablePrinter.Print(results, _stdout, _useColor, rewriteReport);
 
         if (jsonOutputPath is not null)
         {
@@ -249,7 +274,7 @@ internal sealed class CheckSelectorsRunner
             return 0;
         foreach (var r in results)
         {
-            if (r.Status == SelectorCheckStatus.Broken)
+            if (r.Status == SelectorCheckStatus.Broken && !r.Fixed)
                 return 1;
         }
         return 0;

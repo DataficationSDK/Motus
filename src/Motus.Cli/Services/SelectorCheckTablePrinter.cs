@@ -20,7 +20,8 @@ internal static class SelectorCheckTablePrinter
     internal static void Print(
         IReadOnlyList<SelectorCheckResult> results,
         TextWriter writer,
-        bool useColor)
+        bool useColor,
+        RewriteReport? rewriteReport = null)
     {
         ArgumentNullException.ThrowIfNull(results);
         ArgumentNullException.ThrowIfNull(writer);
@@ -31,6 +32,7 @@ internal static class SelectorCheckTablePrinter
             WriteRow(writer, r, useColor);
         }
         WriteSummary(writer, results, useColor);
+        WriteRewriteSummary(writer, results, rewriteReport, useColor);
     }
 
     private static void WriteHeader(TextWriter writer)
@@ -43,7 +45,7 @@ internal static class SelectorCheckTablePrinter
 
     private static void WriteRow(TextWriter writer, SelectorCheckResult r, bool useColor)
     {
-        var statusLabel = r.Status.ToString().ToUpperInvariant();
+        var statusLabel = r.Fixed ? "FIXED" : r.Status.ToString().ToUpperInvariant();
         var selector = Format(r.LocatorMethod, r.Selector);
         var location = $"{Path.GetFileName(r.SourceFile)}:{r.SourceLine}";
 
@@ -53,7 +55,7 @@ internal static class SelectorCheckTablePrinter
 
         if (useColor)
         {
-            var color = ColorFor(r.Status);
+            var color = r.Fixed ? Green : ColorFor(r.Status);
             writer.WriteLine(
                 $"{color}{statusLabel,-StatusWidth}{Reset} {selectorCol,-SelectorWidth} {locationCol,-LocationWidth} {matchesCol,MatchesWidth}");
         }
@@ -63,10 +65,31 @@ internal static class SelectorCheckTablePrinter
                 $"{statusLabel,-StatusWidth} {selectorCol,-SelectorWidth} {locationCol,-LocationWidth} {matchesCol,MatchesWidth}");
         }
 
-        if (r.Suggestion is not null)
+        // Preserve the pre-3D single-line format when only the legacy Suggestion is set.
+        if (r.Suggestions is { Count: > 0 } suggestions)
+        {
+            foreach (var s in suggestions)
+            {
+                var line = $"  -> Suggestion ({s.Confidence}, {s.StrategyName}): {s.Replacement}";
+                writer.WriteLine(useColor ? $"{Gray}{line}{Reset}" : line);
+            }
+        }
+        else if (r.Suggestion is not null)
         {
             var line = $"  -> Suggestion: {r.Suggestion}";
             writer.WriteLine(useColor ? $"{Gray}{line}{Reset}" : line);
+        }
+
+        if (r.Fixed && r.AppliedSuggestion is not null)
+        {
+            var line = $"  -> Fixed: {r.AppliedSuggestion}";
+            writer.WriteLine(useColor ? $"{Green}{line}{Reset}" : line);
+        }
+
+        if (r.FixError is not null)
+        {
+            var line = $"  -> Fix error: {r.FixError}";
+            writer.WriteLine(useColor ? $"{Yellow}{line}{Reset}" : line);
         }
 
         if (r.Note is not null)
@@ -102,6 +125,26 @@ internal static class SelectorCheckTablePrinter
             writer.WriteLine(
                 $"Total {results.Count}  |  {healthy} healthy  |  {broken} broken  |  {ambiguous} ambiguous  |  {skipped} skipped");
         }
+    }
+
+    private static void WriteRewriteSummary(
+        TextWriter writer,
+        IReadOnlyList<SelectorCheckResult> results,
+        RewriteReport? report,
+        bool useColor)
+    {
+        if (report is null)
+            return;
+
+        var brokenTotal = 0;
+        foreach (var r in results)
+        {
+            if (r.Status == SelectorCheckStatus.Broken)
+                brokenTotal++;
+        }
+
+        var line = $"Fixed {report.FixesApplied} of {brokenTotal} broken selectors in {report.FilesModified} files";
+        writer.WriteLine(useColor ? $"{Green}{line}{Reset}" : line);
     }
 
     private static string ColorFor(SelectorCheckStatus status) => status switch
