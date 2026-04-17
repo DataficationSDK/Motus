@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Motus.Abstractions;
 
 namespace Motus;
@@ -209,9 +210,17 @@ internal sealed partial class Page : IPage
                 // Evaluation failed, will retry
             }
 
-            await Task.Delay(100, cts.Token).ConfigureAwait(false);
+            try
+            {
+                await Task.Delay(100, cts.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
         }
 
+        _pageCts.Token.ThrowIfCancellationRequested();
         throw new TimeoutException(
             $"WaitForFunction timed out after {deadline.TotalMilliseconds}ms.");
     }
@@ -258,13 +267,72 @@ internal sealed partial class Page : IPage
         // The CTS will be collected once all references are released.
     }
 
+    private static readonly Regex FunctionKeywordRegex = new(
+        @"^(async\s+)?function\b", RegexOptions.Compiled);
+
+    private static readonly Regex IdentifierArrowRegex = new(
+        @"^(async\s+)?[\p{L}_$][\p{L}\p{N}_$]*\s*=>", RegexOptions.Compiled);
+
+    internal static bool LooksLikeFunctionExpression(string expression)
+    {
+        var trimmed = expression.TrimStart();
+
+        if (FunctionKeywordRegex.IsMatch(trimmed))
+            return true;
+
+        if (IdentifierArrowRegex.IsMatch(trimmed))
+            return true;
+
+        return IsParenthesizedArrow(trimmed);
+    }
+
+    // Detects "(...) => ..." or "async (...) => ..." where the paren group
+    // closes at the top level and is followed by "=>". An already-invoked
+    // IIFE like "(() => 1)()" is intentionally rejected because the trailing
+    // "(" indicates a call, not a function literal.
+    private static bool IsParenthesizedArrow(string s)
+    {
+        int i = 0;
+        if (s.Length >= 5 && s.StartsWith("async", StringComparison.Ordinal)
+            && i + 5 < s.Length && char.IsWhiteSpace(s[5]))
+        {
+            i = 5;
+            while (i < s.Length && char.IsWhiteSpace(s[i])) i++;
+        }
+
+        if (i >= s.Length || s[i] != '(') return false;
+
+        int depth = 0;
+        for (; i < s.Length; i++)
+        {
+            if (s[i] == '(') depth++;
+            else if (s[i] == ')')
+            {
+                depth--;
+                if (depth == 0) { i++; break; }
+            }
+        }
+        if (depth != 0) return false;
+
+        while (i < s.Length && char.IsWhiteSpace(s[i])) i++;
+
+        return i + 1 < s.Length && s[i] == '=' && s[i + 1] == '>';
+    }
+
     private static string WrapExpression(string expression, object? arg)
     {
-        if (arg is null)
-            return expression;
+        if (LooksLikeFunctionExpression(expression))
+        {
+            var serialized = arg is null ? "undefined" : JsonSerializer.Serialize(arg);
+            return $"(({expression})({serialized}))";
+        }
 
-        var serialized = JsonSerializer.Serialize(arg);
-        return $"(({expression})({serialized}))";
+        if (arg is not null)
+            throw new InvalidOperationException(
+                "Cannot pass an argument to a non-function expression. " +
+                "Use an arrow function or function literal.");
+
+        return expression;
     }
 
     private static T DeserializeRemoteObject<T>(RuntimeRemoteObject remoteObject)

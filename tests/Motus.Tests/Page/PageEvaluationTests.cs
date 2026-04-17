@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Motus.Tests.Transport;
 
 namespace Motus.Tests.Page;
@@ -167,5 +168,176 @@ public class PageEvaluationTests
 
         var handle = await evalTask;
         Assert.IsNotNull(handle);
+    }
+
+    [TestMethod]
+    public async Task EvaluateAsync_BareExpression_PassesThroughUnwrapped()
+    {
+        var page = await CreatePageWithFrameAsync();
+
+        var evalTask = page.EvaluateAsync<string>("document.title");
+
+        _socket.Enqueue("""
+            {
+                "id": 9,
+                "sessionId": "session-1",
+                "result": { "result": { "type": "string", "value": "T" } }
+            }
+            """);
+
+        await evalTask;
+
+        var sentExpression = GetEvaluateExpression(_socket.GetSentJson(8));
+        Assert.AreEqual("document.title", sentExpression);
+    }
+
+    [TestMethod]
+    public async Task EvaluateAsync_ArrowFunction_WrappedAsIIFE()
+    {
+        var page = await CreatePageWithFrameAsync();
+
+        var evalTask = page.EvaluateAsync<int>("() => 42");
+
+        _socket.Enqueue("""
+            {
+                "id": 9,
+                "sessionId": "session-1",
+                "result": { "result": { "type": "number", "value": 42 } }
+            }
+            """);
+
+        var result = await evalTask;
+        Assert.AreEqual(42, result);
+
+        var sentExpression = GetEvaluateExpression(_socket.GetSentJson(8));
+        Assert.AreEqual("((() => 42)(undefined))", sentExpression);
+    }
+
+    [TestMethod]
+    public async Task EvaluateAsync_FunctionLiteralWithArg_InvokesWithSerializedArg()
+    {
+        var page = await CreatePageWithFrameAsync();
+
+        var evalTask = page.EvaluateAsync<int>("function(x) { return x * 2; }", arg: 5);
+
+        _socket.Enqueue("""
+            {
+                "id": 9,
+                "sessionId": "session-1",
+                "result": { "result": { "type": "number", "value": 10 } }
+            }
+            """);
+
+        var result = await evalTask;
+        Assert.AreEqual(10, result);
+
+        var sentExpression = GetEvaluateExpression(_socket.GetSentJson(8));
+        Assert.AreEqual("((function(x) { return x * 2; })(5))", sentExpression);
+    }
+
+    [TestMethod]
+    public async Task EvaluateAsync_NonFunctionWithArg_Throws()
+    {
+        var page = await CreatePageWithFrameAsync();
+
+        await Assert.ThrowsExceptionAsync<InvalidOperationException>(
+            () => page.EvaluateAsync<int>("1 + 1", arg: 5));
+    }
+
+    [TestMethod]
+    public async Task WaitForFunctionAsync_ArrowFunction_InvokesAndReturnsBool()
+    {
+        var page = await CreatePageWithFrameAsync();
+
+        var waitTask = page.WaitForFunctionAsync<bool>("() => window.ready === true");
+
+        _socket.Enqueue("""
+            {
+                "id": 9,
+                "sessionId": "session-1",
+                "result": { "result": { "type": "boolean", "value": true } }
+            }
+            """);
+
+        var result = await waitTask;
+        Assert.IsTrue(result);
+
+        var sentExpression = GetEvaluateExpression(_socket.GetSentJson(8));
+        Assert.AreEqual("((() => window.ready === true)(undefined))", sentExpression);
+    }
+
+    [TestMethod]
+    public async Task WaitForFunctionAsync_PollsUntilTruthy()
+    {
+        var page = await CreatePageWithFrameAsync();
+
+        _socket.QueueResponse("""
+            {"id": 9, "sessionId": "session-1",
+             "result": { "result": { "type": "boolean", "value": false } }}
+            """);
+        _socket.QueueResponse("""
+            {"id": 10, "sessionId": "session-1",
+             "result": { "result": { "type": "boolean", "value": false } }}
+            """);
+        _socket.QueueResponse("""
+            {"id": 11, "sessionId": "session-1",
+             "result": { "result": { "type": "boolean", "value": true } }}
+            """);
+
+        var waitTask = page.WaitForFunctionAsync<bool>("() => window.ready", timeout: 5_000);
+
+        var result = await waitTask;
+        Assert.IsTrue(result);
+
+        // Confirm the loop issued more than one Runtime.evaluate.
+        Assert.IsTrue(_socket.SentMessages.Count >= 10,
+            $"Expected at least 10 sent messages (8 setup + 2+ polls), got {_socket.SentMessages.Count}");
+    }
+
+    [TestMethod]
+    public async Task WaitForFunctionAsync_TimesOut()
+    {
+        var page = await CreatePageWithFrameAsync();
+
+        for (int i = 0; i < 10; i++)
+        {
+            var id = 9 + i;
+            _socket.QueueResponse(
+                "{\"id\": " + id + ", \"sessionId\": \"session-1\", " +
+                "\"result\": { \"result\": { \"type\": \"boolean\", \"value\": false } } }");
+        }
+
+        await Assert.ThrowsExceptionAsync<TimeoutException>(
+            () => page.WaitForFunctionAsync<bool>("() => false", timeout: 200));
+    }
+
+    private static string GetEvaluateExpression(string sentJson)
+    {
+        using var doc = JsonDocument.Parse(sentJson);
+        return doc.RootElement.GetProperty("params").GetProperty("expression").GetString()!;
+    }
+
+    [DataTestMethod]
+    [DataRow("() => window.x", true)]
+    [DataRow("x => x + 1", true)]
+    [DataRow("(a, b) => a + b", true)]
+    [DataRow("async () => await fetch('/')", true)]
+    [DataRow("async x => x", true)]
+    [DataRow("function() { return 1; }", true)]
+    [DataRow("function named(x) { return x; }", true)]
+    [DataRow("async function() { return 1; }", true)]
+    [DataRow("  () => 1", true)]
+    [DataRow("document.title", false)]
+    [DataRow("1 + 1", false)]
+    [DataRow("window.ready === true", false)]
+    [DataRow("window.getConfig", false)]
+    [DataRow("'arrow in string =>'", false)]
+    [DataRow("(() => 1)()", false)]
+    [DataRow("(async () => 1)()", false)]
+    [DataRow("((x) => x + 1)(5)", false)]
+    [DataRow("(function() { return 1; })()", false)]
+    public void LooksLikeFunctionExpression_Classifies(string expression, bool expected)
+    {
+        Assert.AreEqual(expected, Motus.Page.LooksLikeFunctionExpression(expression));
     }
 }
