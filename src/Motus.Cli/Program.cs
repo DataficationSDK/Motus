@@ -11,6 +11,7 @@ var root = new RootCommand("Motus CLI - Browser automation toolkit")
     ScreenshotCommand.Build(),
     PdfCommand.Build(),
     TraceCommand.Build(),
+    CheckSelectorsCommand.Build(),
 };
 
 var config = new CommandLineConfiguration(root);
