@@ -167,6 +167,12 @@ namespace Motus;
 [JsonSerializable(typeof(DomGetBoxModelParams))]
 [JsonSerializable(typeof(DomGetBoxModelResult))]
 [JsonSerializable(typeof(DomBoxModel))]
+// --- DOM domain (highlight) ---
+[JsonSerializable(typeof(DomRgba))]
+[JsonSerializable(typeof(DomHighlightConfig))]
+[JsonSerializable(typeof(DomHighlightNodeParams))]
+[JsonSerializable(typeof(DomHighlightNodeResult))]
+[JsonSerializable(typeof(DomHideHighlightResult))]
 // --- Page domain (clip) ---
 [JsonSerializable(typeof(PageCaptureScreenshotWithClipParams))]
 [JsonSerializable(typeof(PageClipRect))]
@@ -1024,6 +1030,29 @@ internal sealed record DomBoxModel(
     double Height);
 
 internal sealed record DomGetBoxModelResult(DomBoxModel Model);
+
+// ============================================================================
+// DOM domain (highlight)
+// ============================================================================
+
+internal sealed record DomRgba(int R, int G, int B, double? A = null);
+
+internal sealed record DomHighlightConfig(
+    bool? ShowInfo = null,
+    DomRgba? ContentColor = null,
+    DomRgba? PaddingColor = null,
+    DomRgba? BorderColor = null,
+    DomRgba? MarginColor = null);
+
+internal sealed record DomHighlightNodeParams(
+    DomHighlightConfig HighlightConfig,
+    int? BackendNodeId = null,
+    int? NodeId = null,
+    string? ObjectId = null);
+
+internal sealed record DomHighlightNodeResult();
+
+internal sealed record DomHideHighlightResult();
 
 // ============================================================================
 // Tracing domain

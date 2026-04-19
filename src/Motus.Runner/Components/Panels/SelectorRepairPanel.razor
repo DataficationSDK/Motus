@@ -1,0 +1,211 @@
+@inject ISelectorRepairService Repair
+@implements IDisposable
+
+@if (Repair.IsComplete)
+{
+    <div class="repair-empty">
+        <h3>Repair complete</h3>
+        <div class="repair-summary-row">
+            <span class="repair-badge badge-accept">Accepted: @Repair.Accepted</span>
+            <span class="repair-badge badge-skip">Skipped: @Repair.Skipped</span>
+            <span class="repair-badge badge-fail">Failed: @Repair.Failed</span>
+        </div>
+        <p>The runner will shut down momentarily.</p>
+    </div>
+}
+else if (Repair.CurrentItem is { } item)
+{
+    <div class="repair-panel" tabindex="0" @onkeydown="OnKeyDown" @ref="_panelRef">
+        <div class="repair-header">
+            <div class="repair-progress">
+                Selector @(Repair.CurrentIndex + 1) of @Repair.Items.Count
+            </div>
+            <div class="repair-summary-row">
+                <span class="repair-badge badge-accept">Accepted: @Repair.Accepted</span>
+                <span class="repair-badge badge-skip">Skipped: @Repair.Skipped</span>
+                <span class="repair-badge badge-fail">Failed: @Repair.Failed</span>
+            </div>
+        </div>
+
+        <div class="repair-grid">
+            <div class="repair-left">
+                <div class="repair-section-label">Broken selector</div>
+                <code class="repair-code">@(item.LocatorMethod)("@item.Selector")</code>
+
+                <div class="repair-section-label">Source</div>
+                <div class="repair-source">@item.SourceFile:@item.SourceLine</div>
+
+                <div class="repair-section-label">Page</div>
+                <div class="repair-source">@item.PageUrl</div>
+
+                @if (_outcome is { Error: { } err })
+                {
+                    <div class="repair-error">@err</div>
+                }
+            </div>
+
+            <div class="repair-right">
+                <div class="repair-section-label">Suggestions</div>
+                @if (item.Suggestions.Count == 0)
+                {
+                    <div class="repair-empty-inline">No automated suggestions. Edit the replacement below to fix manually.</div>
+                }
+                else
+                {
+                    <div class="repair-suggestions">
+                        @for (var i = 0; i < item.Suggestions.Count; i++)
+                        {
+                            var idx = i;
+                            var s = item.Suggestions[idx];
+                            <label class="repair-suggestion @(idx == _selectedIndex ? "selected" : "")">
+                                <input type="radio" name="suggestion"
+                                       checked="@(idx == _selectedIndex)"
+                                       @onchange="() => SelectSuggestion(idx)" />
+                                <span class="repair-confidence confidence-@s.Confidence.ToString().ToLowerInvariant()">@s.Confidence</span>
+                                <code class="repair-code">@s.Replacement</code>
+                                <span class="repair-strategy">via @s.StrategyName</span>
+                            </label>
+                        }
+                    </div>
+                }
+
+                <div class="repair-section-label">Replacement (editable)</div>
+                <input type="text" class="repair-input" @bind="_editValue" @bind:event="oninput" />
+
+                <div class="repair-actions">
+                    <button class="repair-btn btn-accept" @onclick="OnAccept" disabled="@string.IsNullOrWhiteSpace(_editValue)">
+                        Accept (A)
+                    </button>
+                    <button class="repair-btn btn-skip" @onclick="OnSkip">
+                        Skip (S)
+                    </button>
+                    <button class="repair-btn btn-finish" @onclick="OnFinish">
+                        Finish &amp; Exit
+                    </button>
+                </div>
+
+                <div class="repair-shortcuts">
+                    Keyboard: A = Accept, S = Skip, &uarr;/&darr; = cycle suggestions
+                </div>
+            </div>
+        </div>
+    </div>
+}
+else
+{
+    <div class="repair-empty">Loading repair queue...</div>
+}
+
+@code {
+    private int _selectedIndex;
+    private string _editValue = "";
+    private RepairOutcome? _outcome;
+    private RepairQueueItem? _lastItem;
+    private ElementReference _panelRef;
+
+    protected override void OnInitialized()
+    {
+        Repair.StateChanged += OnStateChanged;
+        SyncFromCurrent();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender || _lastItem != Repair.CurrentItem)
+        {
+            try { await _panelRef.FocusAsync(); }
+            catch { /* element may not be present */ }
+        }
+    }
+
+    private async void OnStateChanged()
+    {
+        SyncFromCurrent();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void SyncFromCurrent()
+    {
+        var item = Repair.CurrentItem;
+        if (item is null)
+        {
+            _outcome = Repair.CurrentOutcome;
+            _lastItem = null;
+            return;
+        }
+
+        if (!ReferenceEquals(item, _lastItem))
+        {
+            _lastItem = item;
+            _selectedIndex = 0;
+            _editValue = item.Suggestions.Count > 0 ? item.Suggestions[0].Replacement : "";
+            _outcome = null;
+        }
+        else
+        {
+            _outcome = Repair.CurrentOutcome;
+        }
+    }
+
+    private void SelectSuggestion(int index)
+    {
+        var item = Repair.CurrentItem;
+        if (item is null || index < 0 || index >= item.Suggestions.Count)
+            return;
+        _selectedIndex = index;
+        _editValue = item.Suggestions[index].Replacement;
+    }
+
+    private async Task OnAccept()
+    {
+        if (string.IsNullOrWhiteSpace(_editValue))
+            return;
+        await Repair.AcceptAsync(_editValue);
+    }
+
+    private async Task OnSkip()
+    {
+        await Repair.SkipAsync();
+    }
+
+    private async Task OnFinish()
+    {
+        await Repair.FinishAsync();
+    }
+
+    private async Task OnKeyDown(KeyboardEventArgs e)
+    {
+        switch (e.Key)
+        {
+            case "a":
+            case "A":
+                await OnAccept();
+                break;
+            case "s":
+            case "S":
+                await OnSkip();
+                break;
+            case "ArrowDown":
+                CycleSuggestion(+1);
+                break;
+            case "ArrowUp":
+                CycleSuggestion(-1);
+                break;
+        }
+    }
+
+    private void CycleSuggestion(int delta)
+    {
+        var item = Repair.CurrentItem;
+        if (item is null || item.Suggestions.Count == 0)
+            return;
+        var n = item.Suggestions.Count;
+        var next = ((_selectedIndex + delta) % n + n) % n;
+        SelectSuggestion(next);
+    }
+
+    public void Dispose()
+    {
+        Repair.StateChanged -= OnStateChanged;
+    }
+}

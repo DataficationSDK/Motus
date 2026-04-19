@@ -49,4 +49,45 @@ public class CheckSelectorsCommandTests
         var result = Cmd.Parse("");
         Assert.IsTrue(result.Errors.Count > 0);
     }
+
+    [TestMethod]
+    public void Parse_WithInteractive_NoErrors()
+    {
+        var result = Cmd.Parse("**/*.cs --manifest m.json --interactive");
+        Assert.AreEqual(0, result.Errors.Count);
+    }
+
+    [TestMethod]
+    public async Task Invoke_InteractiveWithoutManifest_ReturnsTwo()
+    {
+        var origErr = Console.Error;
+        try
+        {
+            Console.SetError(new StringWriter());
+            var result = Cmd.Parse("**/*.cs --base-url https://x --interactive");
+            var exit = await result.InvokeAsync();
+            Assert.AreEqual(2, exit);
+        }
+        finally
+        {
+            Console.SetError(origErr);
+        }
+    }
+
+    [TestMethod]
+    public async Task Invoke_InteractiveWithFix_ReturnsTwo()
+    {
+        var origErr = Console.Error;
+        try
+        {
+            Console.SetError(new StringWriter());
+            var result = Cmd.Parse("**/*.cs --manifest m.json --interactive --fix");
+            var exit = await result.InvokeAsync();
+            Assert.AreEqual(2, exit);
+        }
+        finally
+        {
+            Console.SetError(origErr);
+        }
+    }
 }

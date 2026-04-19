@@ -8,4 +8,5 @@ public sealed class RunnerOptions
     public string? BaselinePath { get; set; }
     public bool TraceMode { get; set; }
     public string? TraceFilePath { get; set; }
+    public bool RepairMode { get; set; }
 }

@@ -1,9 +1,9 @@
 namespace Motus.Samples.Tests;
 
 /// <summary>
-/// Performance testing showcase demonstrating Phase 2 features:
-/// budget assertions, individual metric assertions (LCP, FCP, TTFB, CLS),
-/// the [PerformanceBudget] attribute with class/method override, and .Not negation.
+/// Performance testing showcase: budget assertions, individual metric
+/// assertions (LCP, FCP, TTFB, CLS), the [PerformanceBudget] attribute with
+/// class/method override, and .Not negation.
 ///
 /// Uses real HTTP navigations so the PerformanceObserver collects actual web vitals.
 /// When run in the visual runner, navigate steps appear as annotated timeline markers

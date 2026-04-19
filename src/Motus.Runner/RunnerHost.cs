@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Logging;
 using Motus.Runner.Services;
+using Motus.Runner.Services.SelectorRepair;
 using Motus.Runner.Services.Timeline;
 using Motus.Runner.Services.VisualRegression;
 
@@ -17,6 +18,7 @@ public static class RunnerHost
         int port = 5100,
         string? traceFilePath = null,
         bool verbose = false,
+        bool repairMode = false,
         CancellationToken ct = default)
     {
         // Resolve the directory containing Motus.Runner.dll. When running from
@@ -56,6 +58,7 @@ public static class RunnerHost
             Port = port,
             TraceMode = traceFilePath is not null,
             TraceFilePath = traceFilePath,
+            RepairMode = repairMode,
         };
 
         builder.Services.AddSingleton(options);
@@ -71,6 +74,8 @@ public static class RunnerHost
         builder.Services.AddSingleton<IStepDebugService>(sp => sp.GetRequiredService<StepDebugService>());
         builder.Services.AddSingleton<VisualRegressionService>();
         builder.Services.AddSingleton<IVisualRegressionService>(sp => sp.GetRequiredService<VisualRegressionService>());
+        builder.Services.AddSingleton<SelectorRepairService>();
+        builder.Services.AddSingleton<ISelectorRepairService>(sp => sp.GetRequiredService<SelectorRepairService>());
 
         builder.Services.AddRazorComponents()
             .AddInteractiveServerComponents();
@@ -142,6 +147,33 @@ public static class RunnerHost
         {
             var traceViewer = new TraceViewerService(timeline);
             await traceViewer.LoadFromFileAsync(traceFilePath);
+        }
+
+        if (repairMode && SelectorRepairBridge.Page is not null)
+        {
+            // Pipe the CLI-owned page into the runner's screencast so the user
+            // sees the live page in the Browser View tab.
+            RunnerPageBridge.SetActivePage(SelectorRepairBridge.Page);
+
+            // Trigger first-item navigation + highlight once the UI is up.
+            var repair = app.Services.GetRequiredService<ISelectorRepairService>();
+            _ = Task.Run(async () =>
+            {
+                try { await repair.InitializeAsync(ct); }
+                catch { /* best-effort */ }
+            });
+
+            // Auto-shutdown the runner when the user finishes the queue.
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    if (SelectorRepairBridge.Completion is not null)
+                        await SelectorRepairBridge.Completion.Task;
+                }
+                catch { /* ignore */ }
+                app.Lifetime.StopApplication();
+            });
         }
 
         var url = $"http://localhost:{port}";

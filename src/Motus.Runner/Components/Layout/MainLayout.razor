@@ -34,6 +34,13 @@
                     @onclick='() => activeTab = "console"'>
                 Test Console
             </button>
+            @if (Options.RepairMode)
+            {
+                <button class="main-tab @(activeTab == "repair" ? "tab-active" : "")"
+                        @onclick='() => activeTab = "repair"'>
+                    Selector Repair
+                </button>
+            }
         </div>
         <div class="main-content">
             @switch (activeTab)
@@ -49,6 +56,9 @@
                     break;
                 case "console":
                     <TestConsolePanel />
+                    break;
+                case "repair":
+                    <SelectorRepairPanel />
                     break;
             }
         </div>
@@ -124,6 +134,8 @@
     {
         if (Options.TraceMode)
             activeTab = "step";
+        if (Options.RepairMode)
+            activeTab = "repair";
         Session.StateChanged += OnStateChanged;
         Session.RunStarted += OnRunStarted;
         Timeline.TimelineChanged += OnTimelineChanged;

@@ -74,7 +74,7 @@ Because no process or temp directory is owned, `DisposeAsync` on a connected bro
 
 ### `InstalledBinariesPath`
 
-When the Motus install system (Phase 3D) downloads a browser, it sets `BrowserFinder.InstalledBinariesPath`. This path is prepended to every channel's candidate list, ahead of system-installed locations.
+When the Motus install system downloads a browser, it sets `BrowserFinder.InstalledBinariesPath`. This path is prepended to every channel's candidate list, ahead of system-installed locations.
 
 ### Platform candidate paths
 

@@ -1,0 +1,222 @@
+.repair-panel {
+    padding: 8px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    overflow-y: auto;
+    max-height: 100%;
+    outline: none;
+}
+
+.repair-empty {
+    padding: 16px;
+    color: var(--vsc-fg-dim);
+}
+
+.repair-empty-inline {
+    color: var(--vsc-fg-dim);
+    font-size: 12px;
+    padding: 4px 0;
+}
+
+.repair-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--vsc-border);
+    padding-bottom: 8px;
+}
+
+.repair-progress {
+    font-size: 12px;
+    color: var(--vsc-fg-dim);
+    font-family: var(--vsc-font-mono);
+}
+
+.repair-summary-row {
+    display: flex;
+    gap: 8px;
+}
+
+.repair-badge {
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 600;
+    font-family: var(--vsc-font-mono);
+    color: #fff;
+}
+
+.badge-accept {
+    background: var(--vsc-green);
+}
+
+.badge-skip {
+    background: var(--vsc-fg-dim);
+}
+
+.badge-fail {
+    background: var(--vsc-red);
+}
+
+.repair-grid {
+    display: grid;
+    grid-template-columns: 1fr 2fr;
+    gap: 16px;
+}
+
+.repair-section-label {
+    font-size: 11px;
+    color: var(--vsc-fg-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-top: 4px;
+    margin-bottom: 4px;
+}
+
+.repair-code {
+    font-size: 12px;
+    color: var(--vsc-fg);
+    background: var(--vsc-bg-secondary);
+    padding: 4px 8px;
+    border-radius: 3px;
+    font-family: var(--vsc-font-mono);
+    display: inline-block;
+    max-width: 100%;
+    overflow-x: auto;
+    white-space: nowrap;
+}
+
+.repair-source {
+    font-size: 12px;
+    color: var(--vsc-fg);
+    font-family: var(--vsc-font-mono);
+    word-break: break-all;
+}
+
+.repair-error {
+    padding: 6px 8px;
+    background: rgba(255, 0, 0, 0.1);
+    border-left: 3px solid var(--vsc-red);
+    color: var(--vsc-red);
+    font-size: 12px;
+    font-family: var(--vsc-font-mono);
+    margin-top: 8px;
+}
+
+.repair-suggestions {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.repair-suggestion {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border: 1px solid var(--vsc-border);
+    border-radius: 3px;
+    cursor: pointer;
+}
+
+.repair-suggestion:hover {
+    background: var(--vsc-bg-secondary);
+}
+
+.repair-suggestion.selected {
+    border-color: var(--vsc-accent);
+    background: var(--vsc-bg-secondary);
+}
+
+.repair-confidence {
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    font-family: var(--vsc-font-mono);
+    color: #fff;
+    flex-shrink: 0;
+    min-width: 56px;
+    text-align: center;
+}
+
+.confidence-high {
+    background: var(--vsc-green);
+}
+
+.confidence-medium {
+    background: #b58900;
+}
+
+.confidence-low {
+    background: var(--vsc-fg-dim);
+}
+
+.repair-strategy {
+    font-size: 11px;
+    color: var(--vsc-fg-dim);
+    font-family: var(--vsc-font-mono);
+    margin-left: auto;
+}
+
+.repair-input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 6px 8px;
+    background: var(--vsc-bg-secondary);
+    border: 1px solid var(--vsc-border);
+    border-radius: 3px;
+    color: var(--vsc-fg);
+    font-family: var(--vsc-font-mono);
+    font-size: 12px;
+}
+
+.repair-input:focus {
+    outline: 1px solid var(--vsc-accent);
+    border-color: var(--vsc-accent);
+}
+
+.repair-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.repair-btn {
+    padding: 6px 14px;
+    border: 1px solid var(--vsc-border);
+    border-radius: 3px;
+    background: var(--vsc-bg-secondary);
+    color: var(--vsc-fg);
+    font-family: var(--vsc-font);
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.repair-btn:hover:not(:disabled) {
+    background: var(--vsc-bg);
+    border-color: var(--vsc-accent);
+}
+
+.repair-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.btn-accept {
+    background: var(--vsc-green);
+    color: #fff;
+    border-color: var(--vsc-green);
+}
+
+.btn-accept:hover:not(:disabled) {
+    filter: brightness(1.1);
+}
+
+.repair-shortcuts {
+    font-size: 11px;
+    color: var(--vsc-fg-dim);
+    margin-top: 8px;
+}

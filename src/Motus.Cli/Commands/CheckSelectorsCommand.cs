@@ -42,6 +42,11 @@ public static class CheckSelectorsCommand
             Description = "Do not write .bak files when applying fixes."
         };
 
+        var interactiveOpt = new Option<bool>("--interactive")
+        {
+            Description = "Open the visual runner to review and apply repairs one selector at a time."
+        };
+
         var cmd = new Command("check-selectors", "Validate recorded selectors against live pages")
         {
             globArg,
@@ -51,6 +56,7 @@ public static class CheckSelectorsCommand
             jsonOpt,
             fixOpt,
             noBackupOpt,
+            interactiveOpt,
         };
 
         cmd.SetAction(async (parseResult, ct) =>
@@ -62,6 +68,7 @@ public static class CheckSelectorsCommand
             var jsonPath = parseResult.GetValue(jsonOpt);
             var fix = parseResult.GetValue(fixOpt);
             var noBackup = parseResult.GetValue(noBackupOpt);
+            var interactive = parseResult.GetValue(interactiveOpt);
 
             if (manifest is null && baseUrl is null)
             {
@@ -75,7 +82,22 @@ public static class CheckSelectorsCommand
                 return 2;
             }
 
+            if (interactive && manifest is null)
+            {
+                Console.Error.WriteLine("error: --interactive requires --manifest (fingerprint match is required to surface repair suggestions).");
+                return 2;
+            }
+
+            if (interactive && fix)
+            {
+                Console.Error.WriteLine("error: --interactive and --fix cannot be combined.");
+                return 2;
+            }
+
             var runner = new CheckSelectorsRunner();
+            if (interactive)
+                return await runner.RunInteractiveAsync(glob, manifest!, ci, jsonPath, backup: !noBackup, ct);
+
             return await runner.RunAsync(glob, manifest, baseUrl, ci, jsonPath, fix, backup: !noBackup, ct);
         });
 
