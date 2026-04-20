@@ -13,6 +13,8 @@ internal sealed class Locator : ILocator
     private readonly ILocator? _hasNot;
     private readonly double? _defaultTimeout;
     private readonly bool _pierceShadow;
+    private readonly int _parentSteps;         // Number of ".." hops to walk from each base match.
+    private readonly string? _childSelector;   // CSS applied as a scoped descendant query after the parent walk.
 
     internal Locator(Page page, string selector, LocatorOptions? options = null)
     {
@@ -26,7 +28,8 @@ internal sealed class Locator : ILocator
     }
 
     private Locator(Page page, string selector, int? nthIndex, string? hasText,
-        ILocator? has, ILocator? hasNot, double? defaultTimeout = null, bool pierceShadow = true)
+        ILocator? has, ILocator? hasNot, double? defaultTimeout = null, bool pierceShadow = true,
+        int parentSteps = 0, string? childSelector = null)
     {
         _page = page;
         _selector = selector;
@@ -36,6 +39,8 @@ internal sealed class Locator : ILocator
         _hasNot = hasNot;
         _defaultTimeout = defaultTimeout;
         _pierceShadow = pierceShadow;
+        _parentSteps = parentSteps;
+        _childSelector = childSelector;
     }
 
     // --- Internal Properties for Assertions ---
@@ -149,15 +154,15 @@ internal sealed class Locator : ILocator
 
     // --- Core Resolution ---
 
+    private readonly record struct ResolveOutcome(
+        IReadOnlyList<IElementHandle> Handles,
+        int BaseMatchCount);
+
     private async Task<string> ResolveObjectIdCoreAsync(CancellationToken ct)
     {
-        var (prefix, expression) = ParsePrefix(_selector);
-        var registry = _page.ContextInternal.SelectorStrategies;
-
-        if (!registry.TryGetStrategy(prefix, out var strategy))
-            throw new InvalidOperationException($"No selector strategy registered for prefix: {prefix}");
-
-        var handles = await strategy!.ResolveAsync(expression, _page.GetFrameForSelectors(), _pierceShadow, ct).ConfigureAwait(false);
+        var outcome = await ResolveBaseThenNavigateAsync(ct).ConfigureAwait(false);
+        var handles = outcome.Handles;
+        var postScopeCount = handles.Count;
 
         // Apply hasText filter
         if (_hasText is not null)
@@ -177,24 +182,232 @@ internal sealed class Locator : ILocator
         if (_nthIndex is null)
         {
             if (handles.Count == 0)
-                throw new ElementNotFoundException(_selector, _page.Url);
+                throw BuildNotFound(outcome.BaseMatchCount, postScopeCount);
             selected = handles[0];
         }
         else if (_nthIndex == -1)
         {
             if (handles.Count == 0)
-                throw new ElementNotFoundException(_selector, _page.Url);
+                throw BuildNotFound(outcome.BaseMatchCount, postScopeCount);
             selected = handles[^1];
         }
         else
         {
             var idx = _nthIndex.Value;
             if (idx < 0 || idx >= handles.Count)
-                throw new ElementNotFoundException(_selector, _page.Url);
+                throw BuildNotFound(outcome.BaseMatchCount, postScopeCount);
             selected = handles[idx];
         }
 
         return ((ElementHandle)selected).ObjectId;
+    }
+
+    // Produces a targeted ElementNotFoundException for scoped chains. For an unscoped locator the
+    // default message is preserved. For a scoped chain we distinguish "parent matched nothing" from
+    // "parent matched but descendants were empty under every parent" — the latter is the portaled-
+    // DOM failure mode that users hit with component libraries like Infragistics or MudBlazor.
+    private ElementNotFoundException BuildNotFound(int baseMatchCount, int postScopeCount)
+    {
+        if (_childSelector is null)
+            return new ElementNotFoundException(_selector, _page.Url);
+
+        if (baseMatchCount == 0)
+        {
+            var message = $"No element matches parent selector '{_selector}'. " +
+                          $"No descendant query was attempted for '{_childSelector}'.";
+            return new ElementNotFoundException(_selector, _page.Url, message, innerException: null);
+        }
+
+        if (postScopeCount == 0)
+        {
+            var message = $"Parent '{_selector}' matched {baseMatchCount} element(s), but descendant " +
+                          $"selector '{_childSelector}' returned no matches under any of them. " +
+                          "If the descendant is rendered outside the parent's DOM subtree " +
+                          "(for example, in a portal), query from the page root instead.";
+            return new ElementNotFoundException(_selector, _page.Url, message, innerException: null);
+        }
+
+        return new ElementNotFoundException(_selector, _page.Url);
+    }
+
+    // Resolves the base selector via its strategy, then optionally applies nth selection on the base,
+    // walks ".." parents, and queries descendant selector. Returns the final candidate list along with
+    // the base match count so callers can tell "parent matched nothing" from "parent matched but every
+    // descendant query came back empty" for diagnostic purposes.
+    //
+    // Nth-index semantics: when parent navigation or child scoping is present, _nthIndex applies to
+    // the BASE matches (so `.First.Locator("..")` walks up from the first base match). For unscoped
+    // locators we preserve the pre-existing behavior where _nthIndex is applied after hasText in
+    // ResolveObjectIdCoreAsync.
+    private async Task<ResolveOutcome> ResolveBaseThenNavigateAsync(CancellationToken ct)
+    {
+        var (prefix, expression) = ParsePrefix(_selector);
+        var registry = _page.ContextInternal.SelectorStrategies;
+
+        if (!registry.TryGetStrategy(prefix, out var strategy))
+            throw new InvalidOperationException($"No selector strategy registered for prefix: {prefix}");
+
+        var handles = await strategy!.ResolveAsync(expression, _page.GetFrameForSelectors(), _pierceShadow, ct).ConfigureAwait(false);
+        var baseMatchCount = handles.Count;
+
+        if (_parentSteps == 0 && _childSelector is null)
+            return new ResolveOutcome(handles, baseMatchCount);
+
+        // When parent/child navigation is active, a preceding .First/.Last/.Nth applies to the base
+        // matches (pre-walk). This matches user intent in patterns like `Locator(x).First.Locator("..")`.
+        if (_nthIndex is not null && handles.Count > 0)
+        {
+            IElementHandle picked;
+            if (_nthIndex == -1) picked = handles[^1];
+            else if (_nthIndex.Value >= 0 && _nthIndex.Value < handles.Count) picked = handles[_nthIndex.Value];
+            else throw new ElementNotFoundException(_selector, _page.Url);
+            handles = new[] { picked };
+        }
+
+        if (_parentSteps > 0)
+        {
+            var walked = new List<IElementHandle>(handles.Count);
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var h in handles)
+            {
+                var parent = await WalkParentsAsync(((ElementHandle)h).ObjectId, _parentSteps, ct).ConfigureAwait(false);
+                if (parent is null) continue;
+                if (seen.Add(parent.ObjectId))
+                    walked.Add(parent);
+            }
+            handles = walked;
+        }
+
+        if (_childSelector is not null)
+        {
+            // Issue per-parent descendant queries in parallel. CDP multiplexes commands so there is
+            // no head-of-line blocking; results are flattened in parent-list order and deduped by
+            // objectId to preserve stable iteration order across retries.
+            if (handles.Count == 0)
+            {
+                handles = [];
+            }
+            else if (handles.Count == 1)
+            {
+                handles = await QueryDescendantsAsync(((ElementHandle)handles[0]).ObjectId, _childSelector, _pierceShadow, ct).ConfigureAwait(false);
+                handles = DedupeHandlesInOrder(handles);
+            }
+            else
+            {
+                var tasks = new Task<IReadOnlyList<IElementHandle>>[handles.Count];
+                for (int i = 0; i < handles.Count; i++)
+                {
+                    var objectId = ((ElementHandle)handles[i]).ObjectId;
+                    tasks[i] = QueryDescendantsAsync(objectId, _childSelector, _pierceShadow, ct);
+                }
+                var perParent = await Task.WhenAll(tasks).ConfigureAwait(false);
+
+                var queried = new List<IElementHandle>();
+                var seen = new HashSet<string>(StringComparer.Ordinal);
+                foreach (var list in perParent)
+                {
+                    foreach (var d in list)
+                    {
+                        if (seen.Add(((ElementHandle)d).ObjectId))
+                            queried.Add(d);
+                    }
+                }
+                handles = queried;
+            }
+        }
+
+        return new ResolveOutcome(handles, baseMatchCount);
+    }
+
+    private static IReadOnlyList<IElementHandle> DedupeHandlesInOrder(IReadOnlyList<IElementHandle> source)
+    {
+        if (source.Count <= 1) return source;
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var result = new List<IElementHandle>(source.Count);
+        foreach (var h in source)
+        {
+            if (seen.Add(((ElementHandle)h).ObjectId))
+                result.Add(h);
+        }
+        return result.Count == source.Count ? source : result;
+    }
+
+    private async Task<ElementHandle?> WalkParentsAsync(string objectId, int steps, CancellationToken ct)
+    {
+        var result = await _page.Session.SendAsync(
+            "Runtime.callFunctionOn",
+            new RuntimeCallFunctionOnParams(
+                FunctionDeclaration: "function(n) { var e = this; for (var i = 0; i < n && e; i++) { e = e.parentElement; } return e; }",
+                ObjectId: objectId,
+                Arguments: [new RuntimeCallArgument(Value: JsonSerializer.SerializeToElement(steps))],
+                ReturnByValue: false,
+                AwaitPromise: false),
+            CdpJsonContext.Default.RuntimeCallFunctionOnParams,
+            CdpJsonContext.Default.RuntimeCallFunctionOnResult,
+            ct).ConfigureAwait(false);
+
+        if (result.ExceptionDetails is not null)
+            throw new InvalidOperationException($"Parent navigation failed: {result.ExceptionDetails.Text}");
+
+        if (result.Result.ObjectId is null)
+            return null; // walked off the top (parentElement returned null)
+
+        return new ElementHandle(_page.Session, result.Result.ObjectId);
+    }
+
+    private async Task<IReadOnlyList<IElementHandle>> QueryDescendantsAsync(
+        string objectId, string cssSelector, bool pierceShadow, CancellationToken ct)
+    {
+        var escaped = JsonEncodedText.Encode(cssSelector).ToString();
+        var js = pierceShadow
+            ? $$"""
+                function() {
+                    function queryShadow(root, sel) {
+                        var results = Array.from(root.querySelectorAll(sel));
+                        var all = root.querySelectorAll('*');
+                        for (var i = 0; i < all.length; i++) {
+                            var sr = all[i].shadowRoot;
+                            if (sr) results = results.concat(queryShadow(sr, sel));
+                        }
+                        return results;
+                    }
+                    return queryShadow(this, "{{escaped}}");
+                }
+                """
+            : $$"""function() { return Array.from(this.querySelectorAll("{{escaped}}")); }""";
+
+        var result = await _page.Session.SendAsync(
+            "Runtime.callFunctionOn",
+            new RuntimeCallFunctionOnParams(
+                FunctionDeclaration: js,
+                ObjectId: objectId,
+                Arguments: null,
+                ReturnByValue: false,
+                AwaitPromise: false),
+            CdpJsonContext.Default.RuntimeCallFunctionOnParams,
+            CdpJsonContext.Default.RuntimeCallFunctionOnResult,
+            ct).ConfigureAwait(false);
+
+        if (result.ExceptionDetails is not null)
+            throw new InvalidOperationException($"Descendant query failed: {result.ExceptionDetails.Text}");
+
+        if (result.Result.ObjectId is null)
+            return [];
+
+        var props = await _page.Session.SendAsync(
+            "Runtime.getProperties",
+            new RuntimeGetPropertiesParams(result.Result.ObjectId, OwnProperties: true),
+            CdpJsonContext.Default.RuntimeGetPropertiesParams,
+            CdpJsonContext.Default.RuntimeGetPropertiesResult,
+            ct).ConfigureAwait(false);
+
+        var handles = new List<IElementHandle>();
+        foreach (var prop in props.Result)
+        {
+            if (int.TryParse(prop.Name, out _) && prop.Value?.ObjectId is not null)
+                handles.Add(new ElementHandle(_page.Session, prop.Value.ObjectId));
+        }
+        return handles;
     }
 
     private async Task<T> EvalOnElementAsync<T>(string objectId, string jsFunction,
@@ -333,11 +546,11 @@ internal sealed class Locator : ILocator
 
     // --- Chaining Properties ---
 
-    public ILocator First => new Locator(_page, _selector, 0, _hasText, _has, _hasNot, _defaultTimeout, _pierceShadow);
+    public ILocator First => new Locator(_page, _selector, 0, _hasText, _has, _hasNot, _defaultTimeout, _pierceShadow, _parentSteps, _childSelector);
 
-    public ILocator Last => new Locator(_page, _selector, -1, _hasText, _has, _hasNot, _defaultTimeout, _pierceShadow);
+    public ILocator Last => new Locator(_page, _selector, -1, _hasText, _has, _hasNot, _defaultTimeout, _pierceShadow, _parentSteps, _childSelector);
 
-    public ILocator Nth(int index) => new Locator(_page, _selector, index, _hasText, _has, _hasNot, _defaultTimeout, _pierceShadow);
+    public ILocator Nth(int index) => new Locator(_page, _selector, index, _hasText, _has, _hasNot, _defaultTimeout, _pierceShadow, _parentSteps, _childSelector);
 
     public ILocator Filter(LocatorOptions? options = null) =>
         new Locator(_page, _selector, _nthIndex,
@@ -345,12 +558,65 @@ internal sealed class Locator : ILocator
             options?.Has ?? _has,
             options?.HasNot ?? _hasNot,
             _defaultTimeout,
-            options?.PierceShadow ?? _pierceShadow);
+            options?.PierceShadow ?? _pierceShadow,
+            _parentSteps, _childSelector);
 
-    ILocator ILocator.Locator(string selector, LocatorOptions? options = null) =>
-        new Locator(_page, _selector + " " + selector, options is null
-            ? new LocatorOptions { PierceShadow = _pierceShadow }
-            : options with { PierceShadow = options.PierceShadow ?? _pierceShadow });
+    ILocator ILocator.Locator(string selector, LocatorOptions? options = null)
+    {
+        var (parentSteps, remaining) = ParseParentPrefix(selector);
+
+        // Parent navigation after a child selector would need a general DOM-scoping model we don't
+        // have yet. Surface a clear error rather than silently compose garbage.
+        if (parentSteps > 0 && _childSelector is not null)
+            throw new InvalidOperationException(
+                "Cannot navigate with '..' after a child selector has been chained. " +
+                "Rebuild the locator from the page and apply '..' before any descendant selector.");
+
+        var newChildSelector = string.IsNullOrEmpty(remaining)
+            ? _childSelector
+            : _childSelector is null
+                ? remaining
+                : _childSelector + " " + remaining;
+
+        var newPierceShadow = options?.PierceShadow ?? _pierceShadow;
+        var newHasText = options?.HasText ?? _hasText;
+        var newHas = options?.Has ?? _has;
+        var newHasNot = options?.HasNot ?? _hasNot;
+        var newTimeout = options?.Timeout ?? _defaultTimeout;
+
+        return new Locator(
+            _page, _selector, _nthIndex, newHasText, newHas, newHasNot,
+            newTimeout, newPierceShadow,
+            _parentSteps + parentSteps, newChildSelector);
+    }
+
+    // Parses a leading chain of ".." segments ("..", "../..", "../../..") with an optional remaining
+    // CSS selector after the final slash. Returns (0, original) when the selector is not of this shape.
+    internal static (int parentSteps, string remaining) ParseParentPrefix(string selector)
+    {
+        var trimmed = selector.AsSpan().Trim();
+        if (trimmed.Length < 2) return (0, selector);
+
+        int i = 0;
+        int steps = 0;
+        while (i + 1 < trimmed.Length && trimmed[i] == '.' && trimmed[i + 1] == '.')
+        {
+            // Must be followed by end, or '/', otherwise the leading ".." is coincidental (e.g. "..foo").
+            if (i + 2 == trimmed.Length)
+            {
+                steps++;
+                i += 2;
+                break;
+            }
+            if (trimmed[i + 2] != '/') break;
+            steps++;
+            i += 3; // consume "../"
+        }
+
+        if (steps == 0) return (0, selector);
+
+        return (steps, i >= trimmed.Length ? string.Empty : trimmed[i..].ToString());
+    }
 
     // --- Action Methods ---
 
@@ -677,6 +943,17 @@ internal sealed class Locator : ILocator
         return await EvalOnElementAsync<T>(objectId, expression, args, cts.Token).ConfigureAwait(false);
     }
 
+    public async Task<T> EvaluateWithElementAsync<T>(string pageFunction, object? arg = null)
+    {
+        using var cts = BuildActionCts(null);
+        var objectId = await ResolveObjectIdCoreAsync(cts.Token).ConfigureAwait(false);
+        var elementArg = new RuntimeCallArgument(ObjectId: objectId);
+        var args = arg is not null
+            ? new[] { elementArg, new RuntimeCallArgument(Value: JsonSerializer.SerializeToElement(arg)) }
+            : new[] { elementArg };
+        return await EvalOnElementAsync<T>(objectId, pageFunction, args, cts.Token).ConfigureAwait(false);
+    }
+
     // --- Query Methods ---
 
     public async Task<string?> TextContentAsync(double? timeout = null)
@@ -949,12 +1226,7 @@ internal sealed class Locator : ILocator
 
     private async Task<IReadOnlyList<IElementHandle>> ResolveAllHandlesAsync(CancellationToken ct)
     {
-        var (prefix, expression) = ParsePrefix(_selector);
-        var registry = _page.ContextInternal.SelectorStrategies;
-
-        if (!registry.TryGetStrategy(prefix, out var strategy))
-            throw new InvalidOperationException($"No selector strategy registered for prefix: {prefix}");
-
-        return await strategy!.ResolveAsync(expression, _page.GetFrameForSelectors(), _pierceShadow, ct).ConfigureAwait(false);
+        var outcome = await ResolveBaseThenNavigateAsync(ct).ConfigureAwait(false);
+        return outcome.Handles;
     }
 }

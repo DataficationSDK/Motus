@@ -118,13 +118,27 @@ public interface ILocator
     Task DispatchEventAsync(string type, object? eventInit = null);
 
     /// <summary>
-    /// Evaluates a JavaScript expression in the context of the matching element.
+    /// Evaluates a JavaScript expression with the matching element bound as <c>this</c>. Use a
+    /// <c>function() { ... this ... }</c> literal to access the element. Arrow functions cannot use
+    /// <c>this</c> as the element; for arrow-style <c>el =&gt; el.foo</c>, use
+    /// <see cref="EvaluateWithElementAsync{T}(string, object?)"/> instead.
     /// </summary>
     /// <typeparam name="T">The expected return type.</typeparam>
-    /// <param name="expression">The JavaScript expression. The element is available as the first argument.</param>
-    /// <param name="arg">Optional argument to pass to the expression.</param>
+    /// <param name="expression">A function literal whose <c>this</c> is the element.</param>
+    /// <param name="arg">Optional argument passed as the function's first parameter.</param>
     /// <returns>The result of the evaluation.</returns>
     Task<T> EvaluateAsync<T>(string expression, object? arg = null);
+
+    /// <summary>
+    /// Evaluates a JavaScript expression with the matching element passed as the first argument to
+    /// the function. Matches the Playwright convention: <c>el =&gt; el.foo</c> receives the element
+    /// as <c>el</c>. When <paramref name="arg"/> is supplied it becomes the function's second argument.
+    /// </summary>
+    /// <typeparam name="T">The expected return type.</typeparam>
+    /// <param name="pageFunction">An arrow or function literal that accepts the element as its first parameter.</param>
+    /// <param name="arg">Optional value passed as the function's second parameter.</param>
+    /// <returns>The result of the evaluation.</returns>
+    Task<T> EvaluateWithElementAsync<T>(string pageFunction, object? arg = null);
 
     // --- Queries ---
 
@@ -260,10 +274,17 @@ public interface ILocator
     ILocator Filter(LocatorOptions? options = null);
 
     /// <summary>
-    /// Creates a child locator scoped to the current locator.
+    /// Creates a child locator scoped to the current locator, matching Playwright's semantics for
+    /// chained locators. Resolution first materializes the parent's element(s) from the DOM, then
+    /// runs <c>querySelectorAll</c> for the child selector under each parent and flattens the
+    /// results (deduped by identity, in parent-list order). Parents found via non-CSS strategies
+    /// such as <c>xpath=</c>, <c>role=</c>, <c>text=</c>, or <c>data-testid=</c> participate
+    /// normally because the parent handle is already resolved before the descendant query runs.
+    /// Pass <c>".."</c> (or <c>"../.."</c>, <c>"../../.."</c>) as the selector to walk to an ancestor
+    /// via each base match's <c>parentElement</c> before any later descendant chain.
     /// </summary>
-    /// <param name="selector">The selector for child elements.</param>
-    /// <param name="options">Locator options.</param>
+    /// <param name="selector">The CSS selector for descendant elements, or a <c>".."</c>/<c>"../.."</c> chain to navigate to ancestors.</param>
+    /// <param name="options">Locator options. When supplied, fields override the parent's values.</param>
     /// <returns>A child locator.</returns>
     ILocator Locator(string selector, LocatorOptions? options = null);
 
