@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Motus.Abstractions;
 using Motus.Tests.Transport;
 
@@ -6,7 +7,7 @@ namespace Motus.Tests.Locator;
 [TestClass]
 public class LocatorDomScopingTests
 {
-    private FakeCdpSocket _socket = null!;
+    private MethodAwareFakeCdpSocket _socket = null!;
     private CdpTransport _transport = null!;
     private CdpSessionRegistry _registry = null!;
     private Motus.Browser _browser = null!;
@@ -14,15 +15,14 @@ public class LocatorDomScopingTests
     [TestInitialize]
     public async Task Setup()
     {
-        _socket = new FakeCdpSocket();
+        _socket = new MethodAwareFakeCdpSocket();
         _transport = new CdpTransport(_socket);
         await _transport.ConnectAsync(new Uri("ws://localhost:1234"), CancellationToken.None);
         _registry = new CdpSessionRegistry(_transport);
         _browser = new Motus.Browser(_transport, _registry, process: null, tempUserDataDir: null,
                                      handleSigint: false, handleSigterm: false);
-        var initTask = _browser.InitializeAsync(CancellationToken.None);
-        _socket.Enqueue("""{"id": 1, "result": {"protocolVersion":"1.3","product":"Chrome/120","revision":"@x","userAgent":"UA","jsVersion":"12"}}""");
-        await initTask;
+        _socket.Respond(1, """{"id": 1, "result": {"protocolVersion":"1.3","product":"Chrome/120","revision":"@x","userAgent":"UA","jsVersion":"12"}}""");
+        await _browser.InitializeAsync(CancellationToken.None);
     }
 
     [TestCleanup]
@@ -30,45 +30,59 @@ public class LocatorDomScopingTests
 
     private async Task<IPage> CreatePageAsync()
     {
-        _socket.QueueResponse("""{"id": 2, "result": {"browserContextId": "ctx-1"}}""");
-        _socket.QueueResponse("""{"id": 3, "result": {"targetId": "target-1"}}""");
-        _socket.QueueResponse("""{"id": 4, "result": {"sessionId": "session-1"}}""");
-        _socket.QueueResponse("""{"id": 5, "sessionId": "session-1", "result": {}}""");
-        _socket.QueueResponse("""{"id": 6, "sessionId": "session-1", "result": {}}""");
-        _socket.QueueResponse("""{"id": 7, "sessionId": "session-1", "result": {}}""");
-        _socket.QueueResponse("""{"id": 8, "sessionId": "session-1", "result": {}}""");
+        _socket.Respond(2, """{"id": 2, "result": {"browserContextId": "ctx-1"}}""");
+        _socket.Respond(3, """{"id": 3, "result": {"targetId": "target-1"}}""");
+        _socket.Respond(4, """{"id": 4, "result": {"sessionId": "session-1"}}""");
+        _socket.Respond(5, """{"id": 5, "sessionId": "session-1", "result": {}}""");
+        _socket.Respond(6, """{"id": 6, "sessionId": "session-1", "result": {}}""");
+        _socket.Respond(7, """{"id": 7, "sessionId": "session-1", "result": {}}""");
+        _socket.Respond(8, """{"id": 8, "sessionId": "session-1", "result": {}}""");
         return await _browser.NewPageAsync();
     }
 
-    // Queues strategy resolve (Runtime.evaluate + Runtime.getProperties) for a base match of one element.
-    private void QueueBaseResolveSingle(int startId, string arrObjectId, string elementObjectId)
-    {
-        _socket.QueueResponse($@"{{""id"": {startId}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""object"", ""objectId"": ""{arrObjectId}""}}}}}}");
-        _socket.QueueResponse($@"{{""id"": {startId + 1}, ""sessionId"": ""session-1"", ""result"": {{""result"": [{{""name"": ""0"", ""value"": {{""type"": ""object"", ""objectId"": ""{elementObjectId}""}}}}, {{""name"": ""length"", ""value"": {{""type"": ""number"", ""value"": 1}}}}]}}}}");
-    }
+    // Reusable response fragments.
+    private static string EvalReturnsArray(int id, string arrObjectId)
+        => @"{""id"": " + id + @", ""sessionId"": ""session-1"", ""result"": {""result"": {""type"": ""object"", ""objectId"": """ + arrObjectId + @"""}}}";
 
-    // Queues strategy resolve with N element object ids.
-    private void QueueBaseResolveMany(int startId, string arrObjectId, params string[] elementObjectIds)
+    private static string CallFunctionOnReturnsArray(int id, string arrObjectId)
+        => @"{""id"": " + id + @", ""sessionId"": ""session-1"", ""result"": {""result"": {""type"": ""object"", ""objectId"": """ + arrObjectId + @"""}}}";
+
+    private static string GetPropertiesReturnsElements(int id, params string[] elementObjectIds)
     {
-        _socket.QueueResponse($@"{{""id"": {startId}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""object"", ""objectId"": ""{arrObjectId}""}}}}}}");
         var items = string.Join(", ", elementObjectIds.Select((oid, i) =>
-            $@"{{""name"": ""{i}"", ""value"": {{""type"": ""object"", ""objectId"": ""{oid}""}}}}"));
-        _socket.QueueResponse($@"{{""id"": {startId + 1}, ""sessionId"": ""session-1"", ""result"": {{""result"": [{items}, {{""name"": ""length"", ""value"": {{""type"": ""number"", ""value"": {elementObjectIds.Length}}}}}]}}}}");
+            @"{""name"": """ + i + @""", ""value"": {""type"": ""object"", ""objectId"": """ + oid + @"""}}"));
+        var prefix = elementObjectIds.Length == 0 ? "" : items + ", ";
+        return @"{""id"": " + id + @", ""sessionId"": ""session-1"", ""result"": {""result"": [" + prefix +
+               @"{""name"": ""length"", ""value"": {""type"": ""number"", ""value"": " + elementObjectIds.Length + @"}}]}}";
     }
 
-    // Queues a descendant-query pair (Runtime.callFunctionOn + Runtime.getProperties) returning the given
-    // descendant object ids under a parent. Empty childObjectIds means the descendant query matched nothing.
-    private void QueueChildScopeResolve(int startId, string arrObjectId, params string[] childObjectIds)
+    private static string TextContentResult(int id, string value)
+        => @"{""id"": " + id + @", ""sessionId"": ""session-1"", ""result"": {""result"": {""type"": ""string"", ""value"": """ + value + @"""}}}";
+
+    /// <summary>
+    /// Configures the socket to answer a single-parent scoped chain: strategy resolve returns one
+    /// parent, the descendant query returns the given child object ids, then a TextContent read
+    /// returns <paramref name="textValue"/> against the first child.
+    /// </summary>
+    private void SetupSingleParentChain(string parentObjectId, string[] childObjectIds, string textValue)
     {
-        _socket.QueueResponse($@"{{""id"": {startId}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""object"", ""objectId"": ""{arrObjectId}""}}}}}}");
-        if (childObjectIds.Length == 0)
+        _socket.SetHandler(envelope =>
         {
-            _socket.QueueResponse($@"{{""id"": {startId + 1}, ""sessionId"": ""session-1"", ""result"": {{""result"": [{{""name"": ""length"", ""value"": {{""type"": ""number"", ""value"": 0}}}}]}}}}");
-            return;
-        }
-        var items = string.Join(", ", childObjectIds.Select((oid, i) =>
-            $@"{{""name"": ""{i}"", ""value"": {{""type"": ""object"", ""objectId"": ""{oid}""}}}}"));
-        _socket.QueueResponse($@"{{""id"": {startId + 1}, ""sessionId"": ""session-1"", ""result"": {{""result"": [{items}, {{""name"": ""length"", ""value"": {{""type"": ""number"", ""value"": {childObjectIds.Length}}}}}]}}}}");
+            var id = envelope.GetProperty("id").GetInt32();
+            var method = envelope.GetProperty("method").GetString()!;
+            return method switch
+            {
+                "Runtime.evaluate" => EvalReturnsArray(id, "arr-parent"),
+                "Runtime.getProperties" when envelope.GetProperty("params").GetProperty("objectId").GetString() == "arr-parent"
+                    => GetPropertiesReturnsElements(id, parentObjectId),
+                "Runtime.getProperties" when envelope.GetProperty("params").GetProperty("objectId").GetString() == "arr-children"
+                    => GetPropertiesReturnsElements(id, childObjectIds),
+                "Runtime.callFunctionOn" when envelope.GetProperty("params").GetProperty("objectId").GetString() == parentObjectId
+                    => CallFunctionOnReturnsArray(id, "arr-children"),
+                "Runtime.callFunctionOn" => TextContentResult(id, textValue),
+                _ => throw new InvalidOperationException($"Unexpected CDP method: {method}"),
+            };
+        });
     }
 
     // --- Scoped chain under different parent strategies ---
@@ -78,21 +92,18 @@ public class LocatorDomScopingTests
     {
         var page = await CreatePageAsync();
         var locator = page.Locator("div.row").Locator(".cell");
-
-        QueueBaseResolveSingle(9, "arr-rows", "row-1");
-        QueueChildScopeResolve(11, "arr-cells", "cell-1");
-        // Action: TextContent on cell-1
-        _socket.QueueResponse("""{"id": 13, "sessionId": "session-1", "result": {"result": {"type": "string", "value": "cell text"}}}""");
+        SetupSingleParentChain("row-1", ["cell-1"], "cell text");
 
         var text = await locator.TextContentAsync();
         Assert.AreEqual("cell text", text);
 
-        // Verify the descendant query ran against the resolved parent (row-1) via callFunctionOn, not a
-        // concatenated CSS string at the document root.
-        var descendantCall = _socket.GetSentJson(10);
-        StringAssert.Contains(descendantCall, "querySelectorAll", StringComparison.Ordinal);
-        StringAssert.Contains(descendantCall, "\"objectId\":\"row-1\"", StringComparison.Ordinal);
-        StringAssert.Contains(descendantCall, ".cell", StringComparison.Ordinal);
+        // Verify the descendant query ran against the resolved parent via callFunctionOn, carrying
+        // the child selector, not a concatenated CSS string at the document root.
+        var sent = _socket.SentMessages.Select(b => System.Text.Encoding.UTF8.GetString(b)).ToList();
+        Assert.IsTrue(sent.Any(s => s.Contains("\"method\":\"Runtime.callFunctionOn\"")
+                                    && s.Contains("\"objectId\":\"row-1\"")
+                                    && s.Contains("querySelectorAll")
+                                    && s.Contains(".cell")));
     }
 
     [TestMethod]
@@ -100,22 +111,15 @@ public class LocatorDomScopingTests
     {
         var page = await CreatePageAsync();
         var locator = page.Locator("xpath=//section[@id='panel']").Locator(".cell");
-
-        QueueBaseResolveSingle(9, "arr-xp", "panel-1");
-        QueueChildScopeResolve(11, "arr-cells", "cell-1");
-        _socket.QueueResponse("""{"id": 13, "sessionId": "session-1", "result": {"result": {"type": "string", "value": "panel cell"}}}""");
+        SetupSingleParentChain("panel-1", ["cell-1"], "panel cell");
 
         var text = await locator.TextContentAsync();
         Assert.AreEqual("panel cell", text);
 
-        // Parent resolve goes through the xpath strategy (document.evaluate); descendant query is CSS
-        // under the resolved xpath element.
-        var parentResolve = _socket.GetSentJson(8);
-        StringAssert.Contains(parentResolve, "document.evaluate", StringComparison.Ordinal);
-
-        var descendantCall = _socket.GetSentJson(10);
-        StringAssert.Contains(descendantCall, "\"objectId\":\"panel-1\"", StringComparison.Ordinal);
-        StringAssert.Contains(descendantCall, "querySelectorAll", StringComparison.Ordinal);
+        var sent = _socket.SentMessages.Select(b => System.Text.Encoding.UTF8.GetString(b)).ToList();
+        Assert.IsTrue(sent.Any(s => s.Contains("document.evaluate")), "XPath strategy should be invoked for the parent resolve.");
+        Assert.IsTrue(sent.Any(s => s.Contains("\"objectId\":\"panel-1\"") && s.Contains("querySelectorAll")),
+            "Descendant query should run under the resolved XPath element.");
     }
 
     [TestMethod]
@@ -123,19 +127,15 @@ public class LocatorDomScopingTests
     {
         var page = await CreatePageAsync();
         var locator = page.Locator("data-testid=grid").Locator(".row");
-
-        QueueBaseResolveSingle(9, "arr-testid", "grid-1");
-        QueueChildScopeResolve(11, "arr-rows", "row-1");
-        _socket.QueueResponse("""{"id": 13, "sessionId": "session-1", "result": {"result": {"type": "string", "value": "row"}}}""");
+        SetupSingleParentChain("grid-1", ["row-1"], "row");
 
         var text = await locator.TextContentAsync();
         Assert.AreEqual("row", text);
 
-        var parentResolve = _socket.GetSentJson(8);
-        StringAssert.Contains(parentResolve, "data-testid", StringComparison.Ordinal);
-
-        var descendantCall = _socket.GetSentJson(10);
-        StringAssert.Contains(descendantCall, "\"objectId\":\"grid-1\"", StringComparison.Ordinal);
+        var sent = _socket.SentMessages.Select(b => System.Text.Encoding.UTF8.GetString(b)).ToList();
+        Assert.IsTrue(sent.Any(s => s.Contains("data-testid") && s.Contains("grid")),
+            "data-testid strategy should be invoked for the parent resolve.");
+        Assert.IsTrue(sent.Any(s => s.Contains("\"objectId\":\"grid-1\"") && s.Contains("querySelectorAll")));
     }
 
     // --- Nth-on-base preserved through scoped chain ---
@@ -147,18 +147,30 @@ public class LocatorDomScopingTests
         var locator = page.Locator("div.row").First.Locator(".cell");
 
         // Base resolves to TWO rows — .First should pick row-A only, so descendant query runs once.
-        QueueBaseResolveMany(9, "arr-rows", "row-A", "row-B");
-        QueueChildScopeResolve(11, "arr-cells-A", "cell-A1");
-        _socket.QueueResponse("""{"id": 13, "sessionId": "session-1", "result": {"result": {"type": "string", "value": "A1"}}}""");
+        _socket.SetHandler(envelope =>
+        {
+            var id = envelope.GetProperty("id").GetInt32();
+            var method = envelope.GetProperty("method").GetString()!;
+            return method switch
+            {
+                "Runtime.evaluate" => EvalReturnsArray(id, "arr-rows"),
+                "Runtime.getProperties" when envelope.GetProperty("params").GetProperty("objectId").GetString() == "arr-rows"
+                    => GetPropertiesReturnsElements(id, "row-A", "row-B"),
+                "Runtime.getProperties" when envelope.GetProperty("params").GetProperty("objectId").GetString() == "arr-cells-A"
+                    => GetPropertiesReturnsElements(id, "cell-A1"),
+                "Runtime.callFunctionOn" when envelope.GetProperty("params").GetProperty("objectId").GetString() == "row-A"
+                    => CallFunctionOnReturnsArray(id, "arr-cells-A"),
+                "Runtime.callFunctionOn" when envelope.GetProperty("params").GetProperty("objectId").GetString() == "cell-A1"
+                    => TextContentResult(id, "A1"),
+                _ => throw new InvalidOperationException($"Unexpected CDP call: method={method}, params={envelope.GetProperty("params")}"),
+            };
+        });
 
         var text = await locator.TextContentAsync();
         Assert.AreEqual("A1", text);
 
-        var descendantCall = _socket.GetSentJson(10);
-        StringAssert.Contains(descendantCall, "\"objectId\":\"row-A\"", StringComparison.Ordinal);
-        // Only one descendant call for the first row — no second parent resolution should appear.
-        var allSent = Enumerable.Range(0, _socket.SentMessages.Count).Select(i => _socket.GetSentJson(i)).ToList();
-        Assert.IsFalse(allSent.Any(s => s.Contains("\"objectId\":\"row-B\"")),
+        var sent = _socket.SentMessages.Select(b => System.Text.Encoding.UTF8.GetString(b)).ToList();
+        Assert.IsFalse(sent.Any(s => s.Contains("\"objectId\":\"row-B\"")),
             "First() should restrict descendant query to the first base match only.");
     }
 
@@ -170,19 +182,31 @@ public class LocatorDomScopingTests
         var page = await CreatePageAsync();
         var locator = page.Locator("div.row").Locator(".cell");
 
-        // Base resolves to two rows.
-        QueueBaseResolveMany(9, "arr-rows", "row-A", "row-B");
-
-        // Parallel descendant queries: both callFunctionOn sends go out before either getProperties,
-        // so the queue order must be [cFO_A, cFO_B, getProps_A, getProps_B] matching id sequence 11..14.
-        _socket.QueueResponse("""{"id": 11, "sessionId": "session-1", "result": {"result": {"type": "object", "objectId": "arr-cells-A"}}}""");
-        _socket.QueueResponse("""{"id": 12, "sessionId": "session-1", "result": {"result": {"type": "object", "objectId": "arr-cells-B"}}}""");
-        _socket.QueueResponse("""{"id": 13, "sessionId": "session-1", "result": {"result": [{"name": "0", "value": {"type": "object", "objectId": "cell-1"}}, {"name": "1", "value": {"type": "object", "objectId": "cell-shared"}}, {"name": "length", "value": {"type": "number", "value": 2}}]}}""");
-        _socket.QueueResponse("""{"id": 14, "sessionId": "session-1", "result": {"result": [{"name": "0", "value": {"type": "object", "objectId": "cell-shared"}}, {"name": "1", "value": {"type": "object", "objectId": "cell-2"}}, {"name": "length", "value": {"type": "number", "value": 2}}]}}""");
+        // Row A's descendants: [cell-1, cell-shared]; row B's: [cell-shared, cell-2].
+        // After dedupe we expect 3 distinct handles total.
+        _socket.SetHandler(envelope =>
+        {
+            var id = envelope.GetProperty("id").GetInt32();
+            var method = envelope.GetProperty("method").GetString()!;
+            return method switch
+            {
+                "Runtime.evaluate" => EvalReturnsArray(id, "arr-rows"),
+                "Runtime.getProperties" when envelope.GetProperty("params").GetProperty("objectId").GetString() == "arr-rows"
+                    => GetPropertiesReturnsElements(id, "row-A", "row-B"),
+                "Runtime.getProperties" when envelope.GetProperty("params").GetProperty("objectId").GetString() == "arr-cells-A"
+                    => GetPropertiesReturnsElements(id, "cell-1", "cell-shared"),
+                "Runtime.getProperties" when envelope.GetProperty("params").GetProperty("objectId").GetString() == "arr-cells-B"
+                    => GetPropertiesReturnsElements(id, "cell-shared", "cell-2"),
+                "Runtime.callFunctionOn" when envelope.GetProperty("params").GetProperty("objectId").GetString() == "row-A"
+                    => CallFunctionOnReturnsArray(id, "arr-cells-A"),
+                "Runtime.callFunctionOn" when envelope.GetProperty("params").GetProperty("objectId").GetString() == "row-B"
+                    => CallFunctionOnReturnsArray(id, "arr-cells-B"),
+                _ => throw new InvalidOperationException($"Unexpected CDP call: method={method}"),
+            };
+        });
 
         var handles = await locator.ElementHandlesAsync();
 
-        // Dedupe drops the duplicate "cell-shared" → 3 distinct handles.
         Assert.AreEqual(3, handles.Count);
         var ids = handles.Select(h => ((ElementHandle)h).ObjectId).ToHashSet();
         CollectionAssert.AreEquivalent(new[] { "cell-1", "cell-shared", "cell-2" }, ids.ToArray());
@@ -195,16 +219,12 @@ public class LocatorDomScopingTests
     {
         var page = await CreatePageAsync();
         var locator = page.Locator("div.host").Locator(".inner");
-
-        QueueBaseResolveSingle(9, "arr-hosts", "host-1");
-        QueueChildScopeResolve(11, "arr-inners", "inner-1");
-        _socket.QueueResponse("""{"id": 13, "sessionId": "session-1", "result": {"result": {"type": "string", "value": "x"}}}""");
+        SetupSingleParentChain("host-1", ["inner-1"], "x");
 
         await locator.TextContentAsync();
 
-        var descendantCall = _socket.GetSentJson(10);
-        StringAssert.Contains(descendantCall, "queryShadow", StringComparison.Ordinal);
-        StringAssert.Contains(descendantCall, ".inner", StringComparison.Ordinal);
+        var sent = _socket.SentMessages.Select(b => System.Text.Encoding.UTF8.GetString(b)).ToList();
+        Assert.IsTrue(sent.Any(s => s.Contains("queryShadow") && s.Contains("\"objectId\":\"host-1\"") && s.Contains(".inner")));
     }
 
     [TestMethod]
@@ -212,17 +232,15 @@ public class LocatorDomScopingTests
     {
         var page = await CreatePageAsync();
         var locator = page.Locator("div.host", new LocatorOptions { PierceShadow = false }).Locator(".inner");
-
-        QueueBaseResolveSingle(9, "arr-hosts", "host-1");
-        QueueChildScopeResolve(11, "arr-inners", "inner-1");
-        _socket.QueueResponse("""{"id": 13, "sessionId": "session-1", "result": {"result": {"type": "string", "value": "x"}}}""");
+        SetupSingleParentChain("host-1", ["inner-1"], "x");
 
         await locator.TextContentAsync();
 
-        var descendantCall = _socket.GetSentJson(10);
+        var sent = _socket.SentMessages.Select(b => System.Text.Encoding.UTF8.GetString(b)).ToList();
+        var descendantCall = sent.First(s => s.Contains("\"objectId\":\"host-1\"") && s.Contains("Runtime.callFunctionOn"));
         Assert.IsFalse(descendantCall.Contains("queryShadow"),
             "PierceShadow=false should skip the shadow-walking variant of the descendant query.");
-        StringAssert.Contains(descendantCall, "querySelectorAll", StringComparison.Ordinal);
+        Assert.IsTrue(descendantCall.Contains("querySelectorAll"));
     }
 
     // --- Zero-parent-match short circuit ---
@@ -233,17 +251,24 @@ public class LocatorDomScopingTests
         var page = await CreatePageAsync();
         var locator = page.Locator("div.missing").Locator(".cell");
 
-        // Base resolve returns an empty array — no descendant call should be issued.
-        _socket.QueueResponse("""{"id": 9, "sessionId": "session-1", "result": {"result": {"type": "object", "objectId": "arr-empty"}}}""");
-        _socket.QueueResponse("""{"id": 10, "sessionId": "session-1", "result": {"result": [{"name": "length", "value": {"type": "number", "value": 0}}]}}""");
+        _socket.SetHandler(envelope =>
+        {
+            var id = envelope.GetProperty("id").GetInt32();
+            var method = envelope.GetProperty("method").GetString()!;
+            return method switch
+            {
+                "Runtime.evaluate" => EvalReturnsArray(id, "arr-empty"),
+                "Runtime.getProperties" => GetPropertiesReturnsElements(id),
+                _ => throw new InvalidOperationException($"Unexpected CDP call when base matches zero: method={method}"),
+            };
+        });
 
         var ex = await Assert.ThrowsExceptionAsync<ElementNotFoundException>(() => locator.TextContentAsync());
         StringAssert.Contains(ex.Message, "No element matches parent selector", StringComparison.Ordinal);
         StringAssert.Contains(ex.Message, "No descendant query was attempted", StringComparison.Ordinal);
 
-        // No callFunctionOn for descendants should have been issued.
-        var allSent = Enumerable.Range(0, _socket.SentMessages.Count).Select(i => _socket.GetSentJson(i)).ToList();
-        Assert.IsFalse(allSent.Any(s => s.Contains("querySelectorAll") && s.Contains(".cell")),
+        var sent = _socket.SentMessages.Select(b => System.Text.Encoding.UTF8.GetString(b)).ToList();
+        Assert.IsFalse(sent.Any(s => s.Contains("Runtime.callFunctionOn")),
             "No descendant query should run when the base match set is empty.");
     }
 
@@ -255,9 +280,22 @@ public class LocatorDomScopingTests
         var page = await CreatePageAsync();
         var locator = page.Locator("div.widget").Locator("#portaled");
 
-        QueueBaseResolveSingle(9, "arr-widgets", "widget-1");
-        // Descendant query returns empty NodeList under the only parent.
-        QueueChildScopeResolve(11, "arr-empty");
+        _socket.SetHandler(envelope =>
+        {
+            var id = envelope.GetProperty("id").GetInt32();
+            var method = envelope.GetProperty("method").GetString()!;
+            return method switch
+            {
+                "Runtime.evaluate" => EvalReturnsArray(id, "arr-widgets"),
+                "Runtime.getProperties" when envelope.GetProperty("params").GetProperty("objectId").GetString() == "arr-widgets"
+                    => GetPropertiesReturnsElements(id, "widget-1"),
+                "Runtime.getProperties" when envelope.GetProperty("params").GetProperty("objectId").GetString() == "arr-empty"
+                    => GetPropertiesReturnsElements(id),
+                "Runtime.callFunctionOn" when envelope.GetProperty("params").GetProperty("objectId").GetString() == "widget-1"
+                    => CallFunctionOnReturnsArray(id, "arr-empty"),
+                _ => throw new InvalidOperationException($"Unexpected CDP call: method={method}"),
+            };
+        });
 
         var ex = await Assert.ThrowsExceptionAsync<ElementNotFoundException>(() => locator.TextContentAsync());
         StringAssert.Contains(ex.Message, "matched 1 element(s)", StringComparison.Ordinal);

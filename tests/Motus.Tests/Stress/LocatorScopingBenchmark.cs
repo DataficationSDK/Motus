@@ -1,8 +1,5 @@
-using System.Collections.Concurrent;
 using System.Diagnostics;
-using System.Text;
 using System.Text.Json;
-using System.Threading.Channels;
 using Motus.Abstractions;
 using Motus.Tests.Transport;
 
@@ -123,64 +120,4 @@ public class LocatorScopingBenchmark
         return @"{""id"": " + id + @", ""sessionId"": ""session-1"", ""result"": {""result"": {""type"": ""object"", ""objectId"": ""arr-cells-" + suffix + @"""}}}";
     }
 
-    /// <summary>
-    /// Fake socket that inspects each outbound command envelope and responds via a test-supplied
-    /// handler. Unlike the FIFO <see cref="FakeCdpSocket"/>, this decouples response content from
-    /// send order, which matters under heavy parallel sends where threadpool interleaving can
-    /// assign ids out of the caller's logical order.
-    /// </summary>
-    private sealed class MethodAwareFakeCdpSocket : ICdpSocket
-    {
-        private readonly Channel<byte[]> _inbox = Channel.CreateUnbounded<byte[]>();
-        private readonly ConcurrentDictionary<int, string> _fixedResponses = new();
-        private Func<JsonElement, string>? _handler;
-
-        public bool IsOpen { get; private set; } = true;
-
-        public Task ConnectAsync(Uri endpointUri, CancellationToken ct)
-        {
-            IsOpen = true;
-            return Task.CompletedTask;
-        }
-
-        public Task SendAsync(ReadOnlyMemory<byte> message, CancellationToken ct)
-        {
-            using var doc = JsonDocument.Parse(message);
-            var root = doc.RootElement;
-            var id = root.GetProperty("id").GetInt32();
-
-            string response;
-            if (_fixedResponses.TryRemove(id, out var fixedResponse))
-            {
-                response = fixedResponse;
-            }
-            else
-            {
-                var handler = _handler
-                    ?? throw new InvalidOperationException(
-                        $"No handler and no fixed response configured for id {id}.");
-                response = handler(root);
-            }
-
-            _inbox.Writer.TryWrite(Encoding.UTF8.GetBytes(response));
-            return Task.CompletedTask;
-        }
-
-        public async ValueTask<ReadOnlyMemory<byte>> ReceiveAsync(CancellationToken ct)
-        {
-            if (!IsOpen) return ReadOnlyMemory<byte>.Empty;
-            try { return await _inbox.Reader.ReadAsync(ct); }
-            catch (ChannelClosedException) { return ReadOnlyMemory<byte>.Empty; }
-        }
-
-        internal void Respond(int id, string json) => _fixedResponses[id] = json;
-        internal void SetHandler(Func<JsonElement, string> handler) => _handler = handler;
-
-        public ValueTask DisposeAsync()
-        {
-            IsOpen = false;
-            _inbox.Writer.TryComplete();
-            return ValueTask.CompletedTask;
-        }
-    }
 }
