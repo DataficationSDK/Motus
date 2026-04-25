@@ -44,7 +44,7 @@ Directory.Build.override.targets
 TestResult.xml
 
 ## Coverage
-coverage/
+/coverage/
 *.coverage
 *.coveragexml
 /starter
