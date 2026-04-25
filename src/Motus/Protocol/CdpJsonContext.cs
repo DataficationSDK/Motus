@@ -206,6 +206,23 @@ namespace Motus;
 [JsonSerializable(typeof(CssGetComputedStyleForNodeParams))]
 [JsonSerializable(typeof(CssGetComputedStyleForNodeResult))]
 [JsonSerializable(typeof(CssComputedStyleProperty))]
+// --- CSS domain (rule usage tracking) ---
+[JsonSerializable(typeof(CssStartRuleUsageTrackingResult))]
+[JsonSerializable(typeof(CssStopRuleUsageTrackingResult))]
+[JsonSerializable(typeof(CssRuleUsageEntry))]
+[JsonSerializable(typeof(CssGetStyleSheetTextParams))]
+[JsonSerializable(typeof(CssGetStyleSheetTextResult))]
+// --- Profiler domain ---
+[JsonSerializable(typeof(ProfilerEnableResult))]
+[JsonSerializable(typeof(ProfilerStartPreciseCoverageParams))]
+[JsonSerializable(typeof(ProfilerStartPreciseCoverageResult))]
+[JsonSerializable(typeof(ProfilerTakePreciseCoverageResult))]
+[JsonSerializable(typeof(ProfilerStopPreciseCoverageResult))]
+[JsonSerializable(typeof(ProfilerScriptCoverage))]
+[JsonSerializable(typeof(ProfilerFunctionCoverage))]
+[JsonSerializable(typeof(ProfilerCoverageRange))]
+[JsonSerializable(typeof(ProfilerGetScriptSourceParams))]
+[JsonSerializable(typeof(ProfilerGetScriptSourceResult))]
 // --- DOMDebugger domain ---
 [JsonSerializable(typeof(DomDebuggerGetEventListenersParams))]
 [JsonSerializable(typeof(DomDebuggerGetEventListenersResult))]
@@ -711,6 +728,62 @@ internal sealed record CssGetComputedStyleForNodeParams(int NodeId);
 internal sealed record CssComputedStyleProperty(string Name, string Value);
 
 internal sealed record CssGetComputedStyleForNodeResult(CssComputedStyleProperty[] ComputedStyle);
+
+// ============================================================================
+// CSS domain (rule usage tracking)
+// ============================================================================
+
+internal sealed record CssStartRuleUsageTrackingResult();
+
+internal sealed record CssRuleUsageEntry(
+    string StyleSheetId,
+    int StartOffset,
+    int EndOffset,
+    bool Used);
+
+internal sealed record CssStopRuleUsageTrackingResult(CssRuleUsageEntry[] RuleUsage);
+
+internal sealed record CssGetStyleSheetTextParams(string StyleSheetId);
+
+internal sealed record CssGetStyleSheetTextResult(string Text);
+
+// ============================================================================
+// Profiler domain
+// ============================================================================
+
+internal sealed record ProfilerEnableResult();
+
+internal sealed record ProfilerStartPreciseCoverageParams(
+    bool? CallCount = null,
+    bool? Detailed = null,
+    bool? AllowTriggeredUpdates = null);
+
+internal sealed record ProfilerStartPreciseCoverageResult(double? Timestamp = null);
+
+internal sealed record ProfilerCoverageRange(
+    int StartOffset,
+    int EndOffset,
+    int Count);
+
+internal sealed record ProfilerFunctionCoverage(
+    string FunctionName,
+    ProfilerCoverageRange[] Ranges,
+    bool IsBlockCoverage);
+
+internal sealed record ProfilerScriptCoverage(
+    string ScriptId,
+    string Url,
+    ProfilerFunctionCoverage[] Functions);
+
+internal sealed record ProfilerTakePreciseCoverageResult(
+    ProfilerScriptCoverage[] Result,
+    double? Timestamp = null);
+
+internal sealed record ProfilerStopPreciseCoverageResult();
+
+internal sealed record ProfilerGetScriptSourceParams(string ScriptId);
+
+internal sealed record ProfilerGetScriptSourceResult(string ScriptSource);
 
 // ============================================================================
 // Page domain (screenshot with clip)

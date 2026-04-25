@@ -70,6 +70,16 @@ internal static class BiDiTranslationRegistry
             new NoOpTranslation("Page.setLifecycleEventsEnabled", "session.status"),
             new NoOpTranslation("Fetch.disable", "session.status"),
             new NoOpTranslation("Page.setInterceptFileChooserDialog", "session.status"),
+
+            // Code coverage commands (no-ops in BiDi; CoverageCollector hook short-circuits via capability flag)
+            new NoOpTranslation("Profiler.enable", "session.status"),
+            new NoOpTranslation("Profiler.startPreciseCoverage", "session.status"),
+            new NoOpTranslation("Profiler.takePreciseCoverage", "session.status"),
+            new NoOpTranslation("Profiler.stopPreciseCoverage", "session.status"),
+            new NoOpTranslation("Profiler.getScriptSource", "session.status"),
+            new NoOpTranslation("CSS.startRuleUsageTracking", "session.status"),
+            new NoOpTranslation("CSS.stopRuleUsageTracking", "session.status"),
+            new NoOpTranslation("CSS.getStyleSheetText", "session.status"),
         ];
 
         return all.ToDictionary(t => t.CdpMethod);

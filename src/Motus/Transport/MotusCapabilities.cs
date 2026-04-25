@@ -30,6 +30,9 @@ internal enum MotusCapabilities
     /// <summary>Supports CDP Performance domain (metrics collection).</summary>
     PerformanceMetrics = 1 << 9,
 
+    /// <summary>Supports CDP Profiler and CSS rule-usage domains (code coverage collection).</summary>
+    CodeCoverage = 1 << 10,
+
     /// <summary>Supports WebDriver BiDi native network intercept.</summary>
     BiDiNetworkIntercept = 1 << 4,
 
@@ -41,7 +44,7 @@ internal enum MotusCapabilities
 
     /// <summary>Full CDP feature set.</summary>
     AllCdp = TargetMultiplexing | FetchInterception | EmulationOverrides | Tracing
-           | SecurityOverrides | AccessibilityTree | PerformanceMetrics,
+           | SecurityOverrides | AccessibilityTree | PerformanceMetrics | CodeCoverage,
 
     /// <summary>Full BiDi feature set.</summary>
     AllBiDi = BiDiNetworkIntercept | BiDiScriptEvaluation | BiDiInputActions

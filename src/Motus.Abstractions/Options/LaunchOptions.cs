@@ -46,4 +46,7 @@ public sealed record LaunchOptions
 
     /// <summary>Performance metrics collector configuration. Disabled by default.</summary>
     public PerformanceOptions? Performance { get; init; }
+
+    /// <summary>Code coverage collector configuration. Disabled by default.</summary>
+    public CoverageOptions? Coverage { get; init; }
 }
