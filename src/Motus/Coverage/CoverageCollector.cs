@@ -129,6 +129,8 @@ internal sealed class CoverageCollector : IPlugin, ILifecycleHook
 
         var scripts = new List<ScriptCoverage>();
         var stylesheets = new List<StylesheetCoverage>();
+        var originals = new List<OriginalFileCoverage>();
+        var resolver = new SourceMapResolver(new SourceMapFetcher(), _logger);
 
         if (_options.IncludeJavaScript)
         {
@@ -167,6 +169,13 @@ internal sealed class CoverageCollector : IPlugin, ILifecycleHook
                     var url = string.IsNullOrEmpty(s.Url) ? s.ScriptId : s.Url;
                     var stats = CoverageAggregator.SummarizeScript(source, ranges);
                     scripts.Add(new ScriptCoverage(url, source, ranges, stats));
+
+                    if (!string.IsNullOrEmpty(s.Url) && !string.IsNullOrEmpty(source))
+                    {
+                        var map = await resolver.TryResolveAsync(source, s.Url, CancellationToken.None).ConfigureAwait(false);
+                        if (map is not null)
+                            originals.AddRange(CoverageRemapper.Remap(source, ranges, map));
+                    }
                 }
 
                 try
@@ -232,6 +241,18 @@ internal sealed class CoverageCollector : IPlugin, ILifecycleHook
                     // CSS.styleSheetAdded events are not consumed in this phase; the
                     // stylesheet ID is used as a URL identifier.
                     stylesheets.Add(new StylesheetCoverage(sheetId, source, usages, stats));
+
+                    if (!string.IsNullOrEmpty(source) && Uri.IsWellFormedUriString(sheetId, UriKind.Absolute))
+                    {
+                        var map = await resolver.TryResolveAsync(source, sheetId, CancellationToken.None).ConfigureAwait(false);
+                        if (map is not null)
+                        {
+                            var asRanges = usages
+                                .Select(u => new CoverageRange(u.StartOffset, u.EndOffset, u.Used ? 1 : 0))
+                                .ToList();
+                            originals.AddRange(CoverageRemapper.Remap(source, asRanges, map));
+                        }
+                    }
                 }
             }
             catch (Exception ex)
@@ -241,11 +262,13 @@ internal sealed class CoverageCollector : IPlugin, ILifecycleHook
         }
 
         var summary = CoverageAggregator.BuildSummary(scripts, stylesheets);
+        var mergedOriginals = CoverageAggregator.MergeOriginalFiles(originals);
         var data = new CoverageData(
             Scripts: scripts,
             Stylesheets: stylesheets,
             Summary: summary,
-            CollectedAtUtc: DateTime.UtcNow);
+            CollectedAtUtc: DateTime.UtcNow,
+            OriginalFiles: mergedOriginals);
 
         concrete.LastCoverage = data;
         CoverageSink.Add(data);

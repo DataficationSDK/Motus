@@ -159,6 +159,62 @@ public class CoverageAggregatorTests
     }
 
     [TestMethod]
+    public void MergeOriginalFiles_Empty_ReturnsEmpty()
+    {
+        var result = CoverageAggregator.MergeOriginalFiles(Array.Empty<OriginalFileCoverage>());
+        Assert.AreEqual(0, result.Count);
+    }
+
+    [TestMethod]
+    public void MergeOriginalFiles_SamePath_UnionsRanges()
+    {
+        var src = "a\nb\nc\n"; // three lines: [0,2), [2,4), [4,6)
+        var a = new OriginalFileCoverage("x.ts", src,
+            new[] { new CoverageRange(0, 2, 1) },
+            new FileCoverageStats(3, 1, 33.3));
+        var b = new OriginalFileCoverage("x.ts", src,
+            new[] { new CoverageRange(4, 6, 1) },
+            new FileCoverageStats(3, 1, 33.3));
+
+        var result = CoverageAggregator.MergeOriginalFiles(new[] { a, b });
+
+        Assert.AreEqual(1, result.Count);
+        Assert.AreEqual("x.ts", result[0].OriginalPath);
+        Assert.AreEqual(3, result[0].Stats.TotalLines);
+        Assert.AreEqual(2, result[0].Stats.CoveredLines);
+    }
+
+    [TestMethod]
+    public void MergeOriginalFiles_DifferentPaths_KeptSeparate()
+    {
+        var a = new OriginalFileCoverage("a.ts", "x\n",
+            new[] { new CoverageRange(0, 1, 1) },
+            new FileCoverageStats(1, 1, 100));
+        var b = new OriginalFileCoverage("b.ts", "y\n",
+            new[] { new CoverageRange(0, 1, 1) },
+            new FileCoverageStats(1, 1, 100));
+
+        var result = CoverageAggregator.MergeOriginalFiles(new[] { a, b });
+        Assert.AreEqual(2, result.Count);
+    }
+
+    [TestMethod]
+    public void MergeOriginalFiles_FirstHasNoSource_LaterFillsIt()
+    {
+        var withoutSource = new OriginalFileCoverage("x.ts", null,
+            new[] { new CoverageRange(0, 1, 1) },
+            new FileCoverageStats(1, 1, 100));
+        var withSource = new OriginalFileCoverage("x.ts", "alpha\nbeta\n",
+            new[] { new CoverageRange(0, 5, 1) },
+            new FileCoverageStats(2, 1, 50));
+
+        var result = CoverageAggregator.MergeOriginalFiles(new[] { withoutSource, withSource });
+        Assert.AreEqual(1, result.Count);
+        Assert.IsNotNull(result[0].OriginalSource);
+        Assert.AreEqual(2, result[0].Stats.TotalLines);
+    }
+
+    [TestMethod]
     public void SummarizeStylesheet_MixedUsage_ComputesPercentage()
     {
         var rules = new[]

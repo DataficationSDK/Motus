@@ -197,6 +197,50 @@ internal static class CoverageAggregator
     }
 
     /// <summary>
+    /// Merges multiple <see cref="OriginalFileCoverage"/> snapshots by original path.
+    /// Ranges from the same path are unioned via <see cref="MergeRanges"/>; per-file
+    /// stats are recomputed from the merged ranges and the source content (when present).
+    /// </summary>
+    internal static IReadOnlyList<OriginalFileCoverage> MergeOriginalFiles(IEnumerable<OriginalFileCoverage> snapshots)
+    {
+        var byPath = new Dictionary<string, (string? Source, List<CoverageRange> Ranges)>(StringComparer.Ordinal);
+        foreach (var f in snapshots)
+        {
+            if (!byPath.TryGetValue(f.OriginalPath, out var entry))
+            {
+                entry = (f.OriginalSource, new List<CoverageRange>());
+                byPath[f.OriginalPath] = entry;
+            }
+            else if (entry.Source is null && f.OriginalSource is not null)
+            {
+                entry = (f.OriginalSource, entry.Ranges);
+                byPath[f.OriginalPath] = entry;
+            }
+            entry.Ranges.AddRange(f.Ranges);
+        }
+
+        var result = new List<OriginalFileCoverage>(byPath.Count);
+        foreach (var (path, entry) in byPath)
+        {
+            var merged = MergeRanges(entry.Ranges);
+            FileCoverageStats stats;
+            if (!string.IsNullOrEmpty(entry.Source))
+            {
+                stats = SummarizeScript(entry.Source!, merged);
+            }
+            else
+            {
+                int covered = 0;
+                foreach (var r in merged)
+                    if (r.Count > 0 && r.EndOffset > r.StartOffset) covered++;
+                stats = new FileCoverageStats(covered, covered, covered > 0 ? 100 : 0);
+            }
+            result.Add(new OriginalFileCoverage(path, entry.Source, merged, stats));
+        }
+        return result;
+    }
+
+    /// <summary>
     /// Builds the cross-file summary across all scripts and stylesheets.
     /// </summary>
     internal static CoverageSummary BuildSummary(

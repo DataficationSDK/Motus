@@ -70,6 +70,27 @@ public sealed record CoverageSummary(
     double CssPercentage);
 
 /// <summary>
+/// Coverage attributed to an original (pre-bundle) source file resolved through a
+/// JavaScript/CSS source map. Populated when a generated asset references a parseable
+/// source map; otherwise the asset's coverage is reported only via
+/// <see cref="ScriptCoverage"/> / <see cref="StylesheetCoverage"/>.
+/// </summary>
+/// <param name="OriginalPath">
+/// The original source path as it appears in the source map's <c>sources</c> array
+/// (e.g. <c>webpack:///./src/Login.ts</c> or <c>file:///.../Login.ts</c>).
+/// </param>
+/// <param name="OriginalSource">
+/// The original source text from the map's <c>sourcesContent</c> array, when present.
+/// </param>
+/// <param name="Ranges">Sorted, non-overlapping covered ranges with execution counts, in offsets within <paramref name="OriginalSource"/> (or line markers when no source content is available).</param>
+/// <param name="Stats">Line-level coverage stats derived from <paramref name="Ranges"/>.</param>
+public sealed record OriginalFileCoverage(
+    string OriginalPath,
+    string? OriginalSource,
+    IReadOnlyList<CoverageRange> Ranges,
+    FileCoverageStats Stats);
+
+/// <summary>
 /// A snapshot of JavaScript and CSS code coverage data collected during a page session.
 /// </summary>
 /// <param name="Scripts">Per-script JavaScript coverage entries.</param>
@@ -80,9 +101,22 @@ public sealed record CoverageSummary(
 /// Optional message when coverage could not be fully collected
 /// (e.g. transport does not support the CDP Profiler/CSS domains).
 /// </param>
+/// <param name="OriginalFiles">
+/// Coverage attributed to original (pre-bundle) source files via source-map resolution.
+/// Empty when no source maps were detected or all map fetches/parses failed.
+/// </param>
 public sealed record CoverageData(
     IReadOnlyList<ScriptCoverage> Scripts,
     IReadOnlyList<StylesheetCoverage> Stylesheets,
     CoverageSummary Summary,
     DateTime CollectedAtUtc,
-    string? DiagnosticMessage = null);
+    string? DiagnosticMessage = null,
+    IReadOnlyList<OriginalFileCoverage>? OriginalFiles = null)
+{
+    /// <summary>
+    /// Coverage attributed to original (pre-bundle) source files via source-map resolution.
+    /// Never null; empty when no source maps were resolvable.
+    /// </summary>
+    public IReadOnlyList<OriginalFileCoverage> OriginalFiles { get; init; } =
+        OriginalFiles ?? Array.Empty<OriginalFileCoverage>();
+}

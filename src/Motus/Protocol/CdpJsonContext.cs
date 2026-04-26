@@ -223,6 +223,8 @@ namespace Motus;
 [JsonSerializable(typeof(ProfilerCoverageRange))]
 [JsonSerializable(typeof(ProfilerGetScriptSourceParams))]
 [JsonSerializable(typeof(ProfilerGetScriptSourceResult))]
+// --- Source map document ---
+[JsonSerializable(typeof(SourceMapJsonDto))]
 // --- DOMDebugger domain ---
 [JsonSerializable(typeof(DomDebuggerGetEventListenersParams))]
 [JsonSerializable(typeof(DomDebuggerGetEventListenersResult))]
