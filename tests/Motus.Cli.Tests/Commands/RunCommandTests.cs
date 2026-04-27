@@ -57,4 +57,29 @@ public class RunCommandTests
         var result = Cmd.Parse("tests.dll --visual");
         Assert.AreEqual(0, result.Errors.Count);
     }
+
+    [TestMethod]
+    public void Parse_CoverageFlag_NoErrors()
+    {
+        var result = Cmd.Parse("tests.dll --coverage");
+        Assert.AreEqual(0, result.Errors.Count);
+    }
+
+    [TestMethod]
+    public void Parse_CoverageHtmlFormat_NoErrors()
+    {
+        var result = Cmd.Parse("tests.dll --coverage html:./out");
+        Assert.AreEqual(0, result.Errors.Count);
+    }
+
+    [TestMethod]
+    public void Parse_CoverageRepeated_BindsAllValues()
+    {
+        var result = Cmd.Parse("tests.dll --coverage console --coverage html:./out --coverage cobertura:./c.xml");
+        Assert.AreEqual(0, result.Errors.Count);
+        var coverageOpt = (Option<string[]?>)Cmd.Options.Single(o => o.Name == "--coverage");
+        var assembliesArg = (Argument<string[]>)Cmd.Arguments.Single(a => a.Name == "assemblies");
+        CollectionAssert.AreEqual(new[] { "console", "html:./out", "cobertura:./c.xml" }, result.GetValue(coverageOpt));
+        CollectionAssert.AreEqual(new[] { "tests.dll" }, result.GetValue(assembliesArg));
+    }
 }

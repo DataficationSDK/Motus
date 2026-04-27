@@ -1,0 +1,196 @@
+@inject ICoverageService Coverage
+@implements IDisposable
+@using Motus.Abstractions
+
+@if (Coverage.HasData)
+{
+    var data = Coverage.Latest!;
+    <div class="cov-panel">
+        <div class="cov-summary">
+            <div class="cov-gauge">
+                <div class="cov-gauge-label">JS Lines</div>
+                <div class="cov-gauge-value @PercentClass(data.Summary.LinePercentage)">
+                    @data.Summary.LinePercentage.ToString("F1")%
+                </div>
+                <div class="cov-gauge-detail">@data.Summary.CoveredLines / @data.Summary.TotalLines</div>
+            </div>
+            <div class="cov-gauge">
+                <div class="cov-gauge-label">CSS Rules</div>
+                <div class="cov-gauge-value @PercentClass(data.Summary.CssPercentage)">
+                    @data.Summary.CssPercentage.ToString("F1")%
+                </div>
+                <div class="cov-gauge-detail">@data.Summary.UsedCssRules / @data.Summary.TotalCssRules</div>
+            </div>
+        </div>
+
+        @if (data.DiagnosticMessage is not null)
+        {
+            <div class="cov-diagnostic">@data.DiagnosticMessage</div>
+        }
+
+        <div class="cov-body">
+            <div class="cov-tree">
+                <table>
+                    <thead>
+                        <tr><th>Type</th><th>File</th><th>Lines</th><th>Covered</th><th>%</th></tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var s in data.Scripts)
+                        {
+                            var url = s.Url;
+                            <tr class="cov-row @(IsSelected("js", url) ? "cov-selected" : "")"
+                                @onclick="() => Select(ScriptKind, url)">
+                                <td>JS</td>
+                                <td class="cov-file">@url</td>
+                                <td>@s.Stats.TotalLines</td>
+                                <td>@s.Stats.CoveredLines</td>
+                                <td class="@PercentClass(s.Stats.Percentage)">@s.Stats.Percentage.ToString("F1")%</td>
+                            </tr>
+                        }
+                        @foreach (var s in data.Stylesheets)
+                        {
+                            var url = s.Url;
+                            <tr class="cov-row @(IsSelected("css", url) ? "cov-selected" : "")"
+                                @onclick="() => Select(StylesheetKind, url)">
+                                <td>CSS</td>
+                                <td class="cov-file">@url</td>
+                                <td>@s.Stats.TotalLines</td>
+                                <td>@s.Stats.CoveredLines</td>
+                                <td class="@PercentClass(s.Stats.Percentage)">@s.Stats.Percentage.ToString("F1")%</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="cov-source">
+                @if (selectedKind is null)
+                {
+                    <div class="cov-empty">Select a file to view source coverage</div>
+                }
+                else
+                {
+                    var lines = GetSelectedLines(data);
+                    if (lines.Count == 0)
+                    {
+                        <div class="cov-empty">No source available for this file</div>
+                    }
+                    else
+                    {
+                        <table class="cov-src-table">
+                            <tbody>
+                                @for (int i = 0; i < lines.Count; i++)
+                                {
+                                    var line = lines[i];
+                                    <tr class="cov-line @line.Status">
+                                        <td class="cov-ln">@(i + 1)</td>
+                                        <td class="cov-text"><pre>@line.Text</pre></td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    }
+                }
+            </div>
+        </div>
+    </div>
+}
+else
+{
+    <div class="cov-empty">No coverage data collected. Run with <code>--coverage</code>.</div>
+}
+
+@code {
+    private const string ScriptKind = "js";
+    private const string StylesheetKind = "css";
+
+    private string? selectedKind;
+    private string? selectedUrl;
+
+    protected override void OnInitialized()
+    {
+        Coverage.CoverageChanged += OnCoverageChanged;
+    }
+
+    private bool IsSelected(string kind, string url) =>
+        selectedKind == kind && selectedUrl == url;
+
+    private void Select(string kind, string url)
+    {
+        selectedKind = kind;
+        selectedUrl = url;
+    }
+
+    private async void OnCoverageChanged() => await InvokeAsync(StateHasChanged);
+
+    private static string PercentClass(double pct) => pct switch
+    {
+        > 80.0 => "cov-good",
+        >= 50.0 => "cov-warn",
+        _ => "cov-bad",
+    };
+
+    private List<LineEntry> GetSelectedLines(CoverageData data)
+    {
+        if (selectedKind == "js")
+        {
+            var script = data.Scripts.FirstOrDefault(s => s.Url == selectedUrl);
+            if (script is null) return new();
+            return BuildLines(script.Source, script.Ranges);
+        }
+        if (selectedKind == "css")
+        {
+            var sheet = data.Stylesheets.FirstOrDefault(s => s.Url == selectedUrl);
+            if (sheet is null) return new();
+            var ranges = sheet.Rules
+                .Where(r => r.EndOffset > r.StartOffset)
+                .Select(r => new CoverageRange(r.StartOffset, r.EndOffset, r.Used ? 1 : 0))
+                .ToList();
+            return BuildLines(sheet.Source, ranges);
+        }
+        return new();
+    }
+
+    private static List<LineEntry> BuildLines(string source, IReadOnlyList<CoverageRange> ranges)
+    {
+        if (string.IsNullOrEmpty(source)) return new();
+
+        var starts = new List<int> { 0 };
+        for (int i = 0; i < source.Length; i++)
+            if (source[i] == '\n') starts.Add(i + 1);
+
+        var result = new List<LineEntry>(starts.Count);
+        for (int i = 0; i < starts.Count; i++)
+        {
+            var lineStart = starts[i];
+            var lineEnd = i + 1 < starts.Count ? starts[i + 1] - 1 : source.Length;
+            if (lineStart > source.Length) break;
+            var text = source.Substring(lineStart, Math.Max(0, lineEnd - lineStart)).TrimEnd('\r');
+
+            var status = "neutral";
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                bool hit = false, touched = false;
+                foreach (var r in ranges)
+                {
+                    if (r.StartOffset < lineEnd && r.EndOffset > lineStart)
+                    {
+                        touched = true;
+                        if (r.Count > 0) { hit = true; break; }
+                    }
+                }
+                status = hit ? "covered" : touched ? "uncovered" : "neutral";
+            }
+
+            result.Add(new LineEntry(text, status));
+        }
+        return result;
+    }
+
+    public void Dispose()
+    {
+        Coverage.CoverageChanged -= OnCoverageChanged;
+    }
+
+    private sealed record LineEntry(string Text, string Status);
+}

@@ -59,7 +59,40 @@ internal static class ConfigMerge
             };
         }
 
+        var cov = MotusConfigLoader.Config.Coverage;
+        if (cov is not null && options.Coverage is null)
+        {
+            result = result with
+            {
+                Coverage = new CoverageOptions
+                {
+                    Enable = cov.Enable ?? false,
+                    IncludeJavaScript = cov.IncludeJavaScript ?? true,
+                    IncludeCss = cov.IncludeCss ?? true,
+                    JsLineThreshold = cov.Js?.Lines,
+                    JsFunctionThreshold = cov.Js?.Functions,
+                    CssRuleThreshold = cov.Css?.Rules,
+                }
+            };
+        }
+
         return result;
+    }
+
+    internal static CoverageOptions? ToCoverageOptions(MotusCoverageConfig? cfg)
+    {
+        if (cfg is null)
+            return null;
+
+        return new CoverageOptions
+        {
+            Enable = cfg.Enable ?? false,
+            IncludeJavaScript = cfg.IncludeJavaScript ?? true,
+            IncludeCss = cfg.IncludeCss ?? true,
+            JsLineThreshold = cfg.Js?.Lines,
+            JsFunctionThreshold = cfg.Js?.Functions,
+            CssRuleThreshold = cfg.Css?.Rules,
+        };
     }
 
     internal static PerformanceBudget? ToBudget(MotusPerformanceConfig? cfg)

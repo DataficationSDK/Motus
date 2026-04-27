@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Logging;
 using Motus.Runner.Services;
+using Motus.Runner.Services.Coverage;
 using Motus.Runner.Services.SelectorRepair;
 using Motus.Runner.Services.Timeline;
 using Motus.Runner.Services.VisualRegression;
@@ -76,6 +77,8 @@ public static class RunnerHost
         builder.Services.AddSingleton<IVisualRegressionService>(sp => sp.GetRequiredService<VisualRegressionService>());
         builder.Services.AddSingleton<SelectorRepairService>();
         builder.Services.AddSingleton<ISelectorRepairService>(sp => sp.GetRequiredService<SelectorRepairService>());
+        builder.Services.AddSingleton<CoverageService>();
+        builder.Services.AddSingleton<ICoverageService>(sp => sp.GetRequiredService<CoverageService>());
 
         builder.Services.AddRazorComponents()
             .AddInteractiveServerComponents();

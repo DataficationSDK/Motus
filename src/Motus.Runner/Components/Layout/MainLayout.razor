@@ -1,6 +1,7 @@
 @inherits LayoutComponentBase
 @inject ITestSessionService Session
 @inject ITimelineService Timeline
+@inject ICoverageService Coverage
 @inject RunnerOptions Options
 @implements IDisposable
 
@@ -41,6 +42,13 @@
                     Selector Repair
                 </button>
             }
+            @if (Coverage.HasData)
+            {
+                <button class="main-tab @(activeTab == "coverage" ? "tab-active" : "")"
+                        @onclick='() => activeTab = "coverage"'>
+                    Coverage
+                </button>
+            }
         </div>
         <div class="main-content">
             @switch (activeTab)
@@ -59,6 +67,9 @@
                     break;
                 case "repair":
                     <SelectorRepairPanel />
+                    break;
+                case "coverage":
+                    <CoveragePanel />
                     break;
             }
         </div>
@@ -140,6 +151,12 @@
         Session.RunStarted += OnRunStarted;
         Timeline.TimelineChanged += OnTimelineChanged;
         Timeline.TestSelected += OnTestSelected;
+        Coverage.CoverageChanged += OnCoverageChanged;
+    }
+
+    private async void OnCoverageChanged()
+    {
+        await InvokeAsync(StateHasChanged);
     }
 
     private async void OnStateChanged()
@@ -181,5 +198,6 @@
         Session.RunStarted -= OnRunStarted;
         Timeline.TimelineChanged -= OnTimelineChanged;
         Timeline.TestSelected -= OnTestSelected;
+        Coverage.CoverageChanged -= OnCoverageChanged;
     }
 }

@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Reflection;
+using Motus;
 using Motus.Abstractions;
 using Motus.Cli.Services.Reporters;
 using CliTestResult = Motus.Cli.Services.TestResult;
@@ -9,7 +10,7 @@ namespace Motus.Cli.Services;
 
 public sealed record TestResult(string FullName, bool Passed, TimeSpan Duration, string? ErrorMessage, string? StackTrace);
 
-public sealed record TestRunResult(int Total, int Passed, int Failed, int Skipped, TimeSpan Duration);
+public sealed record TestRunResult(int Total, int Passed, int Failed, int Skipped, TimeSpan Duration, bool CoverageThresholdsFailed = false);
 
 public sealed class TestRunner(int maxWorkers)
 {
@@ -17,9 +18,20 @@ public sealed class TestRunner(int maxWorkers)
     private readonly ConcurrentDictionary<Type, bool> _initializedClasses = new();
 
     public Task<TestRunResult> RunAsync(List<DiscoveredTest> tests, IReporter reporter) =>
-        RunAsync(tests, reporter, a11yMode: null, enforcePerfBudget: false);
+        RunAsync(tests, reporter, a11yMode: null, enforcePerfBudget: false, coverageReporters: null);
 
-    public async Task<TestRunResult> RunAsync(List<DiscoveredTest> tests, IReporter reporter, string? a11yMode, bool enforcePerfBudget = false)
+    public Task<TestRunResult> RunAsync(List<DiscoveredTest> tests, IReporter reporter, string? a11yMode) =>
+        RunAsync(tests, reporter, a11yMode, enforcePerfBudget: false, coverageReporters: null);
+
+    public Task<TestRunResult> RunAsync(List<DiscoveredTest> tests, IReporter reporter, string? a11yMode, bool enforcePerfBudget) =>
+        RunAsync(tests, reporter, a11yMode, enforcePerfBudget, coverageReporters: null);
+
+    public async Task<TestRunResult> RunAsync(
+        List<DiscoveredTest> tests,
+        IReporter reporter,
+        string? a11yMode,
+        bool enforcePerfBudget,
+        IReadOnlyList<ICoverageReporter>? coverageReporters)
     {
         var suiteName = tests.Count > 0
             ? tests[0].TestClass.Assembly.GetName().Name ?? "Motus Tests"
@@ -51,6 +63,7 @@ public sealed class TestRunner(int maxWorkers)
 
         var semaphore = new SemaphoreSlim(maxWorkers);
         var results = new List<CliTestResult>();
+        var collectedCoverage = new List<CoverageData>();
         var lockObj = new object();
 
         var tasks = tests.Select(async test =>
@@ -67,6 +80,7 @@ public sealed class TestRunner(int maxWorkers)
 
                 AccessibilityViolationSink.Begin();
                 PerformanceMetricsSink.Begin();
+                CoverageSink.Begin();
 
                 CliTestResult result;
 
@@ -82,6 +96,30 @@ public sealed class TestRunner(int maxWorkers)
 
                 var violations = AccessibilityViolationSink.End();
                 var perfMetrics = PerformanceMetricsSink.End();
+                var coverage = CoverageSink.End();
+
+                if (coverage is not null)
+                {
+                    lock (lockObj)
+                    {
+                        collectedCoverage.Add(coverage);
+                    }
+
+                    if (coverageReporters is not null)
+                    {
+                        foreach (var cr in coverageReporters)
+                        {
+                            try { await cr.OnCoverageCollectedAsync(coverage, testInfo); }
+                            catch { }
+                        }
+                    }
+
+                    if (reporter is ICoverageReporter testReporterCoverage)
+                    {
+                        try { await testReporterCoverage.OnCoverageCollectedAsync(coverage, testInfo); }
+                        catch { }
+                    }
+                }
 
                 // Dispatch violations to IAccessibilityReporter reporters
                 if (violations.Count > 0 && reporter is IAccessibilityReporter a11yReporter)
@@ -149,6 +187,57 @@ public sealed class TestRunner(int maxWorkers)
         await Task.WhenAll(tasks);
         sw.Stop();
 
+        // Aggregate coverage and dispatch run-end events
+        CoverageData? aggregated = null;
+        var coverageThresholdsFailed = false;
+        if (collectedCoverage.Count > 0)
+        {
+            var mergedScripts = CoverageAggregator.MergeScripts(collectedCoverage.SelectMany(c => c.Scripts));
+            var mergedSheets = CoverageAggregator.MergeStylesheets(collectedCoverage.SelectMany(c => c.Stylesheets));
+            var mergedOriginal = CoverageAggregator.MergeOriginalFiles(collectedCoverage.SelectMany(c => c.OriginalFiles));
+            var summary = CoverageAggregator.BuildSummary(mergedScripts, mergedSheets);
+            var diagnostic = collectedCoverage.Select(c => c.DiagnosticMessage).FirstOrDefault(d => !string.IsNullOrEmpty(d));
+
+            aggregated = new CoverageData(
+                mergedScripts,
+                mergedSheets,
+                summary,
+                DateTime.UtcNow,
+                diagnostic,
+                mergedOriginal);
+
+            // Threshold enforcement: read from MotusConfig and force-fail when violated
+            var coverageOptions = ConfigMerge.ToCoverageOptions(MotusConfigLoader.Config.Coverage);
+            if (coverageOptions is not null)
+            {
+                var thresholdResult = CoverageThresholds.Evaluate(aggregated, coverageOptions);
+                if (!thresholdResult.Passed)
+                {
+                    coverageThresholdsFailed = true;
+                    foreach (var entry in thresholdResult.Failed)
+                    {
+                        Console.Error.WriteLine(
+                            $"Coverage threshold failed: {entry.MetricName} {entry.Actual:F1}% < {entry.Threshold:F1}%");
+                    }
+                }
+            }
+
+            if (coverageReporters is not null)
+            {
+                foreach (var cr in coverageReporters)
+                {
+                    try { await cr.OnCoverageRunEndAsync(aggregated); }
+                    catch { }
+                }
+            }
+
+            if (reporter is ICoverageReporter testReporterCoverageEnd)
+            {
+                try { await testReporterCoverageEnd.OnCoverageRunEndAsync(aggregated); }
+                catch { }
+            }
+        }
+
         // Run [ClassCleanup] for all initialized classes
         foreach (var type in _initializedClasses.Keys)
         {
@@ -179,7 +268,7 @@ public sealed class TestRunner(int maxWorkers)
         var skipped = tests.Count(t => t.IsIgnored);
         var passed = results.Count(r => r.Passed);
         var failed = results.Count(r => !r.Passed);
-        var runResult = new TestRunResult(passed + failed + skipped, passed, failed, skipped, sw.Elapsed);
+        var runResult = new TestRunResult(passed + failed + skipped, passed, failed, skipped, sw.Elapsed, coverageThresholdsFailed);
 
         await reporter.OnTestRunEndAsync(new TestRunSummary(suiteName, passed, failed, skipped, sw.Elapsed.TotalMilliseconds));
         return runResult;

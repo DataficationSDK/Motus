@@ -17,7 +17,7 @@ public static class RunCommand
         var filterOpt = new Option<string?>("--filter") { Description = "Filter tests by name substring" };
         var reporterOpt = new Option<string[]>("--reporter")
         {
-            Description = "Reporter format (console, junit:path.xml, html:path.html, trx:path.trx)",
+            Description = "Reporter format: console | junit:<path> | html:<path> | trx:<path>. Repeat the flag for multiple reporters (e.g. --reporter console --reporter junit:r.xml).",
             Arity = ArgumentArity.ZeroOrMore,
             DefaultValueFactory = _ => new[] { "console" },
         };
@@ -25,6 +25,11 @@ public static class RunCommand
         var visualOpt = new Option<bool>("--visual") { Description = "Launch visual test runner" };
         var a11yOpt = new Option<string?>("--a11y") { Description = "Enable accessibility audits (warn or enforce)" };
         var perfBudgetOpt = new Option<bool>("--perf-budget") { Description = "Enable performance budget enforcement from config" };
+        var coverageOpt = new Option<string[]?>("--coverage")
+        {
+            Description = "Enable coverage reporting: console | html:<dir> | cobertura:<path>. Repeat the flag for multiple formats (e.g. --coverage console --coverage html:./out).",
+            Arity = ArgumentArity.ZeroOrMore,
+        };
 
         var cmd = new Command("run", "Discover and execute tests from assemblies")
         {
@@ -35,6 +40,7 @@ public static class RunCommand
             visualOpt,
             a11yOpt,
             perfBudgetOpt,
+            coverageOpt,
         };
 
         cmd.SetAction(async (parseResult, ct) =>
@@ -46,6 +52,8 @@ public static class RunCommand
             var visual = parseResult.GetValue(visualOpt);
             var a11yMode = parseResult.GetValue(a11yOpt);
             var perfBudget = parseResult.GetValue(perfBudgetOpt);
+            var coverageSpecs = parseResult.GetValue(coverageOpt);
+            var coverageRequested = parseResult.GetResult(coverageOpt) is not null;
 
             if (a11yMode is not null)
             {
@@ -58,16 +66,21 @@ public static class RunCommand
                 Environment.SetEnvironmentVariable("MOTUS_PERFORMANCE_ENABLE", "true");
             }
 
+            if (coverageRequested)
+            {
+                Environment.SetEnvironmentVariable("MOTUS_COVERAGE_ENABLE", "true");
+            }
+
             if (visual)
             {
                 await RunnerHost.StartAsync([], assemblies, filter, port: 5100, ct: ct);
-                return;
+                return 0;
             }
 
             if (assemblies.Length == 0)
             {
                 Console.Error.WriteLine("Error: At least one test assembly path is required.");
-                return;
+                return 1;
             }
 
             var workers = workersSpec.Equals("auto", StringComparison.OrdinalIgnoreCase)
@@ -75,11 +88,17 @@ public static class RunCommand
                 : int.Parse(workersSpec);
 
             var reporter = ReporterFactory.Create(reporterSpecs);
+            var coverageReporters = coverageRequested
+                ? CoverageReporterFactory.Create(coverageSpecs)
+                : null;
+
             var discovery = new TestDiscovery();
             var tests = discovery.Discover(assemblies, filter);
 
             var runner = new TestRunner(workers);
-            await runner.RunAsync(tests, reporter, a11yMode, perfBudget);
+            var runResult = await runner.RunAsync(tests, reporter, a11yMode, perfBudget, coverageReporters);
+
+            return (runResult.Failed > 0 || runResult.CoverageThresholdsFailed) ? 1 : 0;
         });
 
         return cmd;

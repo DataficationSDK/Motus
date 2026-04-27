@@ -1,0 +1,106 @@
+.cov-panel {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+    font-size: 0.85rem;
+}
+
+.cov-summary {
+    display: flex;
+    gap: 1rem;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid #e1e4e8;
+    background: #f6f8fa;
+}
+
+.cov-gauge {
+    background: #fff;
+    border: 1px solid #e1e4e8;
+    border-radius: 6px;
+    padding: 0.5rem 1rem;
+    min-width: 140px;
+}
+
+.cov-gauge-label { color: #6a737d; font-size: 0.75rem; }
+.cov-gauge-value { font-size: 1.4rem; font-weight: 700; }
+.cov-gauge-detail { color: #6a737d; font-size: 0.75rem; }
+
+.cov-good { color: #22863a; background-color: #dcffe4; }
+.cov-warn { color: #735c0f; background-color: #fff8c5; }
+.cov-bad  { color: #cb2431; background-color: #ffeef0; }
+
+.cov-diagnostic {
+    padding: 0.5rem 1rem;
+    background: #fff8c5;
+    border-bottom: 1px solid #d4a72c;
+}
+
+.cov-body {
+    display: grid;
+    grid-template-columns: minmax(280px, 40%) 1fr;
+    gap: 1px;
+    background: #e1e4e8;
+    flex: 1;
+    overflow: hidden;
+}
+
+.cov-tree {
+    background: #fff;
+    overflow: auto;
+}
+
+.cov-tree table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.cov-tree th, .cov-tree td {
+    padding: 0.35rem 0.5rem;
+    border-bottom: 1px solid #f0f0f0;
+    text-align: left;
+}
+
+.cov-tree th { background: #f6f8fa; font-weight: 600; }
+.cov-row { cursor: pointer; }
+.cov-row:hover { background: #f6f8fa; }
+.cov-selected { background: #ddf4ff !important; }
+
+.cov-file {
+    max-width: 320px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cov-source {
+    background: #fff;
+    overflow: auto;
+}
+
+.cov-empty {
+    padding: 2rem;
+    color: #6a737d;
+    text-align: center;
+}
+
+.cov-src-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 0.8rem;
+}
+
+.cov-src-table td { padding: 0 0.5rem; vertical-align: top; }
+.cov-ln {
+    color: #959da5;
+    text-align: right;
+    user-select: none;
+    width: 3.5rem;
+    border-right: 1px solid #e1e4e8;
+}
+.cov-text pre { margin: 0; white-space: pre-wrap; word-break: break-all; }
+
+.cov-line.covered { background: #e6ffec; }
+.cov-line.uncovered { background: #ffebe9; }
+.cov-line.neutral { background: #fff; }

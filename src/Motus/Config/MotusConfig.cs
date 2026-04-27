@@ -60,6 +60,20 @@ internal sealed record MotusPerformanceConfig(
     long? JsHeapSize = null,
     int? DomNodeCount = null);
 
+internal sealed record MotusCoverageJsConfig(
+    double? Lines = null,
+    double? Functions = null);
+
+internal sealed record MotusCoverageCssConfig(
+    double? Rules = null);
+
+internal sealed record MotusCoverageConfig(
+    bool? Enable = null,
+    bool? IncludeJavaScript = null,
+    bool? IncludeCss = null,
+    MotusCoverageJsConfig? Js = null,
+    MotusCoverageCssConfig? Css = null);
+
 internal sealed record MotusRootConfig(
     string? Motus = null,
     MotusLaunchConfig? Launch = null,
@@ -70,7 +84,8 @@ internal sealed record MotusRootConfig(
     MotusRecorderConfig? Recorder = null,
     MotusFailureConfig? Failure = null,
     MotusAccessibilityConfig? Accessibility = null,
-    MotusPerformanceConfig? Performance = null);
+    MotusPerformanceConfig? Performance = null,
+    MotusCoverageConfig? Coverage = null);
 
 internal static class MotusConfigLoader
 {
@@ -216,6 +231,18 @@ internal static class MotusConfigLoader
         if (TryParseInt(envReader("MOTUS_PERFORMANCE_DOM_NODE_COUNT"), out var perfDom))
         { performance = performance with { DomNodeCount = perfDom }; performanceChanged = true; }
 
+        var coverage = config.Coverage ?? new MotusCoverageConfig();
+        var coverageChanged = false;
+
+        if (TryParseBool(envReader("MOTUS_COVERAGE_ENABLE"), out var coverageEnable))
+        { coverage = coverage with { Enable = coverageEnable }; coverageChanged = true; }
+
+        if (TryParseBool(envReader("MOTUS_COVERAGE_INCLUDE_JS"), out var coverageJs))
+        { coverage = coverage with { IncludeJavaScript = coverageJs }; coverageChanged = true; }
+
+        if (TryParseBool(envReader("MOTUS_COVERAGE_INCLUDE_CSS"), out var coverageCss))
+        { coverage = coverage with { IncludeCss = coverageCss }; coverageChanged = true; }
+
         return config with
         {
             Launch = launchChanged ? launch : config.Launch,
@@ -225,6 +252,7 @@ internal static class MotusConfigLoader
             Failure = failureChanged ? failure : config.Failure,
             Accessibility = accessibilityChanged ? accessibility : config.Accessibility,
             Performance = performanceChanged ? performance : config.Performance,
+            Coverage = coverageChanged ? coverage : config.Coverage,
         };
     }
 

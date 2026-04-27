@@ -3,11 +3,12 @@ using System.Diagnostics;
 using System.Reflection;
 using Motus;
 using Motus.Abstractions;
+using Motus.Runner.Services.Coverage;
 using Motus.Runner.Services.Models;
 
 namespace Motus.Runner.Services;
 
-public sealed class TestExecutionService(ILogger<TestExecutionService> logger)
+public sealed class TestExecutionService(ILogger<TestExecutionService> logger, ICoverageService? coverageService = null)
 {
     // Browser automation tests must run sequentially to avoid contention
     // on the shared browser process and screenshot capture pipeline
@@ -57,6 +58,8 @@ public sealed class TestExecutionService(ILogger<TestExecutionService> logger)
         var sw = reporters is not null ? Stopwatch.StartNew() : null;
         var semaphore = new SemaphoreSlim(MaxWorkers);
         int passedCount = 0, failedCount = 0, skippedCount = 0;
+        var collectedCoverage = new List<CoverageData>();
+        var coverageLock = new object();
 
         var tasks = tests.Select(async test =>
         {
@@ -77,8 +80,16 @@ public sealed class TestExecutionService(ILogger<TestExecutionService> logger)
                 if (reporters is not null)
                     await reporters.FireOnTestStartAsync(new TestInfo(test.FullName, suiteName));
 
+                CoverageSink.Begin();
                 var result = await ExecuteTestAsync(test, logger);
                 onStateChanged(result);
+
+                var coverage = CoverageSink.End();
+                if (coverage is not null)
+                {
+                    lock (coverageLock)
+                        collectedCoverage.Add(coverage);
+                }
 
                 if (reporters is not null)
                 {
@@ -136,6 +147,23 @@ public sealed class TestExecutionService(ILogger<TestExecutionService> logger)
             sw!.Stop();
             await reporters.FireOnTestRunEndAsync(
                 new TestRunSummary(suiteName, passedCount, failedCount, skippedCount, sw.Elapsed.TotalMilliseconds));
+        }
+
+        if (coverageService is not null && collectedCoverage.Count > 0)
+        {
+            var mergedScripts = CoverageAggregator.MergeScripts(collectedCoverage.SelectMany(c => c.Scripts));
+            var mergedSheets = CoverageAggregator.MergeStylesheets(collectedCoverage.SelectMany(c => c.Stylesheets));
+            var mergedOriginal = CoverageAggregator.MergeOriginalFiles(collectedCoverage.SelectMany(c => c.OriginalFiles));
+            var summary = CoverageAggregator.BuildSummary(mergedScripts, mergedSheets);
+            var diagnostic = collectedCoverage.Select(c => c.DiagnosticMessage).FirstOrDefault(d => !string.IsNullOrEmpty(d));
+
+            coverageService.Set(new CoverageData(
+                mergedScripts,
+                mergedSheets,
+                summary,
+                DateTime.UtcNow,
+                diagnostic,
+                mergedOriginal));
         }
     }
 
