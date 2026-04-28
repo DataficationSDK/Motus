@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Threading.Channels;
 using Motus.Abstractions;
@@ -10,15 +11,23 @@ namespace Motus;
 /// </summary>
 internal sealed class Tracing : ITracing
 {
+    // CDP Tracing is browser-wide: only one trace session can be active per browser.
+    // When multiple BrowserContexts share a browser (e.g. shared-browser test fixtures
+    // with parallel workers), concurrent StartAsync calls collide. Serialize per session.
+    private static readonly ConditionalWeakTable<IMotusSession, SemaphoreSlim> s_browserGates = new();
+
     private readonly IMotusSession _browserSession;
+    private readonly SemaphoreSlim _browserGate;
     private readonly Channel<JsonElement[]> _dataChannel = Channel.CreateUnbounded<JsonElement[]>();
     private TaskCompletionSource<TracingTracingCompleteEvent>? _completeTcs;
     private CancellationTokenSource? _pumpCts;
     private int _started;
+    private bool _holdsBrowserGate;
 
     internal Tracing(IMotusSession browserSession)
     {
         _browserSession = browserSession;
+        _browserGate = s_browserGates.GetValue(browserSession, _ => new SemaphoreSlim(1, 1));
     }
 
     /// <summary>
@@ -34,6 +43,10 @@ internal sealed class Tracing : ITracing
 
         CapabilityGuard.Require(_browserSession.Capabilities, MotusCapabilities.Tracing,
             "Tracing", CapabilityGuard.GetTransportDescription(_browserSession));
+
+        // Wait for any other tracing session on the same browser to finish.
+        await _browserGate.WaitAsync().ConfigureAwait(false);
+        _holdsBrowserGate = true;
 
         options ??= new TracingStartOptions();
 
@@ -67,15 +80,37 @@ internal sealed class Tracing : ITracing
         // of an old pump cannot poison a newer TCS via the shared field.
         _ = PumpTracingCompleteAsync(completeTcs, _pumpCts.Token);
 
-        await _browserSession.SendAsync(
-            "Tracing.start",
-            new TracingStartParams(
-                TransferMode: "ReturnAsStream",
-                TraceConfig: new TracingTraceConfig(
-                    IncludedCategories: categories.ToArray())),
-            CdpJsonContext.Default.TracingStartParams,
-            CdpJsonContext.Default.TracingStartResult,
-            CancellationToken.None).ConfigureAwait(false);
+        try
+        {
+            await _browserSession.SendAsync(
+                "Tracing.start",
+                new TracingStartParams(
+                    TransferMode: "ReturnAsStream",
+                    TraceConfig: new TracingTraceConfig(
+                        IncludedCategories: categories.ToArray())),
+                CdpJsonContext.Default.TracingStartParams,
+                CdpJsonContext.Default.TracingStartResult,
+                CancellationToken.None).ConfigureAwait(false);
+        }
+        catch
+        {
+            // CDP rejected start (e.g. browser-level trace already active outside our control).
+            // Roll back state so a retry — or another Tracing instance — can proceed.
+            _started = 0;
+            _pumpCts?.Cancel();
+            _completeTcs?.TrySetCanceled();
+            ReleaseBrowserGate();
+            throw;
+        }
+    }
+
+    private void ReleaseBrowserGate()
+    {
+        if (_holdsBrowserGate)
+        {
+            _holdsBrowserGate = false;
+            _browserGate.Release();
+        }
     }
 
     public async Task StopAsync(TracingStopOptions? options = null)
@@ -86,30 +121,35 @@ internal sealed class Tracing : ITracing
         var completeTcs = _completeTcs!;
         var pumpCts = _pumpCts;
 
-        // Send Tracing.end
-        await _browserSession.SendAsync(
-            "Tracing.end",
-            CdpJsonContext.Default.TracingEndResult,
-            CancellationToken.None).ConfigureAwait(false);
-
-        // Wait for tracingComplete event with a timeout to prevent indefinite hangs
-        using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-        using var reg = timeoutCts.Token.Register(() => completeTcs.TrySetCanceled());
-
         TracingTracingCompleteEvent completeEvent;
         try
         {
-            completeEvent = await completeTcs.Task.ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested)
-        {
-            throw new TimeoutException(
-                "Timed out waiting for Tracing.tracingComplete event after 30 seconds.");
+            // Send Tracing.end
+            await _browserSession.SendAsync(
+                "Tracing.end",
+                CdpJsonContext.Default.TracingEndResult,
+                CancellationToken.None).ConfigureAwait(false);
+
+            // Wait for tracingComplete event with a timeout to prevent indefinite hangs
+            using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            using var reg = timeoutCts.Token.Register(() => completeTcs.TrySetCanceled());
+
+            try
+            {
+                completeEvent = await completeTcs.Task.ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested)
+            {
+                throw new TimeoutException(
+                    "Timed out waiting for Tracing.tracingComplete event after 30 seconds.");
+            }
         }
         finally
         {
-            // Cancel background pumps immediately so they don't race with future runs
+            // Cancel background pumps and release the browser gate so other
+            // contexts can begin tracing even when the stop path errors out.
             pumpCts?.Cancel();
+            ReleaseBrowserGate();
         }
 
         // Collect all accumulated data chunks

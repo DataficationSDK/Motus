@@ -140,4 +140,42 @@ public class TracingTests
         await Assert.ThrowsExceptionAsync<InvalidOperationException>(
             () => tracing.StartAsync());
     }
+
+    [TestMethod]
+    public async Task StartAsync_ConcurrentOnSameBrowser_SerializesViaGate()
+    {
+        // Two Tracing instances backed by the same browser session — mirrors what
+        // happens when MotusTestBase shares a single Chrome process across parallel
+        // tests. CDP Tracing is browser-wide, so the second StartAsync must wait
+        // until the first StopAsync releases the gate.
+        var first = new Tracing(_browserSession);
+        var second = new Tracing(_browserSession);
+
+        _socket.QueueResponse("""{"id":1,"result":{}}"""); // first start
+
+        await first.StartAsync();
+
+        var secondStartTask = second.StartAsync();
+        // Give the second start time to advance to its WaitAsync; if the gate did not
+        // exist it would already have sent its Tracing.start command.
+        await Task.Delay(50);
+        Assert.IsFalse(secondStartTask.IsCompleted, "Second StartAsync should be gated until the first stops.");
+
+        // Now stop the first and let the second proceed.
+        _socket.QueueResponse("""{"id":2,"result":{}}"""); // first end
+        var firstStopTask = first.StopAsync();
+        await Task.Delay(50);
+        _socket.Enqueue("""{"method":"Tracing.tracingComplete","params":{"dataLossOccurred":false}}""");
+        await firstStopTask;
+
+        _socket.QueueResponse("""{"id":3,"result":{}}"""); // second start (now unblocked)
+        await secondStartTask;
+
+        // Cleanly stop the second so the gate is released for any teardown.
+        _socket.QueueResponse("""{"id":4,"result":{}}""");
+        var secondStopTask = second.StopAsync();
+        await Task.Delay(50);
+        _socket.Enqueue("""{"method":"Tracing.tracingComplete","params":{"dataLossOccurred":false}}""");
+        await secondStopTask;
+    }
 }
