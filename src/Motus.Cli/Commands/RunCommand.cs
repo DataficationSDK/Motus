@@ -30,6 +30,11 @@ public static class RunCommand
             Description = "Enable coverage reporting: console | html:<dir> | cobertura:<path>. Repeat the flag for multiple formats (e.g. --coverage console --coverage html:./out).",
             Arity = ArgumentArity.ZeroOrMore,
         };
+        var retriesOpt = new Option<int>("--retries")
+        {
+            Description = "Re-run a failing test up to N additional times when the failure is a transient CDP disconnect. Default: 0 (no retries).",
+            DefaultValueFactory = _ => 0,
+        };
 
         var cmd = new Command("run", "Discover and execute tests from assemblies")
         {
@@ -41,6 +46,7 @@ public static class RunCommand
             a11yOpt,
             perfBudgetOpt,
             coverageOpt,
+            retriesOpt,
         };
 
         cmd.SetAction(async (parseResult, ct) =>
@@ -54,6 +60,7 @@ public static class RunCommand
             var perfBudget = parseResult.GetValue(perfBudgetOpt);
             var coverageSpecs = parseResult.GetValue(coverageOpt);
             var coverageRequested = parseResult.GetResult(coverageOpt) is not null;
+            var retries = parseResult.GetValue(retriesOpt);
 
             if (a11yMode is not null)
             {
@@ -88,15 +95,27 @@ public static class RunCommand
                 : int.Parse(workersSpec);
 
             var reporter = ReporterFactory.Create(reporterSpecs);
-            var coverageReporters = coverageRequested
-                ? CoverageReporterFactory.Create(coverageSpecs)
-                : null;
+
+            IReadOnlyList<Motus.Abstractions.ICoverageReporter>? coverageReporters = null;
+            if (coverageRequested)
+            {
+                try
+                {
+                    coverageReporters = CoverageReporterFactory.Create(coverageSpecs);
+                }
+                catch (ArgumentException ex)
+                {
+                    // Surface bad --coverage specs as a clean error, not a stack trace.
+                    Console.Error.WriteLine($"Error: {ex.Message}");
+                    return 1;
+                }
+            }
 
             var discovery = new TestDiscovery();
             var tests = discovery.Discover(assemblies, filter);
 
             var runner = new TestRunner(workers);
-            var runResult = await runner.RunAsync(tests, reporter, a11yMode, perfBudget, coverageReporters);
+            var runResult = await runner.RunAsync(tests, reporter, a11yMode, perfBudget, coverageReporters, retries);
 
             return (runResult.Failed > 0 || runResult.CoverageThresholdsFailed) ? 1 : 0;
         });

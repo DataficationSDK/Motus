@@ -21,6 +21,15 @@ internal sealed class CdpTransport : IMotusTransport
     private readonly CancellationTokenSource _cts = new();
     private Task? _receiveLoop;
     private bool _disposed;
+    // Set as soon as the receive loop observes a disconnect (clean close, exception,
+    // or socket teardown). Distinct from _disposed: a disconnect can be detected
+    // while the transport is still owned by callers that haven't disposed it yet.
+    // Without this flag, SendRawAsync would happily enqueue new commands after the
+    // receive loop has exited, then wait the full CommandTimeout (60s) per command
+    // for responses that can never arrive — turning post-disconnect cleanup paths
+    // (e.g. coverage teardown firing many getScriptSource calls) into multi-minute
+    // hangs.
+    private volatile bool _disconnected;
 
     /// <summary>
     /// Maximum time to wait for a CDP response before treating the browser as unresponsive.
@@ -61,7 +70,7 @@ internal sealed class CdpTransport : IMotusTransport
     internal async Task<JsonElement> SendRawAsync(
         string method, JsonElement paramsElement, string? sessionId, CancellationToken ct)
     {
-        if (_disposed)
+        if (_disposed || _disconnected)
             throw new CdpDisconnectedException();
 
         var id = Interlocked.Increment(ref _nextId);
@@ -145,8 +154,7 @@ internal sealed class CdpTransport : IMotusTransport
                 if (message.IsEmpty)
                 {
                     // Clean disconnect
-                    FaultAllPending(new CdpDisconnectedException());
-                    CompleteAllChannels();
+                    MarkDisconnectedAndFault(new CdpDisconnectedException());
                     Disconnected?.Invoke(null);
                     return;
                 }
@@ -177,8 +185,7 @@ internal sealed class CdpTransport : IMotusTransport
         catch (Exception ex)
         {
             // Unexpected disconnect
-            FaultAllPending(new CdpDisconnectedException(ex));
-            CompleteAllChannels();
+            MarkDisconnectedAndFault(new CdpDisconnectedException(ex));
             Disconnected?.Invoke(ex);
         }
     }
@@ -239,6 +246,18 @@ internal sealed class CdpTransport : IMotusTransport
         }
     }
 
+    /// <summary>
+    /// Single entry point for "the connection is gone": flips <see cref="_disconnected"/>
+    /// so subsequent <see cref="SendRawAsync"/> calls fail fast, faults pending requests
+    /// with the supplied exception, and completes all event channels.
+    /// </summary>
+    private void MarkDisconnectedAndFault(Exception exception)
+    {
+        _disconnected = true;
+        FaultAllPending(exception);
+        CompleteAllChannels();
+    }
+
     private void CompleteAllChannels()
     {
         foreach (var kvp in _eventChannels)
@@ -260,8 +279,7 @@ internal sealed class CdpTransport : IMotusTransport
             catch { /* Swallow; loop already handled cleanup */ }
         }
 
-        FaultAllPending(new CdpDisconnectedException());
-        CompleteAllChannels();
+        MarkDisconnectedAndFault(new CdpDisconnectedException());
 
         await _socket.DisposeAsync().ConfigureAwait(false);
         _cts.Dispose();

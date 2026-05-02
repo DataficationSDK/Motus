@@ -152,6 +152,27 @@ public class CdpTransportTests
     }
 
     [TestMethod]
+    public async Task SendRawAsync_FailsFast_AfterDisconnectObserved()
+    {
+        var emptyParams = CdpTransport.EmptyJsonElement();
+
+        // Trigger the disconnect *before* the new send — represents the post-disconnect
+        // cleanup path (e.g. coverage teardown firing many CDP commands after the
+        // socket has already gone away). Without the fast-fail, each send would wait
+        // CommandTimeout (60s) for a response that can never arrive.
+        _socket.SimulateDisconnect();
+        await Task.Delay(50); // let the receive loop observe the close
+
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        await Assert.ThrowsExceptionAsync<CdpDisconnectedException>(() =>
+            _transport.SendRawAsync("Page.navigate", emptyParams, null, CancellationToken.None));
+        sw.Stop();
+
+        Assert.IsTrue(sw.Elapsed < TimeSpan.FromSeconds(2),
+            $"Send after observed disconnect must fail fast; took {sw.ElapsedMilliseconds} ms.");
+    }
+
+    [TestMethod]
     public async Task Disconnect_CompletesEventChannels()
     {
         var channelKey = "Page.loadEventFired|";

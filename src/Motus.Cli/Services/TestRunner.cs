@@ -31,8 +31,11 @@ public sealed class TestRunner(int maxWorkers)
         IReporter reporter,
         string? a11yMode,
         bool enforcePerfBudget,
-        IReadOnlyList<ICoverageReporter>? coverageReporters)
+        IReadOnlyList<ICoverageReporter>? coverageReporters,
+        int maxRetries = 0)
     {
+        if (maxRetries < 0)
+            maxRetries = 0;
         var suiteName = tests.Count > 0
             ? tests[0].TestClass.Assembly.GetName().Name ?? "Motus Tests"
             : "Motus Tests";
@@ -78,20 +81,42 @@ public sealed class TestRunner(int maxWorkers)
                 var testInfo = new TestInfo(test.FullName, suiteName);
                 await reporter.OnTestStartAsync(testInfo);
 
-                AccessibilityViolationSink.Begin();
-                PerformanceMetricsSink.Begin();
-                CoverageSink.Begin();
-
                 CliTestResult result;
 
                 if (failedAssemblies.Contains(test.TestClass.Assembly))
                 {
+                    AccessibilityViolationSink.Begin();
+                    PerformanceMetricsSink.Begin();
+                    CoverageSink.Begin();
                     result = new CliTestResult(test.FullName, false, TimeSpan.Zero,
                         "AssemblyInitialize failed", null);
                 }
                 else
                 {
-                    result = await ExecuteTestAsync(test);
+                    var totalAttempts = maxRetries + 1;
+                    var attempt = 0;
+                    Exception? failure;
+                    while (true)
+                    {
+                        attempt++;
+
+                        AccessibilityViolationSink.Begin();
+                        PerformanceMetricsSink.Begin();
+                        CoverageSink.Begin();
+
+                        (result, failure) = await ExecuteTestAsync(test);
+
+                        if (result.Passed || attempt >= totalAttempts || !IsTransientCdpFailure(failure))
+                            break;
+
+                        // Discard sink data captured during the failed attempt; a clean
+                        // Begin() runs at the top of the next iteration.
+                        AccessibilityViolationSink.End();
+                        PerformanceMetricsSink.End();
+                        CoverageSink.End();
+
+                        WriteRetryNotice(test.FullName, attempt + 1, totalAttempts);
+                    }
                 }
 
                 var violations = AccessibilityViolationSink.End();
@@ -274,7 +299,47 @@ public sealed class TestRunner(int maxWorkers)
         return runResult;
     }
 
-    private async Task<CliTestResult> ExecuteTestAsync(DiscoveredTest test)
+    /// <summary>
+    /// Emits a [RETRY] notice in the same shape (and color, when stderr is a TTY)
+    /// as the [PASS]/[FAIL] lines emitted by ConsoleReporter, so the retry log
+    /// reads as part of the test stream instead of free-form debug output.
+    /// </summary>
+    private static void WriteRetryNotice(string testName, int attempt, int totalAttempts)
+    {
+        const string Yellow = "\x1b[33m";
+        const string Gray = "\x1b[90m";
+        const string Reset = "\x1b[0m";
+
+        var useColor = !Console.IsErrorRedirected;
+        if (useColor)
+        {
+            Console.Error.WriteLine(
+                $"  {Yellow}[RETRY]{Reset} {testName} {Gray}(CDP disconnect, attempt {attempt}/{totalAttempts}){Reset}");
+        }
+        else
+        {
+            Console.Error.WriteLine(
+                $"  [RETRY] {testName} (CDP disconnect, attempt {attempt}/{totalAttempts})");
+        }
+    }
+
+    /// <summary>
+    /// Returns true when the exception chain contains a transient CDP failure that
+    /// is safe to recover from by re-running the entire test (which rebuilds a fresh
+    /// browser context and WebSocket). Used to drive --retries.
+    /// </summary>
+    private static bool IsTransientCdpFailure(Exception? ex)
+    {
+        while (ex is not null)
+        {
+            if (ex is CdpDisconnectedException || ex is Abstractions.MotusTargetClosedException)
+                return true;
+            ex = ex.InnerException;
+        }
+        return false;
+    }
+
+    private async Task<(CliTestResult Result, Exception? Failure)> ExecuteTestAsync(DiscoveredTest test)
     {
         var testSw = Stopwatch.StartNew();
         object? instance = null;
@@ -299,17 +364,21 @@ public sealed class TestRunner(int maxWorkers)
                 await task;
 
             testSw.Stop();
-            return new CliTestResult(test.FullName, true, testSw.Elapsed, null, null);
+            return (new CliTestResult(test.FullName, true, testSw.Elapsed, null, null), null);
         }
         catch (TargetInvocationException ex) when (ex.InnerException is not null)
         {
             testSw.Stop();
-            return new CliTestResult(test.FullName, false, testSw.Elapsed, ex.InnerException.Message, ex.InnerException.StackTrace);
+            return (
+                new CliTestResult(test.FullName, false, testSw.Elapsed, ex.InnerException.Message, ex.InnerException.StackTrace),
+                ex.InnerException);
         }
         catch (Exception ex)
         {
             testSw.Stop();
-            return new CliTestResult(test.FullName, false, testSw.Elapsed, ex.Message, ex.StackTrace);
+            return (
+                new CliTestResult(test.FullName, false, testSw.Elapsed, ex.Message, ex.StackTrace),
+                ex);
         }
         finally
         {

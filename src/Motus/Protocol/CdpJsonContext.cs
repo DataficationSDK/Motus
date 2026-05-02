@@ -221,8 +221,12 @@ namespace Motus;
 [JsonSerializable(typeof(ProfilerScriptCoverage))]
 [JsonSerializable(typeof(ProfilerFunctionCoverage))]
 [JsonSerializable(typeof(ProfilerCoverageRange))]
-[JsonSerializable(typeof(ProfilerGetScriptSourceParams))]
-[JsonSerializable(typeof(ProfilerGetScriptSourceResult))]
+// --- Debugger domain ---
+[JsonSerializable(typeof(DebuggerEnableParams))]
+[JsonSerializable(typeof(DebuggerEnableResult))]
+[JsonSerializable(typeof(DebuggerDisableResult))]
+[JsonSerializable(typeof(DebuggerGetScriptSourceParams))]
+[JsonSerializable(typeof(DebuggerGetScriptSourceResult))]
 // --- Source map document ---
 [JsonSerializable(typeof(SourceMapJsonDto))]
 // --- DOMDebugger domain ---
@@ -783,9 +787,23 @@ internal sealed record ProfilerTakePreciseCoverageResult(
 
 internal sealed record ProfilerStopPreciseCoverageResult();
 
-internal sealed record ProfilerGetScriptSourceParams(string ScriptId);
+// ============================================================================
+// Debugger domain
+// ============================================================================
+//
+// Debugger.getScriptSource is what fetches V8 script source for line-level
+// coverage stats. Profiler.getScriptSource does not exist in CDP; Debugger
+// owns script-source retrieval and must be enabled on the session first.
 
-internal sealed record ProfilerGetScriptSourceResult(string ScriptSource);
+internal sealed record DebuggerEnableParams(double? MaxScriptsCacheSize = null);
+
+internal sealed record DebuggerEnableResult(string? DebuggerId = null);
+
+internal sealed record DebuggerDisableResult();
+
+internal sealed record DebuggerGetScriptSourceParams(string ScriptId);
+
+internal sealed record DebuggerGetScriptSourceResult(string ScriptSource, string? Bytecode = null);
 
 // ============================================================================
 // Page domain (screenshot with clip)

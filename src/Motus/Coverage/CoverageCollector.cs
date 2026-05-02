@@ -60,6 +60,16 @@ internal sealed class CoverageCollector : IPlugin, ILifecycleHook
                     CdpJsonContext.Default.ProfilerEnableResult,
                     CancellationToken.None).ConfigureAwait(false);
 
+                // Debugger.enable is required for Debugger.getScriptSource at teardown.
+                // Without it, getScriptSource returns no source and every file ends up
+                // 0/0 lines.
+                await session.SendAsync(
+                    "Debugger.enable",
+                    new DebuggerEnableParams(),
+                    CdpJsonContext.Default.DebuggerEnableParams,
+                    CdpJsonContext.Default.DebuggerEnableResult,
+                    CancellationToken.None).ConfigureAwait(false);
+
                 await session.SendAsync(
                     "Profiler.startPreciseCoverage",
                     new ProfilerStartPreciseCoverageParams(
@@ -147,10 +157,10 @@ internal sealed class CoverageCollector : IPlugin, ILifecycleHook
                     try
                     {
                         var src = await session.SendAsync(
-                            "Profiler.getScriptSource",
-                            new ProfilerGetScriptSourceParams(s.ScriptId),
-                            CdpJsonContext.Default.ProfilerGetScriptSourceParams,
-                            CdpJsonContext.Default.ProfilerGetScriptSourceResult,
+                            "Debugger.getScriptSource",
+                            new DebuggerGetScriptSourceParams(s.ScriptId),
+                            CdpJsonContext.Default.DebuggerGetScriptSourceParams,
+                            CdpJsonContext.Default.DebuggerGetScriptSourceResult,
                             CancellationToken.None).ConfigureAwait(false);
                         source = src.ScriptSource ?? string.Empty;
                     }
@@ -188,6 +198,18 @@ internal sealed class CoverageCollector : IPlugin, ILifecycleHook
                 catch
                 {
                     // Best-effort: stopping the profiler is not critical
+                }
+
+                try
+                {
+                    await session.SendAsync(
+                        "Debugger.disable",
+                        CdpJsonContext.Default.DebuggerDisableResult,
+                        CancellationToken.None).ConfigureAwait(false);
+                }
+                catch
+                {
+                    // Best-effort: disabling the debugger is not critical
                 }
             }
             catch (Exception ex)

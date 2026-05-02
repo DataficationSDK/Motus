@@ -62,4 +62,55 @@ public class CoverageReporterFactoryTests
         Assert.ThrowsException<ArgumentException>(() =>
             CoverageReporterFactory.Create(new[] { "lcov:./out" }));
     }
+
+    [TestMethod]
+    public void HtmlWithoutPath_ThrowsWithGuidance()
+    {
+        var ex = Assert.ThrowsException<ArgumentException>(() =>
+            CoverageReporterFactory.Create(new[] { "html" }));
+
+        StringAssert.Contains(ex.Message, "html:<dir>",
+            "Error must show the user the correct syntax, not just say it's wrong.");
+    }
+
+    [TestMethod]
+    public void CoberturaWithoutPath_ThrowsWithGuidance()
+    {
+        var ex = Assert.ThrowsException<ArgumentException>(() =>
+            CoverageReporterFactory.Create(new[] { "cobertura" }));
+
+        StringAssert.Contains(ex.Message, "cobertura:<path>");
+    }
+
+    [TestMethod]
+    public void HtmlWithEmptyPath_Throws()
+    {
+        // "--coverage html:" — colon is there, target is empty.
+        var ex = Assert.ThrowsException<ArgumentException>(() =>
+            CoverageReporterFactory.Create(new[] { "html:" }));
+
+        StringAssert.Contains(ex.Message, "empty target");
+    }
+
+    [TestMethod]
+    public void ConsoleWithPath_Throws()
+    {
+        // "--coverage console:foo" — console does not take a target.
+        var ex = Assert.ThrowsException<ArgumentException>(() =>
+            CoverageReporterFactory.Create(new[] { "console:foo" }));
+
+        StringAssert.Contains(ex.Message, "console");
+        StringAssert.Contains(ex.Message, "does not take a target");
+    }
+
+    [TestMethod]
+    public void UnknownFormat_ListsSupportedFormats()
+    {
+        var ex = Assert.ThrowsException<ArgumentException>(() =>
+            CoverageReporterFactory.Create(new[] { "xml" }));
+
+        StringAssert.Contains(ex.Message, "console");
+        StringAssert.Contains(ex.Message, "html");
+        StringAssert.Contains(ex.Message, "cobertura");
+    }
 }

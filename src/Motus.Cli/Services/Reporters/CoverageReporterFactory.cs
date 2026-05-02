@@ -20,6 +20,9 @@ public static class CoverageReporterFactory
         return result;
     }
 
+    private const string SupportedFormats =
+        "Supported formats: console | html:<dir> | cobertura:<path>";
+
     private static ICoverageReporter CreateSingle(string spec)
     {
         var colonIdx = spec.IndexOf(':');
@@ -28,18 +31,33 @@ public static class CoverageReporterFactory
             return spec.ToLowerInvariant() switch
             {
                 "console" => new CoverageConsoleReporter(),
-                _ => throw new ArgumentException($"Unknown coverage format: {spec}"),
+                "html" => throw new ArgumentException(
+                    "Coverage format 'html' requires an output directory. " +
+                    "Use --coverage html:<dir> (e.g. --coverage html:./coverage)."),
+                "cobertura" => throw new ArgumentException(
+                    "Coverage format 'cobertura' requires an output file path. " +
+                    "Use --coverage cobertura:<path> (e.g. --coverage cobertura:./coverage.xml)."),
+                _ => throw new ArgumentException(
+                    $"Unknown coverage format '{spec}'. {SupportedFormats}."),
             };
         }
 
         var format = spec[..colonIdx].ToLowerInvariant();
         var path = spec[(colonIdx + 1)..];
 
+        if (string.IsNullOrWhiteSpace(path))
+            throw new ArgumentException(
+                $"Coverage format '{format}' was given an empty target. " +
+                $"Use --coverage {format}:<{(format == "html" ? "dir" : "path")}>.");
+
         return format switch
         {
             "html" => new CoverageHtmlReporter(path),
             "cobertura" => new CoberturaReporter(path),
-            _ => throw new ArgumentException($"Unknown coverage format: {format}"),
+            "console" => throw new ArgumentException(
+                "Coverage format 'console' does not take a target. Use --coverage console."),
+            _ => throw new ArgumentException(
+                $"Unknown coverage format '{format}'. {SupportedFormats}."),
         };
     }
 }
