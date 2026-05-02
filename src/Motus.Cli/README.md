@@ -32,6 +32,12 @@ motus run MyTests.dll --filter "Category=Smoke" --workers 4
 
 # Output JUnit XML for CI
 motus run MyTests.dll --reporter junit --output results.xml
+
+# Collect JS/CSS coverage; repeat the flag for multiple formats
+motus run MyTests.dll --coverage console --coverage html:./coverage
+
+# Retry tests up to twice when the failure is a transient CDP disconnect
+motus run MyTests.dll --retries 2
 ```
 
 | Option | Default | Description |
@@ -45,6 +51,8 @@ motus run MyTests.dll --reporter junit --output results.xml
 | `--verbose` | false | Show detailed ASP.NET Core log output (visual runner) |
 | `--a11y` | none | Enable accessibility audits: `warn` (report only) or `enforce` (fail on violations) |
 | `--perf-budget` | false | Enable performance budget enforcement from config |
+| `--coverage` | none | Enable code coverage. Format: `console`, `html:<dir>`, or `cobertura:<path>`. Repeat for multiple formats. |
+| `--retries` | 0 | Re-run a failing test up to N additional times when the failure is a transient CDP disconnect. Non-transient failures are not retried. |
 
 ### `motus record`
 

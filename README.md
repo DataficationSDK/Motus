@@ -169,6 +169,52 @@ Or in `motus.config.json`:
 }
 ```
 
+### Code Coverage
+
+Motus collects JavaScript coverage via the CDP `Profiler`/`Debugger` domains and CSS rule-usage coverage via the CDP `CSS` domain on every page driven by your tests. Coverage is collected per-test and aggregated across the run, with optional thresholds that fail the run when not met.
+
+Enable coverage from the CLI with one or more output formats:
+
+```bash
+# Console summary table
+motus run ./bin/Debug/net8.0/MyTests.dll --coverage console
+
+# Static HTML report (index + per-file source views with line highlighting)
+motus run ./bin/Debug/net8.0/MyTests.dll --coverage html:./coverage
+
+# Cobertura XML for CI ingestion
+motus run ./bin/Debug/net8.0/MyTests.dll --coverage cobertura:./coverage.xml
+
+# Repeat the flag for multiple formats at once
+motus run ./bin/Debug/net8.0/MyTests.dll --coverage console --coverage html:./coverage
+```
+
+Source-mapped JS bundles are remapped back to original sources automatically when sourcemaps are reachable. Configure thresholds and defaults in `motus.config.json`:
+
+```json
+{
+  "coverage": {
+    "enable": true,
+    "includeJavaScript": true,
+    "includeCss": true,
+    "js": { "lines": 70, "functions": 60 },
+    "css": { "rules": 50 }
+  }
+}
+```
+
+When a threshold is set and the aggregated run coverage falls below it, the run exits non-zero so CI fails the build.
+
+### Retrying Flaky Runs
+
+CDP WebSocket connections are occasionally dropped by the browser under heavy tracing or when sibling targets close mid-command. Use `--retries N` to re-run a failing test up to `N` additional times, but only when the failure is a transient CDP disconnect. Non-transient failures (assertion errors, timeouts) are not retried, so real bugs aren't masked.
+
+```bash
+motus run ./bin/Debug/net8.0/MyTests.dll --retries 2
+```
+
+Each retry runs the entire test fresh: new browser context, new WebSocket, new test instance. A `[RETRY]` line is logged to stderr for every attempt so flake patterns are visible.
+
 ## How It Works
 
 Motus communicates directly with the browser over WebSocket. For Chromium-based browsers, it speaks the Chrome DevTools Protocol (CDP). For Firefox, it uses WebDriver BiDi. There is no Node.js sidecar, no driver binary, and no process boundary between your test code and the protocol layer.
@@ -201,6 +247,7 @@ Five interfaces define every point of extensibility, all registered through `IPl
 | `IAccessibilityRule` | Define custom WCAG accessibility rules evaluated against the browser's accessibility tree |
 | `IAccessibilityReporter` | Opt-in interface for reporters to receive per-violation accessibility events |
 | `IPerformanceReporter` | Opt-in interface for reporters to receive performance metrics and budget results |
+| `ICoverageReporter` | Opt-in interface for reporters to receive per-test and aggregated JS/CSS coverage data |
 | `IMotusLogger` | Structured logging for plugin diagnostics |
 
 ### Plugin Discovery
@@ -272,7 +319,8 @@ Launch the Blazor-based visual runner with `motus run --visual`:
 | **Codegen** | Generate Page Object Model classes from live pages with selector inference |
 | **Accessibility** | Built-in WCAG 2.1 Level A/AA audits via CDP accessibility tree, lifecycle hook, page and locator assertions, custom rules via `IAccessibilityRule` |
 | **Performance** | Core Web Vitals collection (LCP, FCP, TTFB, CLS, INP), configurable budgets via `[PerformanceBudget]` attribute or config, auto-retry assertions, reporter integration via `IPerformanceReporter` |
-| **Reporters** | Console, HTML, JUnit XML, TRX, plus custom reporters via `IReporter` (with opt-in `IAccessibilityReporter` for violation events) |
+| **Coverage** | Per-test JS coverage via CDP `Profiler`/`Debugger`, CSS rule-usage coverage via CDP `CSS`, source-map remapping to original sources, console / HTML / Cobertura reporters, configurable thresholds that fail the run, custom reporters via `ICoverageReporter` |
+| **Reporters** | Console, HTML, JUnit XML, TRX, plus custom reporters via `IReporter` (with opt-in `IAccessibilityReporter`, `IPerformanceReporter`, `ICoverageReporter` for domain events) |
 | **Tracing** | Screenshots, DOM snapshots, network logs, HAR export, and WebM video recording |
 | **Parallel** | Context-level, browser-level, and worker-level parallel execution |
 | **Configuration** | Layered: `motus.config.json`, environment variables, code (code always wins) |
@@ -281,7 +329,7 @@ Launch the Blazor-based visual runner with `motus run --visual`:
 ## CLI Reference
 
 ```
-motus run <assemblies>  Run tests with optional --visual, --filter, --workers, --reporter, --a11y, --perf-budget
+motus run <assemblies>  Run tests with optional --visual, --filter, --workers, --reporter, --a11y, --perf-budget, --coverage, --retries
 motus record           Record a browser session and emit test code
 motus codegen          Generate POM classes from live pages (--headed, --connect, --detect-listeners)
 motus screenshot       Capture a screenshot (--full-page, --delay, --hide-banners, --width, --height)
