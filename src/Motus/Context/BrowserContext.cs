@@ -350,6 +350,12 @@ internal sealed class BrowserContext : IBrowserContext
         lock (_pages)
             _pages.Clear();
 
+        // Release the tracing browser-gate if this context's Tracing instance still
+        // holds it (i.e. the test called StartAsync but never reached StopAsync).
+        // Without this, a single mishandled exception path in a tracing test would
+        // deadlock every subsequent Tracing.StartAsync on the same browser.
+        _tracing.ReleaseStateOnContextClose();
+
         _browser.RemoveContext(this);
 
         // Dispose the browser context

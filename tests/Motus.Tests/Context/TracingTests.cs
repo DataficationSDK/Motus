@@ -178,4 +178,40 @@ public class TracingTests
         _socket.Enqueue("""{"method":"Tracing.tracingComplete","params":{"dataLossOccurred":false}}""");
         await secondStopTask;
     }
+
+    [TestMethod]
+    public async Task ReleaseStateOnContextClose_FreesGate_WhenStopAsyncWasNeverCalled()
+    {
+        // Models the real-world failure mode: a test calls StartAsync but exits
+        // before reaching StopAsync (early return, untracked exception path).
+        // BrowserContext.CloseAsync invokes ReleaseStateOnContextClose on disposal.
+        // Without that call, the gate would stay held for the browser session's
+        // lifetime and any subsequent Tracing.StartAsync would deadlock.
+        var leaker = new Tracing(_browserSession);
+        var nextTest = new Tracing(_browserSession);
+
+        _socket.QueueResponse("""{"id":1,"result":{}}"""); // leaker's start
+        await leaker.StartAsync();
+
+        // Leaker's BrowserContext is being disposed. Test author forgot StopAsync.
+        leaker.ReleaseStateOnContextClose();
+
+        // The next test on the same browser must be able to start tracing —
+        // otherwise the leak permanently deadlocks the run.
+        _socket.QueueResponse("""{"id":2,"result":{}}"""); // next test's start
+        var nextStartTask = nextTest.StartAsync();
+
+        // Should complete promptly, not block on the leaked gate.
+        var completedFirst = await Task.WhenAny(nextStartTask, Task.Delay(2000));
+        Assert.AreSame(nextStartTask, completedFirst,
+            "Next Tracing.StartAsync hung — ReleaseStateOnContextClose did not free the gate.");
+        await nextStartTask;
+
+        // Cleanly stop the next so the gate is released for teardown.
+        _socket.QueueResponse("""{"id":3,"result":{}}""");
+        var stopTask = nextTest.StopAsync();
+        await Task.Delay(50);
+        _socket.Enqueue("""{"method":"Tracing.tracingComplete","params":{"dataLossOccurred":false}}""");
+        await stopTask;
+    }
 }

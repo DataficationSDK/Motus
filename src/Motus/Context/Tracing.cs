@@ -16,6 +16,13 @@ internal sealed class Tracing : ITracing
     // with parallel workers), concurrent StartAsync calls collide. Serialize per session.
     private static readonly ConditionalWeakTable<IMotusSession, SemaphoreSlim> s_browserGates = new();
 
+    // Upper bound on how long StartAsync will wait for the browser-wide trace gate
+    // before failing. Exists to convert a leaked gate (test exited mid-trace without
+    // reaching StopAsync, leaving the semaphore at count 0 forever) into an actionable
+    // error rather than an indefinite test-run hang. A real trace shouldn't take
+    // anywhere near this; longer-running scenarios should still serialize cleanly.
+    private static readonly TimeSpan BrowserGateTimeout = TimeSpan.FromMinutes(2);
+
     private readonly IMotusSession _browserSession;
     private readonly SemaphoreSlim _browserGate;
     private readonly Channel<JsonElement[]> _dataChannel = Channel.CreateUnbounded<JsonElement[]>();
@@ -45,7 +52,16 @@ internal sealed class Tracing : ITracing
             "Tracing", CapabilityGuard.GetTransportDescription(_browserSession));
 
         // Wait for any other tracing session on the same browser to finish.
-        await _browserGate.WaitAsync().ConfigureAwait(false);
+        // Bounded so a leaked gate from a previous test that exited mid-trace
+        // doesn't deadlock the whole run.
+        if (!await _browserGate.WaitAsync(BrowserGateTimeout).ConfigureAwait(false))
+        {
+            _started = 0;
+            throw new TimeoutException(
+                $"Timed out after {BrowserGateTimeout.TotalSeconds:F0}s waiting for the browser-wide tracing gate. " +
+                "A previous Tracing.StartAsync on this browser likely did not reach StopAsync; " +
+                "wrap test bodies that call StartAsync in try/finally to ensure StopAsync runs.");
+        }
         _holdsBrowserGate = true;
 
         options ??= new TracingStartOptions();
@@ -111,6 +127,21 @@ internal sealed class Tracing : ITracing
             _holdsBrowserGate = false;
             _browserGate.Release();
         }
+    }
+
+    /// <summary>
+    /// Defensive cleanup invoked when the owning <see cref="BrowserContext"/> is being disposed.
+    /// If a test called <see cref="StartAsync"/> but exited before reaching <see cref="StopAsync"/>
+    /// (early return, untracked exception path, etc.), the browser-wide gate is still held by
+    /// this instance. Release it so subsequent tests on the same browser can start tracing
+    /// rather than deadlocking on <see cref="BrowserGateTimeout"/>. Best-effort and idempotent.
+    /// </summary>
+    internal void ReleaseStateOnContextClose()
+    {
+        try { _pumpCts?.Cancel(); } catch { }
+        _completeTcs?.TrySetCanceled();
+        _started = 0;
+        ReleaseBrowserGate();
     }
 
     public async Task StopAsync(TracingStopOptions? options = null)
