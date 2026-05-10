@@ -6,11 +6,11 @@
 @implements IDisposable
 
 <div class="runner-shell" id="runner-shell"
-     style="@(Options.TraceMode ? "grid-template-columns: 1fr; grid-template-areas: 'toolbar' 'main' 'resize' 'bottom';" : "")">
+     style="@ShellStyle">
     <div class="runner-toolbar">
         <RunnerToolbar />
     </div>
-    @if (!Options.TraceMode)
+    @if (Options.ViewerMode != ViewerMode.Trace)
     {
         <div class="runner-sidebar" id="runner-sidebar">
             <TestExplorer />
@@ -19,18 +19,24 @@
     }
     <div class="runner-main">
         <div class="main-tabs">
-            <button class="main-tab @(activeTab == "browser" ? "tab-active" : "")"
-                    @onclick='() => activeTab = "browser"'>
-                Browser View
-            </button>
+            @if (Options.ViewerMode != ViewerMode.Trx)
+            {
+                <button class="main-tab @(activeTab == "browser" ? "tab-active" : "")"
+                        @onclick='() => activeTab = "browser"'>
+                    Browser View
+                </button>
+            }
             <button class="main-tab @(activeTab == "step" ? "tab-active" : "")"
                     @onclick='() => activeTab = "step"'>
                 Step Detail
             </button>
-            <button class="main-tab @(activeTab == "vr" ? "tab-active" : "")"
-                    @onclick='() => activeTab = "vr"'>
-                Visual Regression
-            </button>
+            @if (Options.ViewerMode != ViewerMode.Trx)
+            {
+                <button class="main-tab @(activeTab == "vr" ? "tab-active" : "")"
+                        @onclick='() => activeTab = "vr"'>
+                    Visual Regression
+                </button>
+            }
             <button class="main-tab @(activeTab == "console" ? "tab-active" : "")"
                     @onclick='() => activeTab = "console"'>
                 Test Console
@@ -63,7 +69,14 @@
                     <VisualRegressionPanel />
                     break;
                 case "console":
-                    <TestConsolePanel />
+                    @if (Options.ViewerMode == ViewerMode.Trx && Timeline.SelectedTestName is null)
+                    {
+                        <TrxSummaryPanel />
+                    }
+                    else
+                    {
+                        <TestConsolePanel />
+                    }
                     break;
                 case "repair":
                     <SelectorRepairPanel />
@@ -74,10 +87,13 @@
             }
         </div>
     </div>
-    <div class="runner-resize-handle" id="resize-handle"></div>
-    <div class="runner-bottom" id="runner-bottom">
-        <TimelinePanel />
-    </div>
+    @if (Options.ViewerMode != ViewerMode.Trx)
+    {
+        <div class="runner-resize-handle" id="resize-handle"></div>
+        <div class="runner-bottom" id="runner-bottom">
+            <TimelinePanel />
+        </div>
+    }
 </div>
 
 <script suppress-error="BL9992">
@@ -141,12 +157,22 @@
     private string activeTab = "browser";
     private int? lastSelectedIndex;
 
+    private string ShellStyle => Options.ViewerMode switch
+    {
+        ViewerMode.Trace => "grid-template-columns: 1fr; grid-template-areas: 'toolbar' 'main' 'resize' 'bottom';",
+        ViewerMode.Trx => "grid-template-areas: 'toolbar toolbar toolbar' 'sidebar resize main';",
+        _ => "",
+    };
+
     protected override void OnInitialized()
     {
-        if (Options.TraceMode)
-            activeTab = "step";
-        if (Options.RepairMode)
-            activeTab = "repair";
+        activeTab = Options.ViewerMode switch
+        {
+            ViewerMode.Trace => "step",
+            ViewerMode.Trx => "console",
+            _ when Options.RepairMode => "repair",
+            _ => "browser",
+        };
         Session.StateChanged += OnStateChanged;
         Session.RunStarted += OnRunStarted;
         Timeline.TimelineChanged += OnTimelineChanged;

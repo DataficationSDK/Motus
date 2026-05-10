@@ -50,6 +50,17 @@ public sealed class TestSessionService : ITestSessionService
         return Task.CompletedTask;
     }
 
+    public void LoadFromTrxResults(IReadOnlyList<DiscoveredTest> tests, IReadOnlyDictionary<string, TestNodeState> states)
+    {
+        _discoveredTests = tests.ToList();
+        _states.Clear();
+        foreach (var (key, value) in states)
+        {
+            _states[key] = value;
+        }
+        NotifyStateChanged();
+    }
+
     public async Task RunAllAsync(CancellationToken ct = default)
     {
         if (Interlocked.CompareExchange(ref _running, 1, 0) != 0)
@@ -117,7 +128,7 @@ public sealed class TestSessionService : ITestSessionService
         try
         {
             _timeline.Clear();
-            var tests = _discoveredTests.Where(t => t.TestClass.FullName == className).ToList();
+            var tests = _discoveredTests.Where(t => t.TestClass?.FullName == className).ToList();
             _lastRunTests = new HashSet<string>(tests.Select(t => t.FullName));
             foreach (var test in tests)
             {

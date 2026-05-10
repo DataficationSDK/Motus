@@ -76,7 +76,7 @@
             var groups = new List<TestGroup>();
             var seen = new HashSet<string>();
 
-            if (Options.TraceMode)
+            if (Options.ViewerMode == ViewerMode.Trace)
             {
                 foreach (var (testName, entries) in entriesByTest)
                 {

@@ -1,0 +1,133 @@
+@inject ITestSessionService Session
+@inject ITimelineService Timeline
+@inject TrxSession Trx
+@implements IDisposable
+
+<div class="trx-summary-panel">
+    <div class="trx-summary-header">
+        <h2>@(Trx.Summary?.RunName ?? "TRX Results")</h2>
+        @if (Trx.Summary is { } s)
+        {
+            <div class="trx-summary-stats">
+                <span class="stat">@s.Total total</span>
+                <span class="stat stat-passed">&#10003; @s.Passed passed</span>
+                <span class="stat stat-failed">&#10007; @s.Failed failed</span>
+                <span class="stat stat-pending">&#9888; @s.Skipped skipped</span>
+                <span class="stat">@PassRate% pass rate</span>
+                <span class="stat">@FormatDuration(s.Duration)</span>
+            </div>
+        }
+    </div>
+
+    <input class="trx-summary-filter"
+           type="text"
+           placeholder="Filter tests..."
+           value="@_filter"
+           @oninput="OnFilterInput" />
+
+    <div class="trx-summary-list">
+        @foreach (var test in FilteredTests)
+        {
+            var state = Session.States.TryGetValue(test.FullName, out var st) ? st : null;
+            var status = state?.Status ?? TestStatus.Pending;
+            <div class="trx-summary-row" @onclick="() => SelectTest(test.FullName)">
+                <TestStatusBadge Status="@status" />
+                <span class="trx-summary-method">@GetMethodName(test.FullName)</span>
+                <span class="trx-summary-class">@GetClassName(test.FullName)</span>
+                @if (test.Categories is { Count: > 0 })
+                {
+                    @foreach (var category in test.Categories)
+                    {
+                        <span class="category-badge">@category</span>
+                    }
+                }
+                @if (state?.Duration is not null)
+                {
+                    <span class="trx-summary-duration">@($"{state.Duration.Value.TotalMilliseconds:F0}ms")</span>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private string _filter = "";
+
+    private int PassRate
+    {
+        get
+        {
+            if (Trx.Summary is null || Trx.Summary.Total == 0) return 0;
+            return (int)Math.Round(100.0 * Trx.Summary.Passed / Trx.Summary.Total);
+        }
+    }
+
+    private IEnumerable<DiscoveredTest> FilteredTests
+    {
+        get
+        {
+            var tests = Session.DiscoveredTests.AsEnumerable();
+            if (!string.IsNullOrWhiteSpace(_filter))
+            {
+                tests = tests.Where(t => t.FullName.Contains(_filter, StringComparison.OrdinalIgnoreCase));
+            }
+            return tests.OrderBy(t => StatusSortKey(Session.States.TryGetValue(t.FullName, out var s) ? s.Status : TestStatus.Pending))
+                        .ThenBy(t => t.FullName, StringComparer.Ordinal);
+        }
+    }
+
+    private static int StatusSortKey(TestStatus status) => status switch
+    {
+        TestStatus.Failed => 0,
+        TestStatus.Skipped => 1,
+        TestStatus.Passed => 2,
+        _ => 3,
+    };
+
+    private void SelectTest(string fullName)
+    {
+        Timeline.SelectTest(fullName);
+    }
+
+    private void OnFilterInput(ChangeEventArgs e)
+    {
+        _filter = e.Value?.ToString() ?? "";
+    }
+
+    protected override void OnInitialized()
+    {
+        Session.StateChanged += OnStateChanged;
+    }
+
+    private async void OnStateChanged()
+    {
+        await InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        Session.StateChanged -= OnStateChanged;
+    }
+
+    private static string GetMethodName(string fullName)
+    {
+        var dot = fullName.LastIndexOf('.');
+        return dot > 0 && dot + 1 < fullName.Length ? fullName[(dot + 1)..] : fullName;
+    }
+
+    private static string GetClassName(string fullName)
+    {
+        var dot = fullName.LastIndexOf('.');
+        if (dot <= 0) return "";
+        var className = fullName[..dot];
+        var classDot = className.LastIndexOf('.');
+        return classDot > 0 && classDot + 1 < className.Length ? className[(classDot + 1)..] : className;
+    }
+
+    private static string FormatDuration(TimeSpan duration)
+    {
+        if (duration.TotalSeconds < 1) return $"{duration.TotalMilliseconds:F0}ms";
+        if (duration.TotalMinutes < 1) return $"{duration.TotalSeconds:F1}s";
+        return $"{(int)duration.TotalMinutes}m {duration.Seconds}s";
+    }
+}

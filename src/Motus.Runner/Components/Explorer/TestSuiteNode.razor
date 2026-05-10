@@ -3,17 +3,17 @@
 
 <div class="suite-node">
     <div class="suite-header" @onclick="Toggle">
-        <span class="chevron">@(Expanded ? "\u25BE" : "\u25B8")</span>
+        <span class="chevron">@(Expanded ? "▾" : "▸")</span>
         <TestStatusBadge Status="@AggregateStatus" />
         <span class="suite-name" title="@AssemblyName">@AssemblyName</span>
         <span class="suite-count">(@Tests.Count)</span>
     </div>
     @if (Expanded)
     {
-        @foreach (var classGroup in Tests.GroupBy(t => t.TestClass.FullName ?? t.TestClass.Name))
+        @foreach (var classGroup in Tests.GroupBy(t => t.TestClass?.FullName ?? GetClassFromFullName(t.FullName)))
         {
             <TestClassNode ClassName="@classGroup.Key"
-                           DisplayName="@classGroup.First().TestClass.Name"
+                           DisplayName="@(classGroup.First().TestClass?.Name ?? GetShortClassName(classGroup.Key))"
                            Tests="@classGroup.ToList()" />
         }
     }
@@ -42,6 +42,18 @@
     public void Dispose()
     {
         Session.StateChanged -= OnStateChanged;
+    }
+
+    internal static string GetClassFromFullName(string fullName)
+    {
+        var dot = fullName.LastIndexOf('.');
+        return dot > 0 ? fullName[..dot] : fullName;
+    }
+
+    internal static string GetShortClassName(string className)
+    {
+        var dot = className.LastIndexOf('.');
+        return dot > 0 && dot + 1 < className.Length ? className[(dot + 1)..] : className;
     }
 
     internal static TestStatus GetAggregateStatus(List<DiscoveredTest> tests, IReadOnlyDictionary<string, TestNodeState> states)

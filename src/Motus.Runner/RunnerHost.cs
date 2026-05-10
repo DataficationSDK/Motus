@@ -18,10 +18,15 @@ public static class RunnerHost
         string? filter = null,
         int port = 5100,
         string? traceFilePath = null,
+        string? trxFilePath = null,
         bool verbose = false,
         bool repairMode = false,
         CancellationToken ct = default)
     {
+        var viewerMode = trxFilePath is not null ? ViewerMode.Trx
+                       : traceFilePath is not null ? ViewerMode.Trace
+                       : ViewerMode.Runner;
+
         // Resolve the directory containing Motus.Runner.dll. When running from
         // a build output this is bin/Debug|Release; when installed as a global
         // tool it is the tool store directory.
@@ -57,12 +62,14 @@ public static class RunnerHost
             AssemblyPaths = assemblyPaths ?? [],
             Filter = filter,
             Port = port,
-            TraceMode = traceFilePath is not null,
+            ViewerMode = viewerMode,
             TraceFilePath = traceFilePath,
+            TrxFilePath = trxFilePath,
             RepairMode = repairMode,
         };
 
         builder.Services.AddSingleton(options);
+        builder.Services.AddSingleton<TrxSession>();
         builder.Services.AddSingleton<TestDiscovery>();
         builder.Services.AddSingleton<TestExecutionService>();
         builder.Services.AddSingleton<TestSessionService>();
@@ -140,16 +147,29 @@ public static class RunnerHost
         app.MapRazorComponents<Motus.Runner.Components.App>()
             .AddInteractiveServerRenderMode();
 
-        if (assemblyPaths is { Length: > 0 })
+        switch (viewerMode)
         {
-            var session = app.Services.GetRequiredService<ITestSessionService>();
-            await session.LoadAssembliesAsync(assemblyPaths, filter);
-        }
+            case ViewerMode.Runner:
+                if (assemblyPaths is { Length: > 0 })
+                {
+                    var session = app.Services.GetRequiredService<ITestSessionService>();
+                    await session.LoadAssembliesAsync(assemblyPaths, filter);
+                }
+                break;
 
-        if (traceFilePath is not null)
-        {
-            var traceViewer = new TraceViewerService(timeline);
-            await traceViewer.LoadFromFileAsync(traceFilePath);
+            case ViewerMode.Trace:
+                var traceViewer = new TraceViewerService(timeline);
+                await traceViewer.LoadFromFileAsync(traceFilePath!);
+                break;
+
+            case ViewerMode.Trx:
+                var parser = new TrxParserService();
+                var trxResult = parser.ParseFile(trxFilePath!);
+                var trxSession = app.Services.GetRequiredService<TrxSession>();
+                trxSession.Summary = trxResult.Summary;
+                var trxSessionService = app.Services.GetRequiredService<ITestSessionService>();
+                trxSessionService.LoadFromTrxResults(trxResult.Tests, trxResult.States);
+                break;
         }
 
         if (repairMode && SelectorRepairBridge.Page is not null)

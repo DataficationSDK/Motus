@@ -14,6 +14,7 @@ public interface ITestSessionService
     event Action? RunStarted;
 
     Task LoadAssembliesAsync(string[] paths, string? filter);
+    void LoadFromTrxResults(IReadOnlyList<DiscoveredTest> tests, IReadOnlyDictionary<string, TestNodeState> states);
     Task RunAllAsync(CancellationToken ct = default);
     Task RunTestAsync(string fullName, CancellationToken ct = default);
     Task RunClassAsync(string className, CancellationToken ct = default);

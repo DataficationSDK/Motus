@@ -23,15 +23,22 @@ public sealed class TestExecutionService(ILogger<TestExecutionService> logger, I
         CancellationToken ct,
         ReporterCollection? reporters = null)
     {
+        foreach (var test in tests)
+        {
+            if (test.TestClass is null || test.TestMethod is null)
+                throw new InvalidOperationException(
+                    $"Test '{test.FullName}' cannot be executed: missing reflection metadata (TRX-loaded tests are read-only).");
+        }
+
         var suiteName = tests.Count > 0
-            ? tests[0].TestClass.Assembly.GetName().Name ?? "Motus Tests"
+            ? tests[0].TestClass!.Assembly.GetName().Name ?? "Motus Tests"
             : "Motus Tests";
 
         if (reporters is not null)
             await reporters.FireOnTestRunStartAsync(new TestSuiteInfo(suiteName, tests.Count));
 
         // Run [AssemblyInitialize] for each assembly represented in this batch
-        var assemblies = tests.Select(t => t.TestClass.Assembly).Distinct().ToList();
+        var assemblies = tests.Select(t => t.TestClass!.Assembly).Distinct().ToList();
         foreach (var assembly in assemblies)
         {
             if (_initializedAssemblies.TryAdd(assembly, true))
@@ -44,7 +51,7 @@ public sealed class TestExecutionService(ILogger<TestExecutionService> logger, I
                 {
                     logger.LogError(ex, "AssemblyInitialize failed for {Assembly}", assembly.GetName().Name);
                     // Fail all tests in this assembly
-                    foreach (var test in tests.Where(t => t.TestClass.Assembly == assembly))
+                    foreach (var test in tests.Where(t => t.TestClass!.Assembly == assembly))
                     {
                         onStateChanged(new TestNodeState(test.FullName, TestStatus.Failed, null,
                             $"AssemblyInitialize failed: {ex.InnerException?.Message ?? ex.Message}",
@@ -234,18 +241,18 @@ public sealed class TestExecutionService(ILogger<TestExecutionService> logger, I
         object? instance = null;
         try
         {
-            instance = Activator.CreateInstance(test.TestClass)!;
+            instance = Activator.CreateInstance(test.TestClass!)!;
 
             // Publish the test method name so MotusTestBase can resolve
             // per-method attributes (e.g. [PerformanceBudget]) without TestContext
-            TestMethodNameContext.Set(test.TestMethod.Name);
+            TestMethodNameContext.Set(test.TestMethod!.Name);
 
             // Run [TestInitialize] methods
-            await ExecuteLifecycleMethodAsync(instance, test.TestClass, "TestInitializeAttribute");
+            await ExecuteLifecycleMethodAsync(instance, test.TestClass!, "TestInitializeAttribute");
             // Also support NUnit [SetUp]
-            await ExecuteLifecycleMethodAsync(instance, test.TestClass, "SetUpAttribute");
+            await ExecuteLifecycleMethodAsync(instance, test.TestClass!, "SetUpAttribute");
 
-            var result = test.TestMethod.Invoke(instance, null);
+            var result = test.TestMethod!.Invoke(instance, null);
 
             if (result is Task task)
                 await task;
@@ -270,9 +277,9 @@ public sealed class TestExecutionService(ILogger<TestExecutionService> logger, I
                 try
                 {
                     // Run [TestCleanup] methods
-                    await ExecuteLifecycleMethodAsync(instance, test.TestClass, "TestCleanupAttribute");
+                    await ExecuteLifecycleMethodAsync(instance, test.TestClass!, "TestCleanupAttribute");
                     // Also support NUnit [TearDown]
-                    await ExecuteLifecycleMethodAsync(instance, test.TestClass, "TearDownAttribute");
+                    await ExecuteLifecycleMethodAsync(instance, test.TestClass!, "TearDownAttribute");
                 }
                 catch (Exception ex)
                 {

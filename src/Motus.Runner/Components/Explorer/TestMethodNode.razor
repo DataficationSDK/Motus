@@ -1,9 +1,11 @@
 @inject ITestSessionService Session
+@inject ITimelineService Timeline
+@inject RunnerOptions Options
 @implements IDisposable
 
-<div class="method-node" @onclick="RunTest" title="@Tooltip">
+<div class="method-node" @onclick="OnClick" title="@Tooltip">
     <TestStatusBadge Status="@CurrentStatus" />
-    <span class="method-name">@Test.TestMethod.Name</span>
+    <span class="method-name">@MethodDisplayName</span>
     @if (CurrentState?.Duration is not null)
     {
         <span class="method-duration">@($"{CurrentState.Duration.Value.TotalMilliseconds:F0}ms")</span>
@@ -18,6 +20,8 @@
 
     private TestStatus CurrentStatus => CurrentState?.Status ?? TestStatus.Pending;
 
+    private string MethodDisplayName => Test.TestMethod?.Name ?? GetMethodFromFullName(Test.FullName);
+
     private string Tooltip => CurrentStatus == TestStatus.Skipped && CurrentState?.ErrorMessage is not null
         ? $"{Test.FullName}\n{CurrentState.ErrorMessage}"
         : Test.FullName;
@@ -27,8 +31,14 @@
         Session.StateChanged += OnStateChanged;
     }
 
-    private async Task RunTest()
+    private async Task OnClick()
     {
+        if (Options.ViewerMode == ViewerMode.Trx)
+        {
+            Timeline.SelectTest(Test.FullName);
+            return;
+        }
+
         if (!Session.IsRunning && !Test.IsIgnored)
         {
             await Session.RunTestAsync(Test.FullName);
@@ -43,5 +53,11 @@
     public void Dispose()
     {
         Session.StateChanged -= OnStateChanged;
+    }
+
+    private static string GetMethodFromFullName(string fullName)
+    {
+        var dot = fullName.LastIndexOf('.');
+        return dot > 0 && dot + 1 < fullName.Length ? fullName[(dot + 1)..] : fullName;
     }
 }
