@@ -3,6 +3,7 @@
 @inject ITimelineService Timeline
 @inject RunnerOptions Options
 @inject TrxSession Trx
+@inject TrxRerunService Rerun
 @implements IDisposable
 
 <div class="toolbar">
@@ -33,6 +34,16 @@
     }
     else
     {
+        @if (Rerun.IsRerunSession)
+        {
+            <button class="toolbar-btn back-to-trx-btn"
+                    @onclick="BackToResults"
+                    disabled="@Session.IsRunning"
+                    title="Return to TRX results view">
+                &#8592; Back to Results
+            </button>
+            <div class="toolbar-separator"></div>
+        }
         <button class="toolbar-btn run-btn" @onclick="RunAll" disabled="@Session.IsRunning" title="Run All Tests">
             &#9654; Run All
         </button>
@@ -98,6 +109,7 @@
     {
         Session.StateChanged += OnSessionChanged;
         StepDebug.StateChanged += OnStepDebugChanged;
+        Rerun.ViewerModeChanged += OnSessionChanged;
     }
 
     private void ToggleStepMode()
@@ -123,6 +135,11 @@
         Session.Reset();
     }
 
+    private void BackToResults()
+    {
+        Rerun.BackToResults();
+    }
+
     private void OnFilterInput(ChangeEventArgs e)
     {
         Session.SetFilter(e.Value?.ToString());
@@ -142,5 +159,6 @@
     {
         Session.StateChanged -= OnSessionChanged;
         StepDebug.StateChanged -= OnStepDebugChanged;
+        Rerun.ViewerModeChanged -= OnSessionChanged;
     }
 }

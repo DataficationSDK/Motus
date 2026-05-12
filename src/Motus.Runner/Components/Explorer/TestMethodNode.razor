@@ -1,6 +1,7 @@
 @inject ITestSessionService Session
 @inject ITimelineService Timeline
 @inject RunnerOptions Options
+@inject TrxRerunService Rerun
 @implements IDisposable
 
 <div class="method-node" @onclick="OnClick" title="@Tooltip">
@@ -9,6 +10,15 @@
     @if (CurrentState?.Duration is not null)
     {
         <span class="method-duration">@($"{CurrentState.Duration.Value.TotalMilliseconds:F0}ms")</span>
+    }
+    @if (ShowRerunButton)
+    {
+        <button class="method-rerun-btn"
+                title="Run in Runner"
+                @onclick="OnRerunClick"
+                @onclick:stopPropagation="true">
+            &#9654;
+        </button>
     }
 </div>
 
@@ -21,6 +31,9 @@
     private TestStatus CurrentStatus => CurrentState?.Status ?? TestStatus.Pending;
 
     private string MethodDisplayName => Test.TestMethod?.Name ?? GetMethodFromFullName(Test.FullName);
+
+    private bool ShowRerunButton =>
+        Options.ViewerMode == ViewerMode.Trx && CurrentStatus != TestStatus.Passed;
 
     private string Tooltip => CurrentStatus == TestStatus.Skipped && CurrentState?.ErrorMessage is not null
         ? $"{Test.FullName}\n{CurrentState.ErrorMessage}"
@@ -43,6 +56,12 @@
         {
             await Session.RunTestAsync(Test.FullName);
         }
+    }
+
+    private async Task OnRerunClick()
+    {
+        Timeline.SelectTest(Test.FullName);
+        await Rerun.RerunTestAsync(Test.FullName);
     }
 
     private async void OnStateChanged()

@@ -219,6 +219,26 @@ input {
     flex-shrink: 0;
 }
 
+.method-rerun-btn {
+    padding: 1px 5px;
+    font-size: 10px;
+    background: transparent;
+    color: var(--vsc-fg-dim);
+    border-radius: 3px;
+    opacity: 0;
+    transition: opacity 0.15s;
+    flex-shrink: 0;
+}
+
+.method-node:hover .method-rerun-btn {
+    opacity: 1;
+}
+
+.method-rerun-btn:hover:not(:disabled) {
+    background: var(--vsc-bg-active);
+    color: var(--vsc-green);
+}
+
 /* Status badges */
 .status-badge {
     flex-shrink: 0;

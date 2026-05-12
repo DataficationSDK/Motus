@@ -86,6 +86,7 @@ public static class RunnerHost
         builder.Services.AddSingleton<ISelectorRepairService>(sp => sp.GetRequiredService<SelectorRepairService>());
         builder.Services.AddSingleton<CoverageService>();
         builder.Services.AddSingleton<ICoverageService>(sp => sp.GetRequiredService<CoverageService>());
+        builder.Services.AddSingleton<TrxRerunService>();
 
         builder.Services.AddRazorComponents()
             .AddInteractiveServerComponents();

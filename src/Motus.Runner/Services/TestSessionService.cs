@@ -61,6 +61,22 @@ public sealed class TestSessionService : ITestSessionService
         NotifyStateChanged();
     }
 
+    public void ReplaceDiscoveredTest(DiscoveredTest test)
+    {
+        var index = _discoveredTests.FindIndex(t => t.FullName == test.FullName);
+        if (index >= 0)
+            _discoveredTests[index] = test;
+        else
+            _discoveredTests.Add(test);
+        NotifyStateChanged();
+    }
+
+    public void SetTestState(TestNodeState state)
+    {
+        _states[state.FullName] = state;
+        NotifyStateChanged();
+    }
+
     public async Task RunAllAsync(CancellationToken ct = default)
     {
         if (Interlocked.CompareExchange(ref _running, 1, 0) != 0)

@@ -3,6 +3,7 @@
 @inject ITimelineService Timeline
 @inject ICoverageService Coverage
 @inject RunnerOptions Options
+@inject TrxRerunService Rerun
 @implements IDisposable
 
 <div class="runner-shell" id="runner-shell"
@@ -178,6 +179,17 @@
         Timeline.TimelineChanged += OnTimelineChanged;
         Timeline.TestSelected += OnTestSelected;
         Coverage.CoverageChanged += OnCoverageChanged;
+        Rerun.ViewerModeChanged += OnViewerModeChanged;
+    }
+
+    private async void OnViewerModeChanged()
+    {
+        activeTab = Options.ViewerMode switch
+        {
+            ViewerMode.Trx => "console",
+            _ => "browser",
+        };
+        await InvokeAsync(StateHasChanged);
     }
 
     private async void OnCoverageChanged()
@@ -225,5 +237,6 @@
         Timeline.TimelineChanged -= OnTimelineChanged;
         Timeline.TestSelected -= OnTestSelected;
         Coverage.CoverageChanged -= OnCoverageChanged;
+        Rerun.ViewerModeChanged -= OnViewerModeChanged;
     }
 }
