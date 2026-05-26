@@ -10,7 +10,7 @@
     </div>
     @if (Expanded)
     {
-        @foreach (var classGroup in Tests.GroupBy(t => t.TestClass?.FullName ?? GetClassFromFullName(t.FullName)))
+        @foreach (var classGroup in Tests.GroupBy(t => t.TestClass?.FullName ?? t.ClassFullName ?? GetClassFromFullName(t.FullName)))
         {
             <TestClassNode ClassName="@classGroup.Key"
                            DisplayName="@(classGroup.First().TestClass?.Name ?? GetShortClassName(classGroup.Key))"

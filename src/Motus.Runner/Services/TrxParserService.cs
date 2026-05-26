@@ -70,7 +70,7 @@ public sealed class TrxParserService
             var duration = ParseDuration(result.Attribute("duration")?.Value);
             if (duration is not null) totalDuration += duration.Value;
 
-            var (errorMessage, stackTrace) = ExtractError(result);
+            var (errorMessage, stackTrace, stdOut, stdErr) = ExtractOutput(result);
 
             var testId = result.Attribute("testId")?.Value;
             var def = (testId is not null && definitions.TryGetValue(testId, out var byId))
@@ -93,10 +93,11 @@ public sealed class TrxParserService
                     IsIgnored: status == TestStatus.Skipped,
                     IgnoreReason: null,
                     CodeBase: def.CodeBase,
-                    Categories: def.Categories.Count > 0 ? def.Categories : null));
+                    Categories: def.Categories.Count > 0 ? def.Categories : null,
+                    ClassFullName: !string.IsNullOrEmpty(def.ClassName) ? def.ClassName : null));
             }
 
-            states[fullName] = new TestNodeState(fullName, status, duration, errorMessage, stackTrace);
+            states[fullName] = new TestNodeState(fullName, status, duration, errorMessage, stackTrace, stdOut, stdErr);
         }
 
         var counters = root.Element(Ns + "ResultSummary")?.Element(Ns + "Counters");
@@ -122,14 +123,21 @@ public sealed class TrxParserService
         return TimeSpan.TryParse(raw, CultureInfo.InvariantCulture, out var ts) ? ts : null;
     }
 
-    private static (string? Message, string? StackTrace) ExtractError(XElement result)
+    private static (string? Message, string? StackTrace, string? StdOut, string? StdErr) ExtractOutput(XElement result)
     {
-        var errorInfo = result.Element(Ns + "Output")?.Element(Ns + "ErrorInfo");
-        if (errorInfo is null) return (null, null);
-        var message = errorInfo.Element(Ns + "Message")?.Value;
-        var stackTrace = errorInfo.Element(Ns + "StackTrace")?.Value;
+        var output = result.Element(Ns + "Output");
+        if (output is null) return (null, null, null, null);
+
+        var errorInfo = output.Element(Ns + "ErrorInfo");
+        var message = errorInfo?.Element(Ns + "Message")?.Value;
+        var stackTrace = errorInfo?.Element(Ns + "StackTrace")?.Value;
+        var stdOut = output.Element(Ns + "StdOut")?.Value;
+        var stdErr = output.Element(Ns + "StdErr")?.Value;
+
         return (string.IsNullOrEmpty(message) ? null : message,
-                string.IsNullOrEmpty(stackTrace) ? null : stackTrace);
+                string.IsNullOrEmpty(stackTrace) ? null : stackTrace,
+                string.IsNullOrEmpty(stdOut) ? null : stdOut,
+                string.IsNullOrEmpty(stdErr) ? null : stdErr);
     }
 
     private static int ReadIntAttribute(XElement? element, string name, int fallback)

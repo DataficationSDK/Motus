@@ -101,6 +101,34 @@
     overflow-y: auto;
 }
 
+.console-stdout {
+    padding: 8px 10px;
+    background: var(--vsc-bg-secondary);
+    border-left: 3px solid var(--vsc-border);
+    color: var(--vsc-fg);
+    white-space: pre-wrap;
+    word-break: break-word;
+    margin: 0;
+    font-size: 11px;
+    line-height: 1.5;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.console-stderr {
+    padding: 8px 10px;
+    background: rgba(255, 0, 0, 0.05);
+    border-left: 3px solid var(--vsc-red);
+    color: var(--vsc-fg);
+    white-space: pre-wrap;
+    word-break: break-word;
+    margin: 0;
+    font-size: 11px;
+    line-height: 1.5;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
 .console-skip-reason {
     padding: 8px 10px;
     background: rgba(204, 167, 0, 0.08);

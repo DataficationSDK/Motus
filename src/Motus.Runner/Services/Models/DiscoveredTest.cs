@@ -10,4 +10,5 @@ public sealed record DiscoveredTest(
     bool IsIgnored,
     string? IgnoreReason = null,
     string? CodeBase = null,
-    IReadOnlyList<string>? Categories = null);
+    IReadOnlyList<string>? Categories = null,
+    string? ClassFullName = null);

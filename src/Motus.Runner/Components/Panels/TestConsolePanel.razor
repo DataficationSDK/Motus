@@ -38,7 +38,23 @@
             </div>
         }
 
-        @if (state.Status == TestStatus.Passed && state.ErrorMessage is null)
+        @if (state.StdOut is not null)
+        {
+            <div class="console-section">
+                <div class="console-section-header">Test Output</div>
+                <pre class="console-stdout">@state.StdOut</pre>
+            </div>
+        }
+
+        @if (state.StdErr is not null)
+        {
+            <div class="console-section">
+                <div class="console-section-header">Test Error Output</div>
+                <pre class="console-stderr">@state.StdErr</pre>
+            </div>
+        }
+
+        @if (state.Status == TestStatus.Passed && state.ErrorMessage is null && state.StdOut is null && state.StdErr is null)
         {
             <div class="console-success-message">Test passed with no errors.</div>
         }

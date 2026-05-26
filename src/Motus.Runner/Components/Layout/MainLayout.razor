@@ -161,7 +161,7 @@
     private string ShellStyle => Options.ViewerMode switch
     {
         ViewerMode.Trace => "grid-template-columns: 1fr; grid-template-areas: 'toolbar' 'main' 'resize' 'bottom';",
-        ViewerMode.Trx => "grid-template-areas: 'toolbar toolbar toolbar' 'sidebar resize main';",
+        ViewerMode.Trx => "grid-template-areas: 'toolbar toolbar toolbar' 'sidebar sidehandle main';",
         _ => "",
     };
 
