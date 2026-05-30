@@ -27,7 +27,7 @@
   <ItemGroup>
     <PackageReference Include="System.CommandLine" Version="2.0.0-beta5.25277.114" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.12.0" />
-    <PackageReference Include="Microsoft.Extensions.FileSystemGlobbing" Version="8.0.0" />
+    <PackageReference Include="Microsoft.Extensions.FileSystemGlobbing" Version="10.0.7" />
   </ItemGroup>
 
   <ItemGroup>
@@ -37,6 +37,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Motus\Motus.csproj" />
     <ProjectReference Include="..\Motus.Abstractions\Motus.Abstractions.csproj" />
+    <ProjectReference Include="..\Motus.Mcp\Motus.Mcp.csproj" />
     <ProjectReference Include="..\Motus.Recorder\Motus.Recorder.csproj" />
     <ProjectReference Include="..\Motus.Runner\Motus.Runner.csproj" />
   </ItemGroup>
