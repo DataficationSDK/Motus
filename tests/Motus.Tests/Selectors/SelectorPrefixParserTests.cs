@@ -130,4 +130,12 @@ public class SelectorPrefixParserTests
         Assert.AreEqual("text", prefix);
         Assert.AreEqual("", expression);
     }
+
+    [TestMethod]
+    public void BackendNodePrefix_ParsedCorrectly()
+    {
+        var (prefix, expression) = Motus.Locator.ParsePrefix("_node=12345");
+        Assert.AreEqual("_node", prefix);
+        Assert.AreEqual("12345", expression);
+    }
 }

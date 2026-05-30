@@ -30,6 +30,9 @@ internal sealed partial class Page
     public ILocator Locator(string selector, LocatorOptions? options = null)
         => new Locator(this, selector, options);
 
+    public ILocator LocatorByBackendNodeId(long backendNodeId)
+        => new Locator(this, $"{BackendNodeIdSelectorStrategy.Prefix}={backendNodeId}");
+
     public ILocator GetByRole(string role, string? name = null)
         => name is not null
             ? new Locator(this, $"[role=\"{role}\"][aria-label=\"{name}\"]")

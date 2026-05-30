@@ -166,6 +166,17 @@ public interface IPage : IAsyncDisposable
     /// <returns>The page title.</returns>
     Task<string> TitleAsync();
 
+    // --- Accessibility ---
+
+    /// <summary>
+    /// Fetches the page's accessibility tree. Each returned node carries its role,
+    /// accessible name, properties, children, and (where available) a backend DOM
+    /// node identifier that <see cref="LocatorByBackendNodeId"/> can target.
+    /// </summary>
+    /// <param name="ct">A token to cancel the operation.</param>
+    /// <returns>A snapshot of the accessibility tree.</returns>
+    Task<AccessibilitySnapshot> AccessibilitySnapshotAsync(CancellationToken ct = default);
+
     // --- Locators ---
 
     /// <summary>
@@ -175,6 +186,17 @@ public interface IPage : IAsyncDisposable
     /// <param name="options">Locator options.</param>
     /// <returns>A locator for the matching elements.</returns>
     ILocator Locator(string selector, LocatorOptions? options = null);
+
+    /// <summary>
+    /// Creates a locator that targets a single element by its backend DOM node
+    /// identifier, as reported on <see cref="AccessibilityNode.BackendDOMNodeId"/>
+    /// by <see cref="AccessibilitySnapshotAsync"/>. The element is resolved when an
+    /// action is first invoked on the locator; if the node is no longer attached to
+    /// the document, the action fails.
+    /// </summary>
+    /// <param name="backendNodeId">The backend DOM node identifier to target.</param>
+    /// <returns>A locator for the matching element.</returns>
+    ILocator LocatorByBackendNodeId(long backendNodeId);
 
     /// <summary>
     /// Creates a locator for the element matching the specified role.

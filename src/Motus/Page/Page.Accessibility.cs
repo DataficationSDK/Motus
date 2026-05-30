@@ -11,6 +11,20 @@ internal sealed partial class Page
     internal AccessibilityAuditResult? LastAccessibilityAudit { get; set; }
 
     /// <summary>
+    /// Fetches the page's accessibility tree and returns it as a snapshot.
+    /// </summary>
+    public async Task<AccessibilitySnapshot> AccessibilitySnapshotAsync(CancellationToken ct = default)
+    {
+        var query = new AccessibilityTreeQuery(_session);
+        var treeResult = await query.GetTreeAsync(ct).ConfigureAwait(false);
+
+        return new AccessibilitySnapshot(
+            Roots: treeResult.Roots,
+            IgnoredCount: treeResult.IgnoredCount,
+            DiagnosticMessage: treeResult.DiagnosticMessage);
+    }
+
+    /// <summary>
     /// Runs the registered accessibility rules against this page's accessibility tree.
     /// Pre-fetches computed styles, duplicate IDs, and document language for rules that need them.
     /// </summary>

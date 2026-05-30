@@ -12,7 +12,7 @@ internal sealed class BuiltinSelectorsPlugin : IPlugin
     public string Name => "Built-in Selector Strategies";
     public string Version => "1.0.0";
     public string? Author => null;
-    public string? Description => "Registers the five built-in selector strategies (CSS, XPath, Text, Role, TestId).";
+    public string? Description => "Registers the built-in selector strategies (CSS, XPath, Text, Role, TestId, backend node ID).";
 
     public Task OnLoadedAsync(IPluginContext context)
     {
@@ -21,6 +21,7 @@ internal sealed class BuiltinSelectorsPlugin : IPlugin
         context.RegisterSelectorStrategy(new TextSelectorStrategy());
         context.RegisterSelectorStrategy(new RoleSelectorStrategy());
         context.RegisterSelectorStrategy(new TestIdSelectorStrategy());
+        context.RegisterSelectorStrategy(new BackendNodeIdSelectorStrategy());
         return Task.CompletedTask;
     }
 
