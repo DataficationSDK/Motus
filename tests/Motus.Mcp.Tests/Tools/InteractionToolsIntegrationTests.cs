@@ -69,7 +69,7 @@ public class InteractionToolsIntegrationTests
         AssertOk(await InteractionTools.ClearAsync(name, service, ct), "clear");
         AssertOk(await InteractionTools.PressAsync(name, "Tab", service, ct), "press");
 
-        var path = Path.Combine(Path.GetTempPath(), "motus_upload_integration.txt");
+        var path = Path.Combine(Path.GetTempPath(), $"motus_upload_{Guid.NewGuid():N}.txt");
         await File.WriteAllTextAsync(path, "hello", ct);
         try
         {

@@ -118,7 +118,9 @@ public class InteractionToolsUnitTests
     public async Task UploadFiles_ReadsFilesAndUploads()
     {
         var (page, service) = await SnapshottedAsync("button", "Upload");
-        var path = Path.Combine(Path.GetTempPath(), "motus_upload_test.txt");
+        // A unique name per run: the net8.0 and net10.0 test assemblies run as separate
+        // processes and would otherwise contend for one fixed path under the temp dir.
+        var path = Path.Combine(Path.GetTempPath(), $"motus_upload_{Guid.NewGuid():N}.txt");
         var bytes = new byte[] { 1, 2, 3, 4 };
         await File.WriteAllBytesAsync(path, bytes);
         try
@@ -130,7 +132,7 @@ public class InteractionToolsUnitTests
             var uploaded = page.RecordingLocator.UploadedFiles;
             Assert.IsNotNull(uploaded);
             Assert.AreEqual(1, uploaded.Count);
-            Assert.AreEqual("motus_upload_test.txt", uploaded[0].Name);
+            Assert.AreEqual(Path.GetFileName(path), uploaded[0].Name);
             Assert.AreEqual("text/plain", uploaded[0].MimeType);
             CollectionAssert.AreEqual(bytes, uploaded[0].Buffer);
         }
