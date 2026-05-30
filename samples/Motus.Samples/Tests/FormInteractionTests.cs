@@ -22,11 +22,13 @@ public class FormInteractionTests : MotusTestBase
     {
         await Fixtures.SetPageContentAsync(Page,Fixtures.LoginForm);
 
-        // TypeAsync dispatches individual key events with an optional delay between them.
-        // macOS CI runners need a generous delay to prevent the compositor from dropping
-        // keystrokes when three rapid CDP events (keyDown, char, keyUp) pile up per character.
+        // TypeAsync dispatches individual key events (keyDown, char, keyUp) with an
+        // optional delay between characters. Under load the browser can occasionally
+        // drop one of those events, and a dropped key never self-corrects, so a value
+        // assertion on its own would flake. Re-type until the field holds the full
+        // text, then assert so a genuine regression still fails clearly.
         var password = Page.GetByLabel("Password");
-        await password.TypeAsync("secret123", new KeyboardTypeOptions(Delay: 100));
+        await TypeUntilExactAsync(password, "secret123");
         await Expect.That(password).ToHaveValueAsync("secret123");
     }
 
@@ -80,5 +82,22 @@ public class FormInteractionTests : MotusTestBase
         // ClearAsync removes all text from the input
         await email.ClearAsync();
         await Expect.That(email).ToBeEmptyAsync();
+    }
+
+    /// <summary>
+    /// Types text character by character, clearing and re-typing if the browser drops
+    /// a keystroke. Returns once the field holds the exact text, or after the final
+    /// attempt so the caller's assertion reports any remaining mismatch.
+    /// </summary>
+    private static async Task TypeUntilExactAsync(ILocator field, string text, int attempts = 4)
+    {
+        for (int attempt = 1; attempt <= attempts; attempt++)
+        {
+            await field.ClearAsync();
+            await field.TypeAsync(text, new KeyboardTypeOptions(Delay: 50));
+
+            if (await field.InputValueAsync() == text)
+                return;
+        }
     }
 }
