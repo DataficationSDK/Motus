@@ -1,4 +1,5 @@
 using System.Linq;
+using System.Text.Json;
 using Motus.Abstractions;
 using Motus.Mcp;
 
@@ -51,6 +52,47 @@ internal sealed class FakeToolPage(AccessibilitySnapshot snapshot) : IPage
     /// <summary>The arguments passed alongside each <see cref="WaitForFunctionAsync{T}"/> call.</summary>
     public List<object?> WaitedFunctionArgs { get; } = [];
 
+    /// <summary>The current URL, returned by the <see cref="Url"/> property.</summary>
+    public string PageUrl { get; set; } = "about:blank";
+
+    /// <summary>The title returned by <see cref="TitleAsync"/>.</summary>
+    public string PageTitle { get; set; } = "";
+
+    /// <summary>The response <see cref="GoBackAsync"/> returns; null models no history entry.</summary>
+    public IResponse? GoBackResponse { get; set; }
+
+    /// <summary>The response <see cref="GoForwardAsync"/> returns; null models no history entry.</summary>
+    public IResponse? GoForwardResponse { get; set; }
+
+    /// <summary>Whether <see cref="GoBackAsync"/> was called.</summary>
+    public bool GoBackCalled { get; private set; }
+
+    /// <summary>Whether <see cref="GoForwardAsync"/> was called.</summary>
+    public bool GoForwardCalled { get; private set; }
+
+    /// <summary>Whether <see cref="ReloadAsync"/> was called.</summary>
+    public bool ReloadCalled { get; private set; }
+
+    /// <summary>The number of times <see cref="BringToFrontAsync"/> was called.</summary>
+    public int BringToFrontCount { get; private set; }
+
+    /// <summary>Whether <see cref="CloseAsync"/> was called.</summary>
+    public bool CloseCalled { get; private set; }
+
+    /// <summary>The last expression passed to <see cref="EvaluateAsync{T}"/>.</summary>
+    public string? EvaluatedExpression { get; private set; }
+
+    /// <summary>The value <see cref="EvaluateAsync{T}"/> returns when asked for a <see cref="JsonElement"/>.</summary>
+    public JsonElement EvaluateReturn { get; set; }
+
+    /// <summary>When set, <see cref="EvaluateAsync{T}"/> throws this to simulate a script error.</summary>
+    public Exception? EvaluateError { get; init; }
+
+    private bool _closed;
+
+    /// <summary>Raises the <see cref="Dialog"/> event with the given dialog, as the browser would.</summary>
+    public void RaiseDialog(IDialog dialog) => Dialog?.Invoke(this, new DialogEventArgs(dialog));
+
     public Task<AccessibilitySnapshot> AccessibilitySnapshotAsync(CancellationToken ct = default)
         => Task.FromResult(snapshot);
 
@@ -75,7 +117,7 @@ internal sealed class FakeToolPage(AccessibilitySnapshot snapshot) : IPage
         return Task.FromResult(new byte[] { 0x89, 0x50, 0x4E, 0x47 });
     }
 
-    public bool IsClosed => false;
+    public bool IsClosed => _closed;
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 
@@ -98,19 +140,31 @@ internal sealed class FakeToolPage(AccessibilitySnapshot snapshot) : IPage
     public IBrowserContext Context => throw new NotImplementedException();
     public IFrame MainFrame => throw new NotImplementedException();
     public IReadOnlyList<IFrame> Frames => throw new NotImplementedException();
-    public string Url => throw new NotImplementedException();
+    public string Url => PageUrl;
     public IKeyboard Keyboard => FakeKeyboard;
     public IMouse Mouse => throw new NotImplementedException();
     public ITouchscreen Touchscreen => throw new NotImplementedException();
     public IVideo? Video => throw new NotImplementedException();
     public ViewportSize? ViewportSize => throw new NotImplementedException();
 
-    public Task<IResponse?> GoBackAsync(NavigationOptions? options = null) => throw new NotImplementedException();
-    public Task<IResponse?> GoForwardAsync(NavigationOptions? options = null) => throw new NotImplementedException();
-    public Task<IResponse?> ReloadAsync(NavigationOptions? options = null) => throw new NotImplementedException();
+    public Task<IResponse?> GoBackAsync(NavigationOptions? options = null)
+    {
+        GoBackCalled = true;
+        return Task.FromResult(GoBackResponse);
+    }
+    public Task<IResponse?> GoForwardAsync(NavigationOptions? options = null)
+    {
+        GoForwardCalled = true;
+        return Task.FromResult(GoForwardResponse);
+    }
+    public Task<IResponse?> ReloadAsync(NavigationOptions? options = null)
+    {
+        ReloadCalled = true;
+        return Task.FromResult<IResponse?>(null);
+    }
     public Task<string> ContentAsync() => throw new NotImplementedException();
     public Task SetContentAsync(string html, NavigationOptions? options = null) => throw new NotImplementedException();
-    public Task<string> TitleAsync() => throw new NotImplementedException();
+    public Task<string> TitleAsync() => Task.FromResult(PageTitle);
     public ILocator Locator(string selector, LocatorOptions? options = null) => throw new NotImplementedException();
     public ILocator GetByRole(string role, string? name = null) => throw new NotImplementedException();
     public ILocator GetByText(string text, bool? exact = null) => throw new NotImplementedException();
@@ -119,7 +173,15 @@ internal sealed class FakeToolPage(AccessibilitySnapshot snapshot) : IPage
     public ILocator GetByTestId(string testId) => throw new NotImplementedException();
     public ILocator GetByTitle(string text, bool? exact = null) => throw new NotImplementedException();
     public ILocator GetByAltText(string text, bool? exact = null) => throw new NotImplementedException();
-    public Task<T> EvaluateAsync<T>(string expression, object? arg = null) => throw new NotImplementedException();
+    public Task<T> EvaluateAsync<T>(string expression, object? arg = null)
+    {
+        EvaluatedExpression = expression;
+        if (EvaluateError is not null)
+            throw EvaluateError;
+        if (typeof(T) == typeof(JsonElement))
+            return Task.FromResult((T)(object)EvaluateReturn);
+        throw new NotImplementedException();
+    }
     public Task<IJSHandle> EvaluateHandleAsync(string expression, object? arg = null) => throw new NotImplementedException();
     public Task<T> WaitForFunctionAsync<T>(string expression, object? arg = null, double? timeout = null)
     {
@@ -148,8 +210,17 @@ internal sealed class FakeToolPage(AccessibilitySnapshot snapshot) : IPage
     public Task<IElementHandle> AddScriptTagAsync(string? url = null, string? content = null) => throw new NotImplementedException();
     public Task<IElementHandle> AddStyleTagAsync(string? url = null, string? content = null) => throw new NotImplementedException();
     public Task ExposeBindingAsync(string name, Func<object?[], Task<object?>> callback) => throw new NotImplementedException();
-    public Task CloseAsync(bool? runBeforeUnload = null) => throw new NotImplementedException();
-    public Task BringToFrontAsync() => throw new NotImplementedException();
+    public Task CloseAsync(bool? runBeforeUnload = null)
+    {
+        CloseCalled = true;
+        _closed = true;
+        return Task.CompletedTask;
+    }
+    public Task BringToFrontAsync()
+    {
+        BringToFrontCount++;
+        return Task.CompletedTask;
+    }
     public Task PauseAsync() => throw new NotImplementedException();
     public Task<byte[]> PdfAsync(string? path = null) => throw new NotImplementedException();
     public Task EmulateMediaAsync(string? media = null, ColorScheme? colorScheme = null) => throw new NotImplementedException();
@@ -173,6 +244,8 @@ internal sealed class FakeToolLocator : ILocator
     public IReadOnlyList<string>? SelectedValues { get; private set; }
     public IReadOnlyList<FilePayload>? UploadedFiles { get; private set; }
     public ElementState? WaitedForState { get; private set; }
+    public string? EvaluatedElementExpression { get; private set; }
+    public JsonElement ElementEvaluateReturn { get; set; }
 
     public Task ClickAsync(double? timeout = null)
     {
@@ -253,7 +326,13 @@ internal sealed class FakeToolLocator : ILocator
     public Task<byte[]> ScreenshotAsync(ScreenshotOptions? options = null) => throw new NotImplementedException();
     public Task DispatchEventAsync(string type, object? eventInit = null) => throw new NotImplementedException();
     public Task<T> EvaluateAsync<T>(string expression, object? arg = null) => throw new NotImplementedException();
-    public Task<T> EvaluateWithElementAsync<T>(string pageFunction, object? arg = null) => throw new NotImplementedException();
+    public Task<T> EvaluateWithElementAsync<T>(string pageFunction, object? arg = null)
+    {
+        EvaluatedElementExpression = pageFunction;
+        if (typeof(T) == typeof(JsonElement))
+            return Task.FromResult((T)(object)ElementEvaluateReturn);
+        throw new NotImplementedException();
+    }
     public Task<string?> TextContentAsync(double? timeout = null) => throw new NotImplementedException();
     public Task<string> InnerTextAsync(double? timeout = null) => throw new NotImplementedException();
     public Task<string> InnerHTMLAsync(double? timeout = null) => throw new NotImplementedException();
@@ -301,4 +380,124 @@ internal sealed class FakeKeyboard : IKeyboard
     public Task UpAsync(string key) => throw new NotImplementedException();
     public Task TypeAsync(string text, KeyboardTypeOptions? options = null) => throw new NotImplementedException();
     public Task InsertTextAsync(string text) => throw new NotImplementedException();
+}
+
+/// <summary>
+/// A fake dialog that records whether it was accepted (with what text) or dismissed.
+/// </summary>
+internal sealed class FakeDialog(DialogType type = DialogType.Alert, string message = "", string? defaultValue = null)
+    : IDialog
+{
+    public DialogType Type { get; } = type;
+    public string Message { get; } = message;
+    public string? DefaultValue { get; } = defaultValue;
+    public bool Accepted { get; private set; }
+    public bool Dismissed { get; private set; }
+    public string? AcceptedText { get; private set; }
+
+    public Task AcceptAsync(string? promptText = null)
+    {
+        Accepted = true;
+        AcceptedText = promptText;
+        return Task.CompletedTask;
+    }
+
+    public Task DismissAsync()
+    {
+        Dismissed = true;
+        return Task.CompletedTask;
+    }
+}
+
+/// <summary>
+/// An <see cref="ActivePageService"/> for the tab and context tools. It overrides the
+/// browser-touching seams to work over an in-memory list of fake tabs and a simulated
+/// set of context names, so the tools' own index validation, active-page tracking, and
+/// error mapping run for real without a browser.
+/// </summary>
+internal sealed class FakeSessionPageService : ActivePageService
+{
+    private readonly List<FakeToolPage> _pages;
+
+    public FakeSessionPageService(params FakeToolPage[] pages)
+        : base(new BrowserSessionManager(new McpServerLaunchOptions()))
+    {
+        _pages = pages.Length == 0 ? [NewPage()] : [.. pages];
+    }
+
+    /// <summary>The simulated open context names; the first is the implicit default.</summary>
+    public List<string> Contexts { get; } = [BrowserSessionManager.DefaultContextName];
+
+    /// <summary>The simulated active context name.</summary>
+    public string ActiveContext { get; private set; } = BrowserSessionManager.DefaultContextName;
+
+    public List<string> CreatedContexts { get; } = [];
+    public List<string> SelectedContexts { get; } = [];
+    public List<string> ClosedContexts { get; } = [];
+    public int OpenedTabs { get; private set; }
+
+    public IReadOnlyList<FakeToolPage> Tabs => _pages;
+
+    private static FakeToolPage NewPage() => new(new AccessibilitySnapshot([], 0, null));
+
+    protected override Task<IPage> ResolvePageAsync(CancellationToken cancellationToken)
+    {
+        var open = _pages.FirstOrDefault(p => !p.IsClosed) ?? AddTab();
+        return Task.FromResult<IPage>(open);
+    }
+
+    protected override Task<IReadOnlyList<IPage>> GetActiveContextPagesAsync(CancellationToken cancellationToken)
+        => Task.FromResult<IReadOnlyList<IPage>>(_pages.Where(p => !p.IsClosed).Cast<IPage>().ToArray());
+
+    public override Task<IPage> OpenNewTabAsync(CancellationToken cancellationToken = default)
+    {
+        OpenedTabs++;
+        var page = AddTab();
+        SelectPage(page);
+        return Task.FromResult<IPage>(page);
+    }
+
+    public override Task CreateContextAsync(string name, CancellationToken cancellationToken = default)
+    {
+        if (Contexts.Contains(name))
+            throw new InvalidOperationException($"A context named '{name}' already exists.");
+
+        Contexts.Add(name);
+        ActiveContext = name;
+        CreatedContexts.Add(name);
+        ResetActivePage();
+        return Task.CompletedTask;
+    }
+
+    public override void SelectContext(string name)
+    {
+        if (!Contexts.Contains(name))
+            throw new InvalidOperationException($"No open context named '{name}'.");
+
+        ActiveContext = name;
+        SelectedContexts.Add(name);
+        ResetActivePage();
+    }
+
+    public override Task CloseContextAsync(string name, CancellationToken cancellationToken = default)
+    {
+        Contexts.Remove(name);
+        if (ActiveContext == name)
+            ActiveContext = BrowserSessionManager.DefaultContextName;
+
+        ClosedContexts.Add(name);
+        ResetActivePage();
+        return Task.CompletedTask;
+    }
+
+    public override IReadOnlyCollection<string> GetContextNames() => Contexts;
+
+    public override string GetActiveContextName() => ActiveContext;
+
+    private FakeToolPage AddTab()
+    {
+        var page = NewPage();
+        _pages.Add(page);
+        return page;
+    }
 }

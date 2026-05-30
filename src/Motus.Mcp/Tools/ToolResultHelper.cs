@@ -1,10 +1,12 @@
+using System.Text.Json;
 using ModelContextProtocol.Protocol;
 
 namespace Motus.Mcp;
 
 /// <summary>
-/// Builds the small set of tool result shapes the core tools return: a plain text
-/// status, an error status the model can act on, and an inline image.
+/// Builds the small set of tool result shapes the tools return: a plain text
+/// status, an error status the model can act on, an inline image, and a structured
+/// value paired with its text rendering.
 /// </summary>
 internal static class ToolResultHelper
 {
@@ -22,6 +24,18 @@ internal static class ToolResultHelper
     /// <summary>A successful result carrying an inline image.</summary>
     public static CallToolResult Image(byte[] bytes, string mimeType = "image/png")
         => new() { Content = [ImageContentBlock.FromBytes(bytes, mimeType)] };
+
+    /// <summary>
+    /// A successful result carrying a structured value. The value is set as the
+    /// machine-readable structured content, and a text rendering is included for
+    /// readability (the JSON itself when no text is supplied).
+    /// </summary>
+    public static CallToolResult Structured(JsonElement value, string? text = null)
+        => new()
+        {
+            StructuredContent = value,
+            Content = [new TextContentBlock { Text = text ?? value.ToString() }],
+        };
 
     /// <summary>
     /// The guidance returned when a ref is used before any snapshot has been taken.
