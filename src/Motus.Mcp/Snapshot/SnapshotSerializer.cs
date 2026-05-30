@@ -26,21 +26,69 @@ internal static class SnapshotSerializer
     public static SerializedSnapshot Serialize(AccessibilitySnapshot snapshot)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
+        return Serialize(snapshot.Roots, maxDepth: null);
+    }
+
+    /// <summary>
+    /// Renders the given root nodes, optionally limiting how deep the tree is
+    /// walked. <paramref name="maxDepth"/> counts levels below each root: 0 renders
+    /// only the roots, 1 adds their direct children, and null is unbounded. Refs
+    /// are assigned only to nodes that are rendered.
+    /// </summary>
+    public static SerializedSnapshot Serialize(IReadOnlyList<AccessibilityNode> roots, int? maxDepth)
+    {
+        ArgumentNullException.ThrowIfNull(roots);
 
         var builder = new StringBuilder();
         var refMap = new Dictionary<string, long>(StringComparer.Ordinal);
         var nextRef = 1;
 
-        foreach (var root in snapshot.Roots)
-            nextRef = WriteNode(root, depth: 0, builder, refMap, nextRef);
+        foreach (var root in roots)
+            nextRef = WriteNode(root, depth: 0, maxDepth, builder, refMap, nextRef);
 
         return new SerializedSnapshot(builder.ToString(), refMap);
     }
 
+    /// <summary>
+    /// Finds the first node with the given backend DOM node id, searching the
+    /// roots in document order, or null if none carries it.
+    /// </summary>
+    public static AccessibilityNode? FindByBackendId(IReadOnlyList<AccessibilityNode> roots, long backendNodeId)
+    {
+        ArgumentNullException.ThrowIfNull(roots);
+
+        foreach (var root in roots)
+        {
+            var match = FindByBackendId(root, backendNodeId);
+            if (match is not null)
+                return match;
+        }
+
+        return null;
+    }
+
+    private static AccessibilityNode? FindByBackendId(AccessibilityNode node, long backendNodeId)
+    {
+        if (node.BackendDOMNodeId == backendNodeId)
+            return node;
+
+        foreach (var child in node.Children)
+        {
+            var match = FindByBackendId(child, backendNodeId);
+            if (match is not null)
+                return match;
+        }
+
+        return null;
+    }
+
     private static int WriteNode(
-        AccessibilityNode node, int depth, StringBuilder builder,
+        AccessibilityNode node, int depth, int? maxDepth, StringBuilder builder,
         Dictionary<string, long> refMap, int nextRef)
     {
+        if (maxDepth is { } limit && depth > limit)
+            return nextRef;
+
         builder.Append(' ', depth * 2).Append("- ");
         builder.Append(string.IsNullOrEmpty(node.Role) ? "generic" : node.Role);
 
@@ -69,7 +117,7 @@ internal static class SnapshotSerializer
         builder.Append('\n');
 
         foreach (var child in node.Children)
-            nextRef = WriteNode(child, depth + 1, builder, refMap, nextRef);
+            nextRef = WriteNode(child, depth + 1, maxDepth, builder, refMap, nextRef);
 
         return nextRef;
     }

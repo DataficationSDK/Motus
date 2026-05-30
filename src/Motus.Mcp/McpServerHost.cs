@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
@@ -47,9 +48,14 @@ public static class McpServerHost
 
         builder.Services.AddSingleton(options);
         builder.Services.AddSingleton<BrowserSessionManager>();
+        builder.Services.AddSingleton<ActivePageService>();
 
         var mcpBuilder = builder.Services.AddMcpServer(ConfigureServerOptions);
         configureTransport(mcpBuilder);
+
+        // Register the tools explicitly (not by assembly scanning) so the schema is
+        // generated without runtime reflection and stays AOT-clean.
+        mcpBuilder.WithTools<CoreTools>(McpJsonUtilities.DefaultOptions);
 
         using var host = builder.Build();
 
