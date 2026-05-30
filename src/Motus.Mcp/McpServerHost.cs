@@ -49,9 +49,13 @@ public static class McpServerHost
         builder.Services.AddSingleton(options);
         builder.Services.AddSingleton<BrowserSessionManager>();
         builder.Services.AddSingleton<DialogService>();
+        builder.Services.AddSingleton<ConsoleService>();
+        builder.Services.AddSingleton<NetworkService>();
         builder.Services.AddSingleton(sp => new ActivePageService(
             sp.GetRequiredService<BrowserSessionManager>(),
-            sp.GetRequiredService<DialogService>()));
+            sp.GetRequiredService<DialogService>(),
+            sp.GetRequiredService<ConsoleService>(),
+            sp.GetRequiredService<NetworkService>()));
 
         var mcpBuilder = builder.Services.AddMcpServer(ConfigureServerOptions);
         configureTransport(mcpBuilder);
@@ -62,6 +66,8 @@ public static class McpServerHost
         mcpBuilder.WithTools<InteractionTools>(McpJsonUtilities.DefaultOptions);
         mcpBuilder.WithTools<SessionTools>(McpJsonUtilities.DefaultOptions);
         mcpBuilder.WithTools<PageTools>(McpJsonUtilities.DefaultOptions);
+        mcpBuilder.WithTools<NetworkTools>(McpJsonUtilities.DefaultOptions);
+        mcpBuilder.WithTools<ConsoleTools>(McpJsonUtilities.DefaultOptions);
 
         using var host = builder.Build();
 

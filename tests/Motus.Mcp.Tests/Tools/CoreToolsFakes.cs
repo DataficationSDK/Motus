@@ -93,6 +93,20 @@ internal sealed class FakeToolPage(AccessibilitySnapshot snapshot) : IPage
     /// <summary>Raises the <see cref="Dialog"/> event with the given dialog, as the browser would.</summary>
     public void RaiseDialog(IDialog dialog) => Dialog?.Invoke(this, new DialogEventArgs(dialog));
 
+    /// <summary>Raises the <see cref="Console"/> event, as the browser would on a console call.</summary>
+    public void RaiseConsole(string type, string text)
+        => Console?.Invoke(this, new ConsoleMessageEventArgs(type, text));
+
+    /// <summary>Raises the <see cref="PageError"/> event, as the browser would on an uncaught error.</summary>
+    public void RaisePageError(string message, string? stack = null)
+        => PageError?.Invoke(this, new PageErrorEventArgs(message, stack));
+
+    /// <summary>Raises the <see cref="Response"/> event, as the browser would when a response arrives.</summary>
+    public void RaiseResponse(IResponse response) => Response?.Invoke(this, new ResponseEventArgs(response));
+
+    /// <summary>Raises the <see cref="RequestFailed"/> event, as the browser would on a failed request.</summary>
+    public void RaiseRequestFailed(IRequest request) => RequestFailed?.Invoke(this, new RequestEventArgs(request));
+
     public Task<AccessibilitySnapshot> AccessibilitySnapshotAsync(CancellationToken ct = default)
         => Task.FromResult(snapshot);
 
@@ -407,6 +421,149 @@ internal sealed class FakeDialog(DialogType type = DialogType.Alert, string mess
         Dismissed = true;
         return Task.CompletedTask;
     }
+}
+
+/// <summary>
+/// An <see cref="ActivePageService"/> for the network tools. It serves a fixed fake
+/// page and returns a recording <see cref="FakeBrowserContext"/> as the active
+/// context, so route registration runs for real against the fake context without a
+/// browser.
+/// </summary>
+internal sealed class FakeNetworkPageService : ActivePageService
+{
+    private readonly FakeToolPage _page;
+
+    public FakeNetworkPageService(FakeToolPage? page = null)
+        : base(new BrowserSessionManager(new McpServerLaunchOptions()))
+        => _page = page ?? new FakeToolPage(new AccessibilitySnapshot([], 0, null));
+
+    /// <summary>The recording context returned by <see cref="GetOrCreateActiveContextAsync"/>.</summary>
+    public FakeBrowserContext Context { get; } = new();
+
+    protected override Task<IPage> ResolvePageAsync(CancellationToken cancellationToken)
+        => Task.FromResult<IPage>(_page);
+
+    public override Task<IBrowserContext> GetOrCreateActiveContextAsync(CancellationToken cancellationToken = default)
+        => Task.FromResult<IBrowserContext>(Context);
+}
+
+/// <summary>
+/// A fake context that records the route patterns registered and removed and keeps
+/// the handler for each pattern so a test can invoke it. Every other member is unused.
+/// </summary>
+internal sealed class FakeBrowserContext : IBrowserContext
+{
+    /// <summary>The patterns passed to <see cref="RouteAsync"/>, in call order.</summary>
+    public List<string> RoutedPatterns { get; } = [];
+
+    /// <summary>The patterns passed to <see cref="UnrouteAsync"/>, in call order.</summary>
+    public List<string> UnroutedPatterns { get; } = [];
+
+    /// <summary>The handler registered for each routed pattern.</summary>
+    public Dictionary<string, Func<IRoute, Task>> Handlers { get; } = new(StringComparer.Ordinal);
+
+    public Task RouteAsync(string urlPattern, Func<IRoute, Task> handler)
+    {
+        RoutedPatterns.Add(urlPattern);
+        Handlers[urlPattern] = handler;
+        return Task.CompletedTask;
+    }
+
+    public Task UnrouteAsync(string urlPattern, Func<IRoute, Task>? handler = null)
+    {
+        UnroutedPatterns.Add(urlPattern);
+        Handlers.Remove(urlPattern);
+        return Task.CompletedTask;
+    }
+
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+
+#pragma warning disable CS0067 // events are part of the interface but unused in tests
+    public event EventHandler<IPage>? Page;
+    public event EventHandler? Close;
+#pragma warning restore CS0067
+
+    public IBrowser Browser => throw new NotImplementedException();
+    public IReadOnlyList<IPage> Pages => throw new NotImplementedException();
+    public ITracing Tracing => throw new NotImplementedException();
+    public Task<IPage> NewPageAsync() => throw new NotImplementedException();
+    public Task<IReadOnlyList<Cookie>> CookiesAsync(IEnumerable<string>? urls = null) => throw new NotImplementedException();
+    public Task AddCookiesAsync(IEnumerable<Cookie> cookies) => throw new NotImplementedException();
+    public Task ClearCookiesAsync() => throw new NotImplementedException();
+    public Task GrantPermissionsAsync(IEnumerable<string> permissions, string? origin = null) => throw new NotImplementedException();
+    public Task ClearPermissionsAsync() => throw new NotImplementedException();
+    public Task SetGeolocationAsync(Geolocation? geolocation) => throw new NotImplementedException();
+    public Task SetOfflineAsync(bool offline) => throw new NotImplementedException();
+    public Task SetExtraHTTPHeadersAsync(IDictionary<string, string> headers) => throw new NotImplementedException();
+    public Task<StorageState> StorageStateAsync(string? path = null) => throw new NotImplementedException();
+    public Task ExposeBindingAsync(string name, Func<object?[], Task<object?>> callback) => throw new NotImplementedException();
+    public Task AddInitScriptAsync(string script) => throw new NotImplementedException();
+    public IPluginContext GetPluginContext() => throw new NotImplementedException();
+    public Task CloseAsync() => throw new NotImplementedException();
+}
+
+/// <summary>
+/// A fake route that records how it was answered: fulfilled (with what options),
+/// continued (with what options), or aborted (with what error code).
+/// </summary>
+internal sealed class FakeRoute(IRequest? request = null) : IRoute
+{
+    public IRequest Request { get; } = request ?? new FakeRequest();
+
+    public RouteFulfillOptions? FulfilledWith { get; private set; }
+    public RouteContinueOptions? ContinuedWith { get; private set; }
+    public bool ContinueCalled { get; private set; }
+    public string? AbortedWith { get; private set; }
+    public bool AbortCalled { get; private set; }
+
+    public Task FulfillAsync(RouteFulfillOptions? options = null)
+    {
+        FulfilledWith = options;
+        return Task.CompletedTask;
+    }
+
+    public Task ContinueAsync(RouteContinueOptions? options = null)
+    {
+        ContinueCalled = true;
+        ContinuedWith = options;
+        return Task.CompletedTask;
+    }
+
+    public Task AbortAsync(string? errorCode = null)
+    {
+        AbortCalled = true;
+        AbortedWith = errorCode;
+        return Task.CompletedTask;
+    }
+}
+
+/// <summary>A fake request exposing the fields the request log reads. Every other member is unused.</summary>
+internal sealed class FakeRequest(string method = "GET", string url = "https://example.test/", string resourceType = "fetch")
+    : IRequest
+{
+    public string Url { get; } = url;
+    public string Method { get; } = method;
+    public string ResourceType { get; } = resourceType;
+    public string? PostData => null;
+    public bool IsNavigationRequest => false;
+    public IResponse? Response => null;
+    public IHeaderCollection Headers => throw new NotImplementedException();
+    public IFrame Frame => throw new NotImplementedException();
+}
+
+/// <summary>A fake response exposing the fields the request log reads. Every other member is unused.</summary>
+internal sealed class FakeResponse(IRequest request, int status = 200, string? url = null) : IResponse
+{
+    public string Url { get; } = url ?? request.Url;
+    public int Status { get; } = status;
+    public IRequest Request { get; } = request;
+    public string StatusText => "OK";
+    public bool Ok => Status is >= 200 and <= 299;
+    public IHeaderCollection Headers => throw new NotImplementedException();
+    public IFrame Frame => throw new NotImplementedException();
+    public Task<byte[]> BodyAsync(CancellationToken ct = default) => throw new NotImplementedException();
+    public Task<string> TextAsync(CancellationToken ct = default) => throw new NotImplementedException();
+    public Task<T> JsonAsync<T>(CancellationToken ct = default) => throw new NotImplementedException();
 }
 
 /// <summary>

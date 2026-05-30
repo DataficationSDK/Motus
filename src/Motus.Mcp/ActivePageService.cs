@@ -20,17 +20,25 @@ public class ActivePageService : IAsyncDisposable
 {
     private readonly BrowserSessionManager _sessions;
     private readonly DialogService? _dialogService;
+    private readonly ConsoleService? _consoleService;
+    private readonly NetworkService? _networkService;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly ConditionalWeakTable<IPage, PageSnapshotService> _snapshots = new();
 
     private IPage? _activePage;
     private int _disposed;
 
-    public ActivePageService(BrowserSessionManager sessions, DialogService? dialogService = null)
+    public ActivePageService(
+        BrowserSessionManager sessions,
+        DialogService? dialogService = null,
+        ConsoleService? consoleService = null,
+        NetworkService? networkService = null)
     {
         ArgumentNullException.ThrowIfNull(sessions);
         _sessions = sessions;
         _dialogService = dialogService;
+        _consoleService = consoleService;
+        _networkService = networkService;
     }
 
     /// <summary>
@@ -47,7 +55,7 @@ public class ActivePageService : IAsyncDisposable
                 return _activePage;
 
             _activePage = await ResolvePageAsync(cancellationToken).ConfigureAwait(false);
-            _dialogService?.Subscribe(_activePage);
+            SubscribeObservers(_activePage);
             return _activePage;
         }
         finally
@@ -108,7 +116,19 @@ public class ActivePageService : IAsyncDisposable
         // protocol delivers one at a time, so there is no concurrent reader of the
         // active page to race against here.
         _activePage = page;
+        SubscribeObservers(page);
+    }
+
+    /// <summary>
+    /// Points the page-following observers (dialog, console, network log) at the
+    /// given page, so each captures the active tab's events. Called whenever the
+    /// active page is resolved or switched.
+    /// </summary>
+    private void SubscribeObservers(IPage page)
+    {
         _dialogService?.Subscribe(page);
+        _consoleService?.Subscribe(page);
+        _networkService?.SubscribePage(page);
     }
 
     /// <summary>
@@ -123,6 +143,14 @@ public class ActivePageService : IAsyncDisposable
 
     /// <summary>The name of the context that unscoped tool calls act on.</summary>
     public virtual string GetActiveContextName() => _sessions.ActiveContextName;
+
+    /// <summary>
+    /// Returns the active context, launching the browser and creating the context on
+    /// first use. This touches the browser, so tests override it to supply a fake
+    /// context. Used by the network tools to register context-level route rules.
+    /// </summary>
+    public virtual Task<IBrowserContext> GetOrCreateActiveContextAsync(CancellationToken cancellationToken = default)
+        => _sessions.GetOrCreateActiveContextAsync(cancellationToken);
 
     /// <summary>
     /// Returns the open pages of the active context. This touches the browser, so
