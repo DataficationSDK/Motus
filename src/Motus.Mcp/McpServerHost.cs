@@ -56,6 +56,7 @@ public static class McpServerHost
         // Register the tools explicitly (not by assembly scanning) so the schema is
         // generated without runtime reflection and stays AOT-clean.
         mcpBuilder.WithTools<CoreTools>(McpJsonUtilities.DefaultOptions);
+        mcpBuilder.WithTools<InteractionTools>(McpJsonUtilities.DefaultOptions);
 
         using var host = builder.Build();
 

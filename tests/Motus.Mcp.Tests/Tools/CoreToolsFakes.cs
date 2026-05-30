@@ -1,3 +1,4 @@
+using System.Linq;
 using Motus.Abstractions;
 using Motus.Mcp;
 
@@ -37,6 +38,18 @@ internal sealed class FakeToolPage(AccessibilitySnapshot snapshot) : IPage
 
     /// <summary>When set, <see cref="GotoAsync"/> throws this to simulate a failed navigation.</summary>
     public Exception? GotoError { get; init; }
+
+    /// <summary>The page-level keyboard, recording the keys <c>press_key</c> sends.</summary>
+    public FakeKeyboard FakeKeyboard { get; } = new();
+
+    /// <summary>The last timeout passed to <see cref="WaitForTimeoutAsync"/>.</summary>
+    public double? WaitedTimeoutMs { get; private set; }
+
+    /// <summary>The function expressions passed to <see cref="WaitForFunctionAsync{T}"/>.</summary>
+    public List<string> WaitedFunctions { get; } = [];
+
+    /// <summary>The arguments passed alongside each <see cref="WaitForFunctionAsync{T}"/> call.</summary>
+    public List<object?> WaitedFunctionArgs { get; } = [];
 
     public Task<AccessibilitySnapshot> AccessibilitySnapshotAsync(CancellationToken ct = default)
         => Task.FromResult(snapshot);
@@ -86,7 +99,7 @@ internal sealed class FakeToolPage(AccessibilitySnapshot snapshot) : IPage
     public IFrame MainFrame => throw new NotImplementedException();
     public IReadOnlyList<IFrame> Frames => throw new NotImplementedException();
     public string Url => throw new NotImplementedException();
-    public IKeyboard Keyboard => throw new NotImplementedException();
+    public IKeyboard Keyboard => FakeKeyboard;
     public IMouse Mouse => throw new NotImplementedException();
     public ITouchscreen Touchscreen => throw new NotImplementedException();
     public IVideo? Video => throw new NotImplementedException();
@@ -108,7 +121,13 @@ internal sealed class FakeToolPage(AccessibilitySnapshot snapshot) : IPage
     public ILocator GetByAltText(string text, bool? exact = null) => throw new NotImplementedException();
     public Task<T> EvaluateAsync<T>(string expression, object? arg = null) => throw new NotImplementedException();
     public Task<IJSHandle> EvaluateHandleAsync(string expression, object? arg = null) => throw new NotImplementedException();
-    public Task<T> WaitForFunctionAsync<T>(string expression, object? arg = null, double? timeout = null) => throw new NotImplementedException();
+    public Task<T> WaitForFunctionAsync<T>(string expression, object? arg = null, double? timeout = null)
+    {
+        WaitedFunctions.Add(expression);
+        WaitedFunctionArgs.Add(arg);
+        return Task.FromResult<T>(default!);
+    }
+
     public Task WaitForLoadStateAsync(LoadState? state = null, double? timeout = null) => throw new NotImplementedException();
     public Task<IResponse?> WaitForNavigationAsync(NavigationOptions? options = null) => throw new NotImplementedException();
     public Task WaitForURLAsync(string urlPattern, NavigationOptions? options = null) => throw new NotImplementedException();
@@ -117,7 +136,11 @@ internal sealed class FakeToolPage(AccessibilitySnapshot snapshot) : IPage
     public Task<IRequest> WaitForRequestAsync(Func<IRequest, bool> predicate, double? timeout = null) => throw new NotImplementedException();
     public Task<IResponse> WaitForResponseAsync(Func<IResponse, bool> predicate, double? timeout = null) => throw new NotImplementedException();
     public Task<IPage> WaitForPopupAsync(double? timeout = null) => throw new NotImplementedException();
-    public Task WaitForTimeoutAsync(double timeout) => throw new NotImplementedException();
+    public Task WaitForTimeoutAsync(double timeout)
+    {
+        WaitedTimeoutMs = timeout;
+        return Task.CompletedTask;
+    }
     public Task RouteAsync(string urlPattern, Func<IRoute, Task> handler) => throw new NotImplementedException();
     public Task UnrouteAsync(string urlPattern, Func<IRoute, Task>? handler = null) => throw new NotImplementedException();
     public Task AddInitScriptAsync(string script) => throw new NotImplementedException();
@@ -142,6 +165,14 @@ internal sealed class FakeToolLocator : ILocator
     public string? FilledValue { get; private set; }
     public string? TypedValue { get; private set; }
     public List<string> PressedKeys { get; } = [];
+    public int HoverCount { get; private set; }
+    public int ClearCount { get; private set; }
+    public int FocusCount { get; private set; }
+    public int ScrollIntoViewCount { get; private set; }
+    public bool? CheckedValue { get; private set; }
+    public IReadOnlyList<string>? SelectedValues { get; private set; }
+    public IReadOnlyList<FilePayload>? UploadedFiles { get; private set; }
+    public ElementState? WaitedForState { get; private set; }
 
     public Task ClickAsync(double? timeout = null)
     {
@@ -175,14 +206,50 @@ internal sealed class FakeToolLocator : ILocator
 
     public Task CheckAsync(double? timeout = null) => throw new NotImplementedException();
     public Task UncheckAsync(double? timeout = null) => throw new NotImplementedException();
-    public Task SetCheckedAsync(bool @checked, double? timeout = null) => throw new NotImplementedException();
-    public Task ClearAsync(double? timeout = null) => throw new NotImplementedException();
-    public Task FocusAsync(double? timeout = null) => throw new NotImplementedException();
-    public Task HoverAsync(double? timeout = null) => throw new NotImplementedException();
-    public Task<IReadOnlyList<string>> SelectOptionAsync(params string[] values) => throw new NotImplementedException();
-    public Task SetInputFilesAsync(IEnumerable<FilePayload> files, double? timeout = null) => throw new NotImplementedException();
+
+    public Task SetCheckedAsync(bool @checked, double? timeout = null)
+    {
+        CheckedValue = @checked;
+        return Task.CompletedTask;
+    }
+
+    public Task ClearAsync(double? timeout = null)
+    {
+        ClearCount++;
+        return Task.CompletedTask;
+    }
+
+    public Task FocusAsync(double? timeout = null)
+    {
+        FocusCount++;
+        return Task.CompletedTask;
+    }
+
+    public Task HoverAsync(double? timeout = null)
+    {
+        HoverCount++;
+        return Task.CompletedTask;
+    }
+
+    public Task<IReadOnlyList<string>> SelectOptionAsync(params string[] values)
+    {
+        SelectedValues = values;
+        return Task.FromResult<IReadOnlyList<string>>(values);
+    }
+
+    public Task SetInputFilesAsync(IEnumerable<FilePayload> files, double? timeout = null)
+    {
+        UploadedFiles = files.ToList();
+        return Task.CompletedTask;
+    }
+
     public Task TapAsync(double? timeout = null) => throw new NotImplementedException();
-    public Task ScrollIntoViewIfNeededAsync(double? timeout = null) => throw new NotImplementedException();
+
+    public Task ScrollIntoViewIfNeededAsync(double? timeout = null)
+    {
+        ScrollIntoViewCount++;
+        return Task.CompletedTask;
+    }
     public Task<byte[]> ScreenshotAsync(ScreenshotOptions? options = null) => throw new NotImplementedException();
     public Task DispatchEventAsync(string type, object? eventInit = null) => throw new NotImplementedException();
     public Task<T> EvaluateAsync<T>(string expression, object? arg = null) => throw new NotImplementedException();
@@ -207,7 +274,31 @@ internal sealed class FakeToolLocator : ILocator
     public ILocator Nth(int index) => throw new NotImplementedException();
     public ILocator Filter(LocatorOptions? options = null) => throw new NotImplementedException();
     public ILocator Locator(string selector, LocatorOptions? options = null) => throw new NotImplementedException();
-    public Task WaitForAsync(ElementState? state = null, double? timeout = null) => throw new NotImplementedException();
+    public Task WaitForAsync(ElementState? state = null, double? timeout = null)
+    {
+        WaitedForState = state;
+        return Task.CompletedTask;
+    }
     public Task<IElementHandle> ElementHandleAsync(double? timeout = null) => throw new NotImplementedException();
     public Task<IReadOnlyList<IElementHandle>> ElementHandlesAsync() => throw new NotImplementedException();
+}
+
+/// <summary>
+/// A fake page-level keyboard that records the keys <c>press_key</c> sends and
+/// no-ops the rest.
+/// </summary>
+internal sealed class FakeKeyboard : IKeyboard
+{
+    public List<string> PressedKeys { get; } = [];
+
+    public Task PressAsync(string key, KeyboardPressOptions? options = null)
+    {
+        PressedKeys.Add(key);
+        return Task.CompletedTask;
+    }
+
+    public Task DownAsync(string key) => throw new NotImplementedException();
+    public Task UpAsync(string key) => throw new NotImplementedException();
+    public Task TypeAsync(string text, KeyboardTypeOptions? options = null) => throw new NotImplementedException();
+    public Task InsertTextAsync(string text) => throw new NotImplementedException();
 }

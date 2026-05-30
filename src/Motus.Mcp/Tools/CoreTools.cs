@@ -165,10 +165,7 @@ public sealed class CoreTools
         }
     }
 
-    private static CallToolResult NoSnapshot()
-        => ToolResultHelper.Error("No snapshot has been taken. Call snapshot first, then retry with a ref from it.");
+    private static CallToolResult NoSnapshot() => ToolResultHelper.NoSnapshot();
 
-    private static CallToolResult Stale(StaleRefException ex)
-        => ToolResultHelper.Error(
-            $"Ref '{ex.RefId}' is not in the latest snapshot. Call snapshot to refresh refs, then retry.");
+    private static CallToolResult Stale(StaleRefException ex) => ToolResultHelper.Stale(ex);
 }

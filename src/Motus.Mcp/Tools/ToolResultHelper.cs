@@ -22,4 +22,18 @@ internal static class ToolResultHelper
     /// <summary>A successful result carrying an inline image.</summary>
     public static CallToolResult Image(byte[] bytes, string mimeType = "image/png")
         => new() { Content = [ImageContentBlock.FromBytes(bytes, mimeType)] };
+
+    /// <summary>
+    /// The guidance returned when a ref is used before any snapshot has been taken.
+    /// Shared by every tool that addresses an element by ref.
+    /// </summary>
+    public static CallToolResult NoSnapshot()
+        => Error("No snapshot has been taken. Call snapshot first, then retry with a ref from it.");
+
+    /// <summary>
+    /// The guidance returned when a ref is not in the latest snapshot. Shared by
+    /// every tool that addresses an element by ref.
+    /// </summary>
+    public static CallToolResult Stale(StaleRefException ex)
+        => Error($"Ref '{ex.RefId}' is not in the latest snapshot. Call snapshot to refresh refs, then retry.");
 }
