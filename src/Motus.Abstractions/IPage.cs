@@ -198,6 +198,24 @@ public interface IPage : IAsyncDisposable
     /// <returns>The current performance metrics, or null if none have been collected.</returns>
     Task<PerformanceMetrics?> GetPerformanceMetricsAsync(CancellationToken ct = default);
 
+    /// <summary>
+    /// Begins recording this page's network traffic as an HTTP archive. Requests and
+    /// responses that occur after this call are captured until
+    /// <see cref="StopHarRecordingAsync"/> writes them out. Calling this while a
+    /// recording is already in progress has no effect.
+    /// </summary>
+    /// <param name="ct">A token to cancel the operation.</param>
+    Task StartHarRecordingAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Stops the recording started by <see cref="StartHarRecordingAsync"/> and writes
+    /// the captured traffic to <paramref name="path"/> as an HTTP archive (HAR 1.2)
+    /// file. Throws if no recording is in progress.
+    /// </summary>
+    /// <param name="path">The file path to write the HAR archive to.</param>
+    /// <param name="ct">A token to cancel the operation.</param>
+    Task StopHarRecordingAsync(string path, CancellationToken ct = default);
+
     // --- Locators ---
 
     /// <summary>

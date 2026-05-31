@@ -2,6 +2,9 @@ namespace Motus;
 
 /// <summary>HAR 1.2 model records for trace export serialization.</summary>
 
+/// <summary>Top-level HAR archive wrapper, written as a standalone <c>.har</c> file.</summary>
+internal sealed record HarArchive(HarLog Log);
+
 internal sealed record HarLog(
     string Version,
     HarCreator Creator,

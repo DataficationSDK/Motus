@@ -3,6 +3,7 @@ using System.Text.Json.Serialization;
 
 namespace Motus;
 
+[JsonSerializable(typeof(HarArchive))]
 [JsonSerializable(typeof(HarLog))]
 [JsonSerializable(typeof(HarCreator))]
 [JsonSerializable(typeof(HarPage))]

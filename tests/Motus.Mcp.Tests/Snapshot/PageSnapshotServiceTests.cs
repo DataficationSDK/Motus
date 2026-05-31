@@ -102,6 +102,10 @@ public class PageSnapshotServiceTests
         public Task<PerformanceMetrics?> GetPerformanceMetricsAsync(CancellationToken ct = default)
             => throw new NotImplementedException();
 
+        public Task StartHarRecordingAsync(CancellationToken ct = default) => throw new NotImplementedException();
+
+        public Task StopHarRecordingAsync(string path, CancellationToken ct = default) => throw new NotImplementedException();
+
         public ILocator LocatorByBackendNodeId(long backendNodeId) => throw new NotImplementedException();
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;

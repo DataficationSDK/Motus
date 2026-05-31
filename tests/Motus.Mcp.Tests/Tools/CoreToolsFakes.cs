@@ -101,6 +101,15 @@ internal sealed class FakeToolPage(AccessibilitySnapshot snapshot) : IPage
     /// <summary>When set, <see cref="GetPerformanceMetricsAsync"/> throws this to simulate a collection failure.</summary>
     public Exception? PerformanceError { get; init; }
 
+    /// <summary>Whether a HAR recording is currently in progress on this fake.</summary>
+    public bool HarRecording { get; private set; }
+
+    /// <summary>The path passed to the most recent <see cref="StopHarRecordingAsync"/> call.</summary>
+    public string? HarStoppedPath { get; private set; }
+
+    /// <summary>When set, <see cref="StopHarRecordingAsync"/> throws this to simulate a write failure.</summary>
+    public Exception? HarError { get; init; }
+
     private bool _closed;
 
     /// <summary>Raises the <see cref="Dialog"/> event with the given dialog, as the browser would.</summary>
@@ -135,6 +144,21 @@ internal sealed class FakeToolPage(AccessibilitySnapshot snapshot) : IPage
         if (PerformanceError is not null)
             throw PerformanceError;
         return Task.FromResult(PerformanceMetrics);
+    }
+
+    public Task StartHarRecordingAsync(CancellationToken ct = default)
+    {
+        HarRecording = true;
+        return Task.CompletedTask;
+    }
+
+    public Task StopHarRecordingAsync(string path, CancellationToken ct = default)
+    {
+        if (HarError is not null)
+            throw HarError;
+        HarRecording = false;
+        HarStoppedPath = path;
+        return Task.CompletedTask;
     }
 
     public ILocator LocatorByBackendNodeId(long backendNodeId)
@@ -489,6 +513,9 @@ internal sealed class FakeBrowserContext : IBrowserContext
     /// <summary>The handler registered for each routed pattern.</summary>
     public Dictionary<string, Func<IRoute, Task>> Handlers { get; } = new(StringComparer.Ordinal);
 
+    /// <summary>The recording tracing fake, so a test can assert on start/stop calls.</summary>
+    public FakeTracing TracingFake { get; } = new();
+
     public Task RouteAsync(string urlPattern, Func<IRoute, Task> handler)
     {
         RoutedPatterns.Add(urlPattern);
@@ -512,7 +539,7 @@ internal sealed class FakeBrowserContext : IBrowserContext
 
     public IBrowser Browser => throw new NotImplementedException();
     public IReadOnlyList<IPage> Pages => throw new NotImplementedException();
-    public ITracing Tracing => throw new NotImplementedException();
+    public ITracing Tracing => TracingFake;
     public Task<IPage> NewPageAsync() => throw new NotImplementedException();
     public Task<IReadOnlyList<Cookie>> CookiesAsync(IEnumerable<string>? urls = null) => throw new NotImplementedException();
     public Task AddCookiesAsync(IEnumerable<Cookie> cookies) => throw new NotImplementedException();
@@ -527,6 +554,29 @@ internal sealed class FakeBrowserContext : IBrowserContext
     public Task AddInitScriptAsync(string script) => throw new NotImplementedException();
     public IPluginContext GetPluginContext() => throw new NotImplementedException();
     public Task CloseAsync() => throw new NotImplementedException();
+}
+
+/// <summary>A fake tracing engine that records the options it was started and stopped with.</summary>
+internal sealed class FakeTracing : ITracing
+{
+    public bool Started { get; private set; }
+    public TracingStartOptions? StartedWith { get; private set; }
+    public bool Stopped { get; private set; }
+    public TracingStopOptions? StoppedWith { get; private set; }
+
+    public Task StartAsync(TracingStartOptions? options = null)
+    {
+        Started = true;
+        StartedWith = options;
+        return Task.CompletedTask;
+    }
+
+    public Task StopAsync(TracingStopOptions? options = null)
+    {
+        Stopped = true;
+        StoppedWith = options;
+        return Task.CompletedTask;
+    }
 }
 
 /// <summary>

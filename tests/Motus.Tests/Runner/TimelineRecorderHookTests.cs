@@ -102,6 +102,8 @@ public class TimelineRecorderHookTests
         public Task<AccessibilitySnapshot> AccessibilitySnapshotAsync(CancellationToken ct = default) => throw new NotImplementedException();
         public Task<AccessibilityAuditResult> RunAccessibilityAuditAsync(CancellationToken ct = default) => throw new NotImplementedException();
         public Task<PerformanceMetrics?> GetPerformanceMetricsAsync(CancellationToken ct = default) => throw new NotImplementedException();
+        public Task StartHarRecordingAsync(CancellationToken ct = default) => throw new NotImplementedException();
+        public Task StopHarRecordingAsync(string path, CancellationToken ct = default) => throw new NotImplementedException();
         public ILocator GetByRole(string role, string? name = null) => throw new NotImplementedException();
         public ILocator GetByText(string text, bool? exact = null) => throw new NotImplementedException();
         public ILocator GetByLabel(string text, bool? exact = null) => throw new NotImplementedException();
