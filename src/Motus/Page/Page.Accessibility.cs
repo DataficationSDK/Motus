@@ -25,6 +25,13 @@ internal sealed partial class Page
     }
 
     /// <summary>
+    /// Runs the accessibility rules registered on this page's context against the
+    /// page's accessibility tree and returns the violations found.
+    /// </summary>
+    public Task<AccessibilityAuditResult> RunAccessibilityAuditAsync(CancellationToken ct = default)
+        => RunAccessibilityAuditAsync(_context.AccessibilityRules.Snapshot(), ct);
+
+    /// <summary>
     /// Runs the registered accessibility rules against this page's accessibility tree.
     /// Pre-fetches computed styles, duplicate IDs, and document language for rules that need them.
     /// </summary>

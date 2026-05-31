@@ -11,6 +11,7 @@ public sealed class PageSnapshotService
 {
     private readonly IPage _page;
     private IReadOnlyDictionary<string, long>? _refToBackendNodeId;
+    private IReadOnlyDictionary<long, string>? _backendNodeIdToRef;
 
     public PageSnapshotService(IPage page)
     {
@@ -70,8 +71,19 @@ public sealed class PageSnapshotService
         }
 
         _refToBackendNodeId = serialized.RefToBackendNodeId;
+        _backendNodeIdToRef = BuildReverseMap(serialized.RefToBackendNodeId);
         LastSnapshot = serialized.Text;
         return serialized.Text;
+    }
+
+    private static Dictionary<long, string> BuildReverseMap(IReadOnlyDictionary<string, long> forward)
+    {
+        // The forward map is 1:1 (each ref maps to a distinct backend node), so a
+        // straight inversion is unambiguous.
+        var reverse = new Dictionary<long, string>(forward.Count);
+        foreach (var (refId, backendNodeId) in forward)
+            reverse[backendNodeId] = refId;
+        return reverse;
     }
 
     /// <summary>
@@ -91,4 +103,15 @@ public sealed class PageSnapshotService
 
         return _page.LocatorByBackendNodeId(backendNodeId);
     }
+
+    /// <summary>
+    /// Returns the ref the current snapshot assigned to the given backend DOM node,
+    /// or null when no snapshot has been taken or the node was not assigned a ref
+    /// (for example, a node the snapshot does not address).
+    /// </summary>
+    public string? GetRefForNodeId(long backendNodeId)
+        => _backendNodeIdToRef is not null
+            && _backendNodeIdToRef.TryGetValue(backendNodeId, out var refId)
+            ? refId
+            : null;
 }

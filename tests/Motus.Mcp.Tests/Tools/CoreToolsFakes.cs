@@ -88,6 +88,13 @@ internal sealed class FakeToolPage(AccessibilitySnapshot snapshot) : IPage
     /// <summary>When set, <see cref="EvaluateAsync{T}"/> throws this to simulate a script error.</summary>
     public Exception? EvaluateError { get; init; }
 
+    /// <summary>The result <see cref="RunAccessibilityAuditAsync"/> returns. Defaults to an empty audit.</summary>
+    public AccessibilityAuditResult AuditResult { get; set; } =
+        new([], PassCount: 0, ViolationCount: 0, Duration: TimeSpan.Zero);
+
+    /// <summary>When set, <see cref="RunAccessibilityAuditAsync"/> throws this to simulate an audit failure.</summary>
+    public Exception? AuditError { get; init; }
+
     private bool _closed;
 
     /// <summary>Raises the <see cref="Dialog"/> event with the given dialog, as the browser would.</summary>
@@ -109,6 +116,13 @@ internal sealed class FakeToolPage(AccessibilitySnapshot snapshot) : IPage
 
     public Task<AccessibilitySnapshot> AccessibilitySnapshotAsync(CancellationToken ct = default)
         => Task.FromResult(snapshot);
+
+    public Task<AccessibilityAuditResult> RunAccessibilityAuditAsync(CancellationToken ct = default)
+    {
+        if (AuditError is not null)
+            throw AuditError;
+        return Task.FromResult(AuditResult);
+    }
 
     public ILocator LocatorByBackendNodeId(long backendNodeId)
     {

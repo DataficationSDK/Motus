@@ -177,6 +177,16 @@ public interface IPage : IAsyncDisposable
     /// <returns>A snapshot of the accessibility tree.</returns>
     Task<AccessibilitySnapshot> AccessibilitySnapshotAsync(CancellationToken ct = default);
 
+    /// <summary>
+    /// Runs the built-in WCAG accessibility rules against the page's accessibility
+    /// tree and returns the violations found. Each violation carries a rule id,
+    /// severity, message, and, where the offending element is addressable, the
+    /// backend DOM node identifier that <see cref="LocatorByBackendNodeId"/> can target.
+    /// </summary>
+    /// <param name="ct">A token to cancel the operation.</param>
+    /// <returns>The audit result, including the violations and pass count.</returns>
+    Task<AccessibilityAuditResult> RunAccessibilityAuditAsync(CancellationToken ct = default);
+
     // --- Locators ---
 
     /// <summary>

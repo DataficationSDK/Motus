@@ -100,6 +100,7 @@ public class TimelineRecorderHookTests
         public ILocator Locator(string selector, LocatorOptions? options = null) => throw new NotImplementedException();
         public ILocator LocatorByBackendNodeId(long backendNodeId) => throw new NotImplementedException();
         public Task<AccessibilitySnapshot> AccessibilitySnapshotAsync(CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<AccessibilityAuditResult> RunAccessibilityAuditAsync(CancellationToken ct = default) => throw new NotImplementedException();
         public ILocator GetByRole(string role, string? name = null) => throw new NotImplementedException();
         public ILocator GetByText(string text, bool? exact = null) => throw new NotImplementedException();
         public ILocator GetByLabel(string text, bool? exact = null) => throw new NotImplementedException();

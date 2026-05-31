@@ -53,6 +53,37 @@ public class PageSnapshotServiceTests
         StringAssert.Contains(text, "- button \"Go\" [ref=e1]");
     }
 
+    [TestMethod]
+    public void GetRefForNodeId_BeforeSnapshot_ReturnsNull()
+    {
+        var service = new PageSnapshotService(new FakeAccessibilityPage(EmptySnapshot()));
+
+        Assert.IsNull(service.GetRefForNodeId(5));
+    }
+
+    [TestMethod]
+    public async Task GetRefForNodeId_AfterSnapshot_ReturnsRefForKnownNode_AndNullOtherwise()
+    {
+        var snapshot = new AccessibilitySnapshot(
+            Roots:
+            [
+                new AccessibilityNode("1", "img", "", null, null,
+                    new Dictionary<string, string?>(), [], BackendDOMNodeId: 5),
+                new AccessibilityNode("2", "button", "Go", null, null,
+                    new Dictionary<string, string?>(), [], BackendDOMNodeId: 7),
+            ],
+            IgnoredCount: 0,
+            DiagnosticMessage: null);
+
+        var service = new PageSnapshotService(new FakeAccessibilityPage(snapshot));
+        await service.TakeSnapshotAsync();
+
+        // Refs are assigned in document order, so the inverse maps each id back to its ref.
+        Assert.AreEqual("e1", service.GetRefForNodeId(5));
+        Assert.AreEqual("e2", service.GetRefForNodeId(7));
+        Assert.IsNull(service.GetRefForNodeId(999));
+    }
+
     private static AccessibilitySnapshot EmptySnapshot()
         => new([], IgnoredCount: 0, DiagnosticMessage: null);
 
@@ -64,6 +95,9 @@ public class PageSnapshotServiceTests
     {
         public Task<AccessibilitySnapshot> AccessibilitySnapshotAsync(CancellationToken ct = default)
             => Task.FromResult(snapshot);
+
+        public Task<AccessibilityAuditResult> RunAccessibilityAuditAsync(CancellationToken ct = default)
+            => throw new NotImplementedException();
 
         public ILocator LocatorByBackendNodeId(long backendNodeId) => throw new NotImplementedException();
 

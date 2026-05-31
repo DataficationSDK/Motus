@@ -68,6 +68,7 @@ public static class McpServerHost
         mcpBuilder.WithTools<PageTools>(McpJsonUtilities.DefaultOptions);
         mcpBuilder.WithTools<NetworkTools>(McpJsonUtilities.DefaultOptions);
         mcpBuilder.WithTools<ConsoleTools>(McpJsonUtilities.DefaultOptions);
+        mcpBuilder.WithTools<AccessibilityTools>(McpJsonUtilities.DefaultOptions);
 
         using var host = builder.Build();
 
