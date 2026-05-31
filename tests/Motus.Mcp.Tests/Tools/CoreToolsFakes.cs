@@ -95,6 +95,12 @@ internal sealed class FakeToolPage(AccessibilitySnapshot snapshot) : IPage
     /// <summary>When set, <see cref="RunAccessibilityAuditAsync"/> throws this to simulate an audit failure.</summary>
     public Exception? AuditError { get; init; }
 
+    /// <summary>The metrics <see cref="GetPerformanceMetricsAsync"/> returns. Null models no collection yet.</summary>
+    public PerformanceMetrics? PerformanceMetrics { get; set; }
+
+    /// <summary>When set, <see cref="GetPerformanceMetricsAsync"/> throws this to simulate a collection failure.</summary>
+    public Exception? PerformanceError { get; init; }
+
     private bool _closed;
 
     /// <summary>Raises the <see cref="Dialog"/> event with the given dialog, as the browser would.</summary>
@@ -122,6 +128,13 @@ internal sealed class FakeToolPage(AccessibilitySnapshot snapshot) : IPage
         if (AuditError is not null)
             throw AuditError;
         return Task.FromResult(AuditResult);
+    }
+
+    public Task<PerformanceMetrics?> GetPerformanceMetricsAsync(CancellationToken ct = default)
+    {
+        if (PerformanceError is not null)
+            throw PerformanceError;
+        return Task.FromResult(PerformanceMetrics);
     }
 
     public ILocator LocatorByBackendNodeId(long backendNodeId)

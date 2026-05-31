@@ -99,6 +99,9 @@ public class PageSnapshotServiceTests
         public Task<AccessibilityAuditResult> RunAccessibilityAuditAsync(CancellationToken ct = default)
             => throw new NotImplementedException();
 
+        public Task<PerformanceMetrics?> GetPerformanceMetricsAsync(CancellationToken ct = default)
+            => throw new NotImplementedException();
+
         public ILocator LocatorByBackendNodeId(long backendNodeId) => throw new NotImplementedException();
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;

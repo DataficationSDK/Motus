@@ -187,6 +187,17 @@ public interface IPage : IAsyncDisposable
     /// <returns>The audit result, including the violations and pass count.</returns>
     Task<AccessibilityAuditResult> RunAccessibilityAuditAsync(CancellationToken ct = default);
 
+    /// <summary>
+    /// Returns the page's performance metrics: Core Web Vitals (LCP, FCP, CLS, INP)
+    /// along with TTFB, JS heap size, and DOM node count. The metrics reflect the most
+    /// recent navigation, with the latest Core Web Vitals re-read on each call so values
+    /// that settle after load are picked up. Returns null when no metrics have been
+    /// collected yet.
+    /// </summary>
+    /// <param name="ct">A token to cancel the operation.</param>
+    /// <returns>The current performance metrics, or null if none have been collected.</returns>
+    Task<PerformanceMetrics?> GetPerformanceMetricsAsync(CancellationToken ct = default);
+
     // --- Locators ---
 
     /// <summary>

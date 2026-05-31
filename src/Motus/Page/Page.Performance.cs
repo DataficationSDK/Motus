@@ -76,4 +76,16 @@ internal sealed partial class Page
             // Best effort; keep existing metrics
         }
     }
+
+    /// <summary>
+    /// Refreshes the observer-derived Core Web Vitals and returns the current
+    /// performance snapshot. The full collection (heap, DOM node count, TTFB) is
+    /// populated after navigation; this call tops up late-arriving vitals before
+    /// returning. Null when no collection has run.
+    /// </summary>
+    public async Task<PerformanceMetrics?> GetPerformanceMetricsAsync(CancellationToken ct = default)
+    {
+        await RefreshPerformanceMetricsAsync(ct).ConfigureAwait(false);
+        return LastPerformanceMetrics;
+    }
 }

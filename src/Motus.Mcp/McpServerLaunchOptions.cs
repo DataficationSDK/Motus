@@ -31,5 +31,9 @@ public sealed record McpServerLaunchOptions
         Headless = Headless,
         ExecutablePath = ExecutablePath,
         Channel = Channel,
+        // Performance telemetry is collected for every session: the observer is
+        // injected at page creation and metrics are gathered after each navigation,
+        // so get_performance has data to return. The overhead is negligible.
+        Performance = new PerformanceOptions { Enable = true },
     };
 }
