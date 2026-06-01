@@ -38,7 +38,7 @@ public class PerformanceIntegrationTests
     public async Task Cleanup()
     {
         if (_pages is not null)
-            await _pages.DisposeAsync();
+            _pages.Shutdown();
         if (_sessions is not null)
             await _sessions.DisposeAsync();
     }

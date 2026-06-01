@@ -16,7 +16,7 @@ namespace Motus.Mcp;
 /// <see cref="ConditionalWeakTable{TKey,TValue}"/> so a page that is closed and
 /// collected takes its snapshot service with it.
 /// </remarks>
-public class ActivePageService : IAsyncDisposable
+public class ActivePageService
 {
     private readonly BrowserSessionManager _sessions;
     private readonly DialogService? _dialogService;
@@ -270,16 +270,22 @@ public class ActivePageService : IAsyncDisposable
 
     /// <summary>
     /// Releases this service's own resources. Pages and contexts are owned by
-    /// <see cref="BrowserSessionManager"/> and torn down there.
+    /// <see cref="BrowserSessionManager"/> and torn down there, so this only drops the
+    /// active-page reference and the gate.
     /// </summary>
-    public ValueTask DisposeAsync()
+    /// <remarks>
+    /// This is deliberately not <see cref="IAsyncDisposable"/>. In the HTTP host the
+    /// service is handed to tools through a per-session factory, and an
+    /// <c>IAsyncDisposable</c> resolved that way would be disposed by the DI container at
+    /// the end of every tool call, tearing down state the session still needs. Lifetime is
+    /// owned by the session bundle, which calls this once when the session ends.
+    /// </remarks>
+    internal void Shutdown()
     {
         if (Interlocked.Exchange(ref _disposed, 1) == 0)
         {
             _activePage = null;
             _gate.Dispose();
         }
-
-        return ValueTask.CompletedTask;
     }
 }

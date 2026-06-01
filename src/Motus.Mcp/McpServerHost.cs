@@ -1,8 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using ModelContextProtocol;
-using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
 namespace Motus.Mcp;
@@ -14,8 +12,6 @@ namespace Motus.Mcp;
 /// </summary>
 public static class McpServerHost
 {
-    private const string ServerName = "motus";
-
     /// <summary>
     /// Runs the server over the standard input/output streams until the client
     /// disconnects or the token is cancelled. This is the entry point a CLI host
@@ -57,21 +53,9 @@ public static class McpServerHost
             sp.GetRequiredService<ConsoleService>(),
             sp.GetRequiredService<NetworkService>()));
 
-        var mcpBuilder = builder.Services.AddMcpServer(ConfigureServerOptions);
+        var mcpBuilder = builder.Services.AddMcpServer(McpServerConfiguration.ConfigureServerOptions);
         configureTransport(mcpBuilder);
-
-        // Register the tools explicitly (not by assembly scanning) so the schema is
-        // generated without runtime reflection and stays AOT-clean.
-        mcpBuilder.WithTools<CoreTools>(McpJsonUtilities.DefaultOptions);
-        mcpBuilder.WithTools<InteractionTools>(McpJsonUtilities.DefaultOptions);
-        mcpBuilder.WithTools<SessionTools>(McpJsonUtilities.DefaultOptions);
-        mcpBuilder.WithTools<PageTools>(McpJsonUtilities.DefaultOptions);
-        mcpBuilder.WithTools<NetworkTools>(McpJsonUtilities.DefaultOptions);
-        mcpBuilder.WithTools<ConsoleTools>(McpJsonUtilities.DefaultOptions);
-        mcpBuilder.WithTools<AccessibilityTools>(McpJsonUtilities.DefaultOptions);
-        mcpBuilder.WithTools<PerformanceTools>(McpJsonUtilities.DefaultOptions);
-        mcpBuilder.WithTools<RecordingTools>(McpJsonUtilities.DefaultOptions);
-        mcpBuilder.WithTools<CodegenTools>(McpJsonUtilities.DefaultOptions);
+        mcpBuilder.AddMotusTools();
 
         using var host = builder.Build();
 
@@ -79,17 +63,5 @@ public static class McpServerHost
         // IAsyncDisposable) on shutdown, which disposes the singleton session
         // manager and tears the browser down. No explicit disposal is needed.
         await host.RunAsync(cancellationToken).ConfigureAwait(false);
-    }
-
-    internal static void ConfigureServerOptions(McpServerOptions options)
-    {
-        options.ServerInfo = new Implementation
-        {
-            Name = ServerName,
-            Version = typeof(McpServerHost).Assembly.GetName().Version?.ToString() ?? "0.0.0",
-        };
-        options.ServerInstructions =
-            "Motus drives a real browser for web automation and testing. Tool calls act on the active "
-            + "browser context and tab unless directed otherwise.";
     }
 }
