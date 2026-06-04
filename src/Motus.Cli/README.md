@@ -197,3 +197,30 @@ motus codegen https://example.com/login --scope "#login-form" --output ./Pages
 ### `motus update-protocol`
 
 Updates the bundled CDP protocol JSON files to the latest version.
+
+### `motus mcp`
+
+Runs the [Model Context Protocol](https://modelcontextprotocol.io) server so AI agents can drive a browser through Motus. Tools cover navigation, accessibility snapshots, interaction, network interception, accessibility and performance audits, and Page Object Model generation. Serves over stdio by default, or Streamable HTTP for concurrent remote clients.
+
+```bash
+# Register with Claude Code against the installed tool
+claude mcp add motus -- motus mcp
+
+# Drive a specific browser, or show a visible window for debugging
+motus mcp --channel chrome
+motus mcp --headless false
+
+# Serve over Streamable HTTP (a non-loopback bind requires a token)
+motus mcp --http --host 0.0.0.0 --port 8931 --token "$MOTUS_MCP_TOKEN"
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--headless` | true | Run the browser without a visible window |
+| `--channel` | chromium | Browser to drive: `chromium`, `chrome`, `edge`, `firefox` |
+| `--http` | false | Serve over Streamable HTTP instead of stdio |
+| `--host` | 127.0.0.1 | Interface to bind when `--http` is set |
+| `--port` | 8931 | Port to listen on when `--http` is set |
+| `--token` | none | Bearer token required on every HTTP request (or set `MOTUS_MCP_TOKEN`). Required for a non-loopback bind. |
+
+Run `motus install` first so a browser is available. See the [MCP Server guide](https://github.com/DataficationSDK/Motus/blob/main/docs/guides/mcp-server.md) for the full registration story and tool catalog.

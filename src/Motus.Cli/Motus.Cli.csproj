@@ -11,6 +11,11 @@
     <ProduceReferenceAssembly>false</ProduceReferenceAssembly>
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>motus</ToolCommandName>
+    <!-- The tool builds against net8.0 (the lowest supported runtime) but must
+         also run on machines that have only a newer major runtime installed,
+         such as a net10.0-only host. Roll forward across major versions so a
+         single framework-dependent package serves every supported runtime. -->
+    <RollForward>Major</RollForward>
     <PackageId>Motus.Cli</PackageId>
     <Title>Motus CLI</Title>
     <Description>Command-line interface for Motus browser automation. Provides test execution, recording, browser installation, and utility commands.</Description>

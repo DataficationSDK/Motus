@@ -278,5 +278,6 @@ See [Configuration](guides/configuration.md) for the full schema reference.
 - [Network Interception](guides/network-interception.md) -- mock API responses and intercept requests
 - [Accessibility Testing](guides/accessibility-testing.md) -- built-in WCAG 2.1 auditing
 - [Recording and Code Generation](guides/recording-and-codegen.md) -- record browser sessions into test code
+- [MCP Server](guides/mcp-server.md) -- drive a browser from AI agents over the Model Context Protocol
 - [Plugin Extensibility](extensions/getting-started.md) -- build custom selectors, hooks, and reporters
 - [Architecture Overview](architecture/overview.md) -- how Motus works under the hood

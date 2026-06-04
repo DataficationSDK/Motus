@@ -215,6 +215,20 @@ motus run ./bin/Debug/net8.0/MyTests.dll --retries 2
 
 Each retry runs the entire test fresh: new browser context, new WebSocket, new test instance. A `[RETRY]` line is logged to stderr for every attempt so flake patterns are visible.
 
+### MCP Server for AI Agents
+
+Motus exposes its browser engine to AI agents through a [Model Context Protocol](https://modelcontextprotocol.io) server, shipped as the `motus mcp` verb on the CLI tool. Agents navigate, snapshot the accessibility tree, click and type against referenced elements, intercept network traffic, run accessibility and performance audits, and generate Page Object Model code, all over stdio or Streamable HTTP.
+
+Register it with Claude Code against the installed tool:
+
+```bash
+dotnet tool install --global Motus.Cli
+motus install
+claude mcp add motus -- motus mcp
+```
+
+See [MCP Server](docs/guides/mcp-server.md) for the full registration story, the tool catalog, and the HTTP transport.
+
 ## How It Works
 
 Motus communicates directly with the browser over WebSocket. For Chromium-based browsers, it speaks the Chrome DevTools Protocol (CDP). For Firefox, it uses WebDriver BiDi. There is no Node.js sidecar, no driver binary, and no process boundary between your test code and the protocol layer.
@@ -337,6 +351,7 @@ motus pdf              Generate a PDF from a URL (--delay, --hide-banners, --wid
 motus trace show       Open a trace file in the visual runner with timeline, screenshots, and network
 motus install          Download and install browser binaries
 motus update-protocol  Fetch and update CDP protocol schema files
+motus mcp              Run the MCP server for AI agents (stdio by default, or --http)
 ```
 
 ## Build from Source
