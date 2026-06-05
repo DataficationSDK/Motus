@@ -48,6 +48,20 @@ claude mcp get motus
 
 Remove it with `claude mcp remove motus`.
 
+If Claude Code reports that the `motus` server failed to connect, the usual cause is that `motus` is not on the `PATH` that Claude Code inherits, so the launch command cannot be found. Confirm it resolves:
+
+```bash
+which motus   # should print a path such as ~/.dotnet/tools/motus
+```
+
+If that prints nothing, the .NET global tools directory is not on your `PATH` (a common environment gap, not specific to Motus). Either add it to your `PATH`, or register the server with the absolute path so launching does not depend on `PATH`:
+
+```bash
+claude mcp add motus -- "$HOME/.dotnet/tools/motus" mcp
+```
+
+`dotnet tool list --global` reports the install location if it differs from the default above.
+
 Once registered, start (or restart) Claude Code and the `motus` tools become available. Ask the agent to navigate to a page and it will call `navigate`, then `snapshot` to read the result.
 
 ### Other MCP clients
