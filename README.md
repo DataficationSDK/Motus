@@ -367,6 +367,10 @@ dotnet test Motus.sln
 
 Contributions are welcome. Open an issue to discuss what you'd like to work on.
 
+## Sponsors
+
+Thanks to [@fluentfoundation](https://github.com/fluentfoundation) for supporting this project.
+
 ## License
 
 [MIT](LICENSE.md)
