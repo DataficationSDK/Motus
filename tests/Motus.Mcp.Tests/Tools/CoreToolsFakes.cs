@@ -43,6 +43,12 @@ internal sealed class FakeToolPage(AccessibilitySnapshot snapshot) : IPage
     /// <summary>The page-level keyboard, recording the keys <c>press_key</c> sends.</summary>
     public FakeKeyboard FakeKeyboard { get; } = new();
 
+    /// <summary>The page-level mouse, recording the events the coordinate tools dispatch.</summary>
+    public FakeMouse FakeMouse { get; } = new();
+
+    /// <summary>The last viewport passed to <see cref="SetViewportSizeAsync"/>.</summary>
+    public ViewportSize? ResizedTo { get; private set; }
+
     /// <summary>The last timeout passed to <see cref="WaitForTimeoutAsync"/>.</summary>
     public double? WaitedTimeoutMs { get; private set; }
 
@@ -110,6 +116,18 @@ internal sealed class FakeToolPage(AccessibilitySnapshot snapshot) : IPage
     /// <summary>When set, <see cref="StopHarRecordingAsync"/> throws this to simulate a write failure.</summary>
     public Exception? HarError { get; init; }
 
+    /// <summary>The path the in-progress fake video recording writes to; null when not recording.</summary>
+    public string? VideoRecordingPath { get; private set; }
+
+    /// <summary>The path returned by the most recent <see cref="StopVideoRecordingAsync"/> call.</summary>
+    public string? VideoStoppedPath { get; private set; }
+
+    /// <summary>When set, <see cref="StartVideoRecordingAsync"/> throws this, e.g. to model an already-recording page.</summary>
+    public Exception? VideoStartError { get; init; }
+
+    /// <summary>When set, <see cref="StopVideoRecordingAsync"/> throws this, e.g. to model no recording in progress.</summary>
+    public Exception? VideoStopError { get; init; }
+
     private bool _closed;
 
     /// <summary>Raises the <see cref="Dialog"/> event with the given dialog, as the browser would.</summary>
@@ -161,6 +179,25 @@ internal sealed class FakeToolPage(AccessibilitySnapshot snapshot) : IPage
         return Task.CompletedTask;
     }
 
+    public Task<string> StartVideoRecordingAsync(string? path = null, ViewportSize? size = null, CancellationToken ct = default)
+    {
+        if (VideoStartError is not null)
+            throw VideoStartError;
+        VideoRecordingPath = path ?? Path.Combine(Path.GetTempPath(), "fake-video.avi");
+        return Task.FromResult(VideoRecordingPath);
+    }
+
+    public Task<string> StopVideoRecordingAsync(CancellationToken ct = default)
+    {
+        if (VideoStopError is not null)
+            throw VideoStopError;
+        if (VideoRecordingPath is null)
+            throw new InvalidOperationException("No video recording is in progress on this page.");
+        VideoStoppedPath = VideoRecordingPath;
+        VideoRecordingPath = null;
+        return Task.FromResult(VideoStoppedPath);
+    }
+
     public ILocator LocatorByBackendNodeId(long backendNodeId)
     {
         ResolvedBackendNodeId = backendNodeId;
@@ -207,7 +244,7 @@ internal sealed class FakeToolPage(AccessibilitySnapshot snapshot) : IPage
     public IReadOnlyList<IFrame> Frames => throw new NotImplementedException();
     public string Url => PageUrl;
     public IKeyboard Keyboard => FakeKeyboard;
-    public IMouse Mouse => throw new NotImplementedException();
+    public IMouse Mouse => FakeMouse;
     public ITouchscreen Touchscreen => throw new NotImplementedException();
     public IVideo? Video => throw new NotImplementedException();
     public ViewportSize? ViewportSize => throw new NotImplementedException();
@@ -271,7 +308,11 @@ internal sealed class FakeToolPage(AccessibilitySnapshot snapshot) : IPage
     public Task RouteAsync(string urlPattern, Func<IRoute, Task> handler) => throw new NotImplementedException();
     public Task UnrouteAsync(string urlPattern, Func<IRoute, Task>? handler = null) => throw new NotImplementedException();
     public Task AddInitScriptAsync(string script) => throw new NotImplementedException();
-    public Task SetViewportSizeAsync(ViewportSize viewportSize) => throw new NotImplementedException();
+    public Task SetViewportSizeAsync(ViewportSize viewportSize)
+    {
+        ResizedTo = viewportSize;
+        return Task.CompletedTask;
+    }
     public Task<IElementHandle> AddScriptTagAsync(string? url = null, string? content = null) => throw new NotImplementedException();
     public Task<IElementHandle> AddStyleTagAsync(string? url = null, string? content = null) => throw new NotImplementedException();
     public Task ExposeBindingAsync(string name, Func<object?[], Task<object?>> callback) => throw new NotImplementedException();
@@ -403,7 +444,10 @@ internal sealed class FakeToolLocator : ILocator
     public Task<string> InnerHTMLAsync(double? timeout = null) => throw new NotImplementedException();
     public Task<string?> GetAttributeAsync(string name, double? timeout = null) => throw new NotImplementedException();
     public Task<string> InputValueAsync(double? timeout = null) => throw new NotImplementedException();
-    public Task<BoundingBox?> BoundingBoxAsync(double? timeout = null) => throw new NotImplementedException();
+    /// <summary>The box <see cref="BoundingBoxAsync"/> returns; tests can override it.</summary>
+    public BoundingBox? Box { get; set; } = new(100, 200, 50, 30);
+
+    public Task<BoundingBox?> BoundingBoxAsync(double? timeout = null) => Task.FromResult(Box);
     public Task<int> CountAsync() => throw new NotImplementedException();
     public Task<IReadOnlyList<string>> AllInnerTextsAsync() => throw new NotImplementedException();
     public Task<IReadOnlyList<string>> AllTextContentsAsync() => throw new NotImplementedException();
@@ -431,6 +475,65 @@ internal sealed class FakeToolLocator : ILocator
 /// A fake page-level keyboard that records the keys <c>press_key</c> sends and
 /// no-ops the rest.
 /// </summary>
+/// <summary>
+/// A fake mouse that records every event the coordinate tools dispatch, in order,
+/// so tests can assert both the calls and their sequence.
+/// </summary>
+internal sealed class FakeMouse : IMouse
+{
+    /// <summary>Every mouse call in dispatch order: "move", "down", "up", "click", "dblclick", "wheel".</summary>
+    public List<string> Sequence { get; } = [];
+
+    public List<(double X, double Y, MouseMoveOptions? Options)> Moves { get; } = [];
+    public List<MouseButtonOptions?> Downs { get; } = [];
+    public List<MouseButtonOptions?> Ups { get; } = [];
+    public List<(double X, double Y, MouseButtonOptions? Options)> Clicks { get; } = [];
+    public List<(double X, double Y, MouseButtonOptions? Options)> DblClicks { get; } = [];
+    public List<(double DeltaX, double DeltaY)> Wheels { get; } = [];
+
+    public Task MoveAsync(double x, double y, MouseMoveOptions? options = null)
+    {
+        Sequence.Add("move");
+        Moves.Add((x, y, options));
+        return Task.CompletedTask;
+    }
+
+    public Task DownAsync(MouseButtonOptions? options = null)
+    {
+        Sequence.Add("down");
+        Downs.Add(options);
+        return Task.CompletedTask;
+    }
+
+    public Task UpAsync(MouseButtonOptions? options = null)
+    {
+        Sequence.Add("up");
+        Ups.Add(options);
+        return Task.CompletedTask;
+    }
+
+    public Task ClickAsync(double x, double y, MouseButtonOptions? options = null)
+    {
+        Sequence.Add("click");
+        Clicks.Add((x, y, options));
+        return Task.CompletedTask;
+    }
+
+    public Task DblClickAsync(double x, double y, MouseButtonOptions? options = null)
+    {
+        Sequence.Add("dblclick");
+        DblClicks.Add((x, y, options));
+        return Task.CompletedTask;
+    }
+
+    public Task WheelAsync(double deltaX, double deltaY)
+    {
+        Sequence.Add("wheel");
+        Wheels.Add((deltaX, deltaY));
+        return Task.CompletedTask;
+    }
+}
+
 internal sealed class FakeKeyboard : IKeyboard
 {
     public List<string> PressedKeys { get; } = [];

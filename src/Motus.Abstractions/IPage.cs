@@ -216,6 +216,28 @@ public interface IPage : IAsyncDisposable
     /// <param name="ct">A token to cancel the operation.</param>
     Task StopHarRecordingAsync(string path, CancellationToken ct = default);
 
+    /// <summary>
+    /// Begins recording this page to a video file (MJPEG in an AVI container,
+    /// captured via the browser's screencast, which paces frames by screen
+    /// updates and shows no pointer cursor). Throws if a recording is already
+    /// in progress, including one started by the context's RecordVideo option.
+    /// </summary>
+    /// <param name="path">The output file path; when null, a file is created under the system temp directory.</param>
+    /// <param name="size">The capture resolution; when null, the page's viewport size is used.</param>
+    /// <param name="ct">A token to cancel the operation.</param>
+    /// <returns>The path the video is being written to.</returns>
+    Task<string> StartVideoRecordingAsync(string? path = null, ViewportSize? size = null, CancellationToken ct = default);
+
+    /// <summary>
+    /// Stops the recording started by <see cref="StartVideoRecordingAsync"/> and
+    /// finalizes the video file. Throws if no recording is in progress, or if the
+    /// recording was started by the context's RecordVideo option (those span the
+    /// page's life and finalize when it closes).
+    /// </summary>
+    /// <param name="ct">A token to cancel the operation.</param>
+    /// <returns>The path of the finalized video file.</returns>
+    Task<string> StopVideoRecordingAsync(CancellationToken ct = default);
+
     // --- Locators ---
 
     /// <summary>

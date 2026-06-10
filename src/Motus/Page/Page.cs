@@ -30,6 +30,7 @@ internal sealed partial class Page : IPage
     private ViewportSize? _viewportSize;
     private volatile bool _isClosed;
     private VideoRecorder? _videoRecorder;
+    private readonly ConcurrentBag<string> _uploadTempDirs = [];
 
     internal Page(IMotusSession session, BrowserContext context, string targetId)
     {
@@ -96,6 +97,11 @@ internal sealed partial class Page : IPage
     internal Touchscreen TouchscreenInternal => _touchscreen;
 
     internal void SetVideoRecorder(VideoRecorder recorder) => _videoRecorder = recorder;
+
+    // Upload payloads are staged on disk and read lazily by the browser, so the
+    // backing directories must survive until the page goes away (see
+    // Locator.SetInputFilesAsync). Registered dirs are deleted on dispose.
+    internal void RegisterUploadTempDir(string dir) => _uploadTempDirs.Add(dir);
 
     internal async Task InitializeAsync(CancellationToken ct)
     {
@@ -258,6 +264,11 @@ internal sealed partial class Page : IPage
         {
             try { await _videoRecorder.StopAndFinalizeAsync().ConfigureAwait(false); }
             catch { /* best-effort */ }
+        }
+
+        foreach (var dir in _uploadTempDirs)
+        {
+            try { Directory.Delete(dir, recursive: true); } catch { /* best-effort */ }
         }
 
         Close?.Invoke(this, EventArgs.Empty);

@@ -41,6 +41,14 @@ public static class McpCommand
                 "Bearer token required on every HTTP request (or set " + TokenEnvVar + "). "
                 + "Required when binding a non-loopback host.",
         };
+        var viewportOpt = new Option<string?>("--viewport")
+        {
+            Description = "Viewport size for every page as WIDTHxHEIGHT, e.g. 1920x1080 (default 1280x800)",
+        };
+        var recordVideoOpt = new Option<string?>("--record-video")
+        {
+            Description = "Record a video of every page into this directory (MJPEG AVI, one file per page)",
+        };
 
         var cmd = new Command("mcp", "Run the Motus MCP server for agent clients (stdio by default, or --http)")
         {
@@ -50,6 +58,8 @@ public static class McpCommand
             hostOpt,
             portOpt,
             tokenOpt,
+            viewportOpt,
+            recordVideoOpt,
         };
 
         cmd.SetAction(async (parseResult, ct) =>
@@ -58,14 +68,30 @@ public static class McpCommand
             var channelText = parseResult.GetValue(channelOpt)!;
             var useHttp = parseResult.GetValue(httpOpt);
 
+            Motus.Abstractions.ViewportSize? viewport = null;
+            var viewportText = parseResult.GetValue(viewportOpt);
+            if (viewportText is not null)
+            {
+                viewport = ParseViewport(viewportText);
+                if (viewport is null)
+                {
+                    await Console.Error.WriteLineAsync(
+                        $"Invalid --viewport value '{viewportText}'. Expected WIDTHxHEIGHT, e.g. 1280x800.");
+                    return 1;
+                }
+            }
+
             // Prefer a browser installed via `motus install`; if none is found,
             // leave the path unset so the framework auto-detects a system browser.
             var executablePath = BrowserPathHelper.Resolve(channelText);
 
+            var defaults = new McpServerLaunchOptions();
             var launchOptions = new McpServerLaunchOptions
             {
                 Headless = headless,
                 ExecutablePath = executablePath,
+                Viewport = viewport ?? defaults.Viewport,
+                RecordVideoDir = parseResult.GetValue(recordVideoOpt),
             };
 
             if (!useHttp)
@@ -100,5 +126,18 @@ public static class McpCommand
         });
 
         return cmd;
+    }
+
+    private static Motus.Abstractions.ViewportSize? ParseViewport(string text)
+    {
+        var parts = text.Split(['x', 'X'], 2);
+        if (parts.Length == 2
+            && int.TryParse(parts[0], out var width) && width > 0
+            && int.TryParse(parts[1], out var height) && height > 0)
+        {
+            return new Motus.Abstractions.ViewportSize(width, height);
+        }
+
+        return null;
     }
 }

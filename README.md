@@ -217,7 +217,7 @@ Each retry runs the entire test fresh: new browser context, new WebSocket, new t
 
 ### MCP Server for AI Agents
 
-Motus exposes its browser engine to AI agents through a [Model Context Protocol](https://modelcontextprotocol.io) server, shipped as the `motus mcp` verb on the CLI tool. Agents navigate, snapshot the accessibility tree, click and type against referenced elements, intercept network traffic, run accessibility and performance audits, and generate Page Object Model code, all over stdio or Streamable HTTP.
+Motus exposes its browser engine to AI agents through a [Model Context Protocol](https://modelcontextprotocol.io) server, shipped as the `motus mcp` verb on the CLI tool. Agents navigate, snapshot the accessibility tree, click and type against referenced elements, act at raw coordinates on canvas surfaces (including drag and drop), intercept network traffic, run accessibility and performance audits, record traces, HARs, and videos, and generate Page Object Model code, all over stdio or Streamable HTTP.
 
 Register it with Claude Code against the installed tool:
 

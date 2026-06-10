@@ -72,8 +72,24 @@ public sealed class PageSnapshotService
 
         _refToBackendNodeId = serialized.RefToBackendNodeId;
         _backendNodeIdToRef = BuildReverseMap(serialized.RefToBackendNodeId);
-        LastSnapshot = serialized.Text;
-        return serialized.Text;
+
+        var text = serialized.Text;
+
+        // A whole-page snapshot with nothing addressable usually means the app
+        // paints to a canvas or custom surface rather than the DOM. Say so, and
+        // point at the coordinate workflow, instead of letting the agent
+        // conclude the page is empty.
+        if (rootRef is null && serialized.RefToBackendNodeId.Count == 0)
+        {
+            text = text.TrimEnd('\n')
+                + "\n\nNote: no addressable elements were found. The page may render to a canvas or "
+                + "custom surface that the accessibility tree cannot describe. Take a screenshot to "
+                + "identify controls visually, then act on their positions with click_xy, drag, or "
+                + "scroll_xy.\n";
+        }
+
+        LastSnapshot = text;
+        return text;
     }
 
     private static Dictionary<long, string> BuildReverseMap(IReadOnlyDictionary<string, long> forward)

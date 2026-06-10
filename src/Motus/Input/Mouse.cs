@@ -33,7 +33,8 @@ internal sealed class Mouse : IMouse
                 new InputDispatchMouseEventParams(
                     Type: "mouseMoved",
                     X: currentX,
-                    Y: currentY),
+                    Y: currentY,
+                    Modifiers: MapModifiers(options?.Modifiers)),
                 CdpJsonContext.Default.InputDispatchMouseEventParams,
                 CdpJsonContext.Default.InputDispatchMouseEventResult,
                 _ct).ConfigureAwait(false);
@@ -54,6 +55,7 @@ internal sealed class Mouse : IMouse
                 Type: "mousePressed",
                 X: _x,
                 Y: _y,
+                Modifiers: MapModifiers(options?.Modifiers),
                 Button: button,
                 ClickCount: clickCount),
             CdpJsonContext.Default.InputDispatchMouseEventParams,
@@ -72,6 +74,7 @@ internal sealed class Mouse : IMouse
                 Type: "mouseReleased",
                 X: _x,
                 Y: _y,
+                Modifiers: MapModifiers(options?.Modifiers),
                 Button: button,
                 ClickCount: clickCount),
             CdpJsonContext.Default.InputDispatchMouseEventParams,
@@ -81,7 +84,7 @@ internal sealed class Mouse : IMouse
 
     public async Task ClickAsync(double x, double y, MouseButtonOptions? options = null)
     {
-        await MoveAsync(x, y).ConfigureAwait(false);
+        await MoveAsync(x, y, MoveOptionsFrom(options)).ConfigureAwait(false);
         await DownAsync(options).ConfigureAwait(false);
 
         if (options?.Delay is > 0)
@@ -92,21 +95,22 @@ internal sealed class Mouse : IMouse
 
     public async Task DblClickAsync(double x, double y, MouseButtonOptions? options = null)
     {
-        await MoveAsync(x, y).ConfigureAwait(false);
+        await MoveAsync(x, y, MoveOptionsFrom(options)).ConfigureAwait(false);
 
         var button = MapButton(options?.Button ?? MouseButton.Left);
+        var modifiers = MapModifiers(options?.Modifiers);
 
         // First click
         await _session.SendAsync(
             "Input.dispatchMouseEvent",
-            new InputDispatchMouseEventParams(Type: "mousePressed", X: _x, Y: _y, Button: button, ClickCount: 1),
+            new InputDispatchMouseEventParams(Type: "mousePressed", X: _x, Y: _y, Modifiers: modifiers, Button: button, ClickCount: 1),
             CdpJsonContext.Default.InputDispatchMouseEventParams,
             CdpJsonContext.Default.InputDispatchMouseEventResult,
             _ct).ConfigureAwait(false);
 
         await _session.SendAsync(
             "Input.dispatchMouseEvent",
-            new InputDispatchMouseEventParams(Type: "mouseReleased", X: _x, Y: _y, Button: button, ClickCount: 1),
+            new InputDispatchMouseEventParams(Type: "mouseReleased", X: _x, Y: _y, Modifiers: modifiers, Button: button, ClickCount: 1),
             CdpJsonContext.Default.InputDispatchMouseEventParams,
             CdpJsonContext.Default.InputDispatchMouseEventResult,
             _ct).ConfigureAwait(false);
@@ -114,14 +118,14 @@ internal sealed class Mouse : IMouse
         // Second click
         await _session.SendAsync(
             "Input.dispatchMouseEvent",
-            new InputDispatchMouseEventParams(Type: "mousePressed", X: _x, Y: _y, Button: button, ClickCount: 2),
+            new InputDispatchMouseEventParams(Type: "mousePressed", X: _x, Y: _y, Modifiers: modifiers, Button: button, ClickCount: 2),
             CdpJsonContext.Default.InputDispatchMouseEventParams,
             CdpJsonContext.Default.InputDispatchMouseEventResult,
             _ct).ConfigureAwait(false);
 
         await _session.SendAsync(
             "Input.dispatchMouseEvent",
-            new InputDispatchMouseEventParams(Type: "mouseReleased", X: _x, Y: _y, Button: button, ClickCount: 2),
+            new InputDispatchMouseEventParams(Type: "mouseReleased", X: _x, Y: _y, Modifiers: modifiers, Button: button, ClickCount: 2),
             CdpJsonContext.Default.InputDispatchMouseEventParams,
             CdpJsonContext.Default.InputDispatchMouseEventResult,
             _ct).ConfigureAwait(false);
@@ -149,4 +153,14 @@ internal sealed class Mouse : IMouse
         MouseButton.Middle => "middle",
         _ => "left"
     };
+
+    // KeyModifier flag values match the CDP Input domain modifier bits, so the
+    // flags pass through as-is; None is omitted entirely.
+    private static int? MapModifiers(KeyModifier? modifiers)
+        => modifiers is null or KeyModifier.None ? null : (int)modifiers;
+
+    private static MouseMoveOptions? MoveOptionsFrom(MouseButtonOptions? options)
+        => options is { Modifiers: not KeyModifier.None }
+            ? new MouseMoveOptions(Modifiers: options.Modifiers)
+            : null;
 }

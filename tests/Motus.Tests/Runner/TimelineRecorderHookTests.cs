@@ -104,6 +104,8 @@ public class TimelineRecorderHookTests
         public Task<PerformanceMetrics?> GetPerformanceMetricsAsync(CancellationToken ct = default) => throw new NotImplementedException();
         public Task StartHarRecordingAsync(CancellationToken ct = default) => throw new NotImplementedException();
         public Task StopHarRecordingAsync(string path, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<string> StartVideoRecordingAsync(string? path = null, ViewportSize? size = null, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<string> StopVideoRecordingAsync(CancellationToken ct = default) => throw new NotImplementedException();
         public ILocator GetByRole(string role, string? name = null) => throw new NotImplementedException();
         public ILocator GetByText(string text, bool? exact = null) => throw new NotImplementedException();
         public ILocator GetByLabel(string text, bool? exact = null) => throw new NotImplementedException();

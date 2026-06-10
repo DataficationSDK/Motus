@@ -801,33 +801,31 @@ internal sealed class Locator : ILocator
                 _page, ResolveObjectIdCoreAsync,
                 ActionabilityFlags.Visible | ActionabilityFlags.Enabled,
                 _selector, cts.Token).ConfigureAwait(false);
+            // The browser stores the paths and reads the bytes lazily, possibly long
+            // after this call returns (e.g. a change handler awaiting file.arrayBuffer(),
+            // or a framework streaming the file to a server). The backing files must
+            // therefore outlive this action: each call gets a unique directory that the
+            // owning page deletes when it is disposed.
+            var uploadDir = Path.Combine(Path.GetTempPath(), "motus-upload", Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(uploadDir);
+            _page.RegisterUploadTempDir(uploadDir);
+
             var tempFiles = new List<string>();
-
-            try
+            foreach (var file in files)
             {
-                foreach (var file in files)
-                {
-                    var tempPath = Path.Combine(Path.GetTempPath(), file.Name);
-                    await File.WriteAllBytesAsync(tempPath, file.Buffer).ConfigureAwait(false);
-                    tempFiles.Add(tempPath);
-                }
+                var tempPath = Path.Combine(uploadDir, file.Name);
+                await File.WriteAllBytesAsync(tempPath, file.Buffer).ConfigureAwait(false);
+                tempFiles.Add(tempPath);
+            }
 
-                await _page.Session.SendAsync(
-                    "DOM.setFileInputFiles",
-                    new DomSetFileInputFilesParams(
-                        Files: tempFiles.ToArray(),
-                        ObjectId: objectId),
-                    CdpJsonContext.Default.DomSetFileInputFilesParams,
-                    CdpJsonContext.Default.DomSetFileInputFilesResult,
-                    cts.Token).ConfigureAwait(false);
-            }
-            finally
-            {
-                foreach (var tempFile in tempFiles)
-                {
-                    try { File.Delete(tempFile); } catch { /* best effort */ }
-                }
-            }
+            await _page.Session.SendAsync(
+                "DOM.setFileInputFiles",
+                new DomSetFileInputFilesParams(
+                    Files: tempFiles.ToArray(),
+                    ObjectId: objectId),
+                CdpJsonContext.Default.DomSetFileInputFilesParams,
+                CdpJsonContext.Default.DomSetFileInputFilesResult,
+                cts.Token).ConfigureAwait(false);
         }).ConfigureAwait(false);
     }
 

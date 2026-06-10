@@ -103,6 +103,50 @@ public class ArtifactIntegrationTests
             "the HAR log should carry an entries array");
     }
 
+    [TestMethod]
+    public async Task VideoStartStop_WritesAPlayableAviAtViewportResolution()
+    {
+        var pages = _pages!;
+        var ct = CancellationToken.None;
+        var path = Path.Combine(Path.GetTempPath(), $"motus-video-test-{Guid.NewGuid():N}.avi");
+        _artifacts.Add(path);
+
+        AssertOk(await CoreTools.NavigateAsync(SamplePage, pages, ct), "navigate");
+        AssertOk(await CoordinateTools.ResizeAsync(640, 480, pages, ct), "resize");
+        AssertOk(await RecordingTools.VideoStartAsync(path, pages, ct), "video_start");
+
+        // Produce on-screen changes so the screencast emits frames.
+        AssertOk(await CoreTools.NavigateAsync(SamplePage, pages, ct), "navigate-again");
+        AssertOk(await InteractionTools.WaitForAsync(500, null, null, pages, ct), "wait");
+
+        var stop = await RecordingTools.VideoStopAsync(pages, ct);
+        AssertOk(stop, "video_stop");
+        StringAssert.Contains(TextOf(stop), path);
+
+        Assert.IsTrue(File.Exists(path), "video file should exist");
+
+        // RIFF....AVI header and the capture dimensions in the main header
+        // (avih frame width/height at offsets 0x40 and 0x44).
+        var bytes = await File.ReadAllBytesAsync(path, ct);
+        Assert.IsTrue(bytes.Length > 0x48, "video file should be non-trivial");
+        Assert.AreEqual("RIFF", System.Text.Encoding.ASCII.GetString(bytes, 0, 4));
+        Assert.AreEqual("AVI ", System.Text.Encoding.ASCII.GetString(bytes, 8, 4));
+        Assert.AreEqual(640, BitConverter.ToInt32(bytes, 0x40), "frame width should match the viewport");
+        Assert.AreEqual(480, BitConverter.ToInt32(bytes, 0x44), "frame height should match the viewport");
+    }
+
+    [TestMethod]
+    public async Task VideoStop_WithoutAStart_ReturnsError()
+    {
+        var pages = _pages!;
+        var ct = CancellationToken.None;
+
+        AssertOk(await CoreTools.NavigateAsync(SamplePage, pages, ct), "navigate");
+
+        var result = await RecordingTools.VideoStopAsync(pages, ct);
+        Assert.IsTrue(result.IsError ?? false, "video_stop without a recording should be an error");
+    }
+
     private static void AssertOk(CallToolResult result, string label)
         => Assert.IsFalse(result.IsError ?? false, $"{label} should succeed: {TextOf(result)}");
 

@@ -6,10 +6,10 @@ using Motus.Abstractions;
 namespace Motus.Mcp;
 
 /// <summary>
-/// Captures diagnostic artifacts from the session: a DOM-snapshot trace of the
-/// active context and an HTTP archive (HAR) of the active page's network traffic.
-/// Each is a start/stop pair; stopping writes the artifact to a file and returns
-/// its path.
+/// Captures artifacts from the session: a DOM-snapshot trace of the active
+/// context, an HTTP archive (HAR) of the active page's network traffic, and a
+/// video of the active page. Each is a start/stop pair; stopping writes the
+/// artifact to a file and returns its path.
 /// </summary>
 [McpServerToolType]
 public sealed class RecordingTools
@@ -104,6 +104,51 @@ public sealed class RecordingTools
         catch (Exception ex)
         {
             return ToolResultHelper.Error($"Stopping HAR recording failed: {ex.Message}");
+        }
+    }
+
+    [McpServerTool(Name = "video_start", Title = "Start video recording", Destructive = false, ReadOnly = false)]
+    [Description("Begins recording the active page to a video file at the viewport's resolution. Call "
+        + "video_stop to finalize it and get the path. The capture follows screen updates and shows no "
+        + "mouse cursor, which suits verification footage. Not available when the server was launched "
+        + "with whole-session recording; those videos finalize when each page closes.")]
+    public static async Task<CallToolResult> VideoStartAsync(
+        [Description("Where to write the video (MJPEG AVI). Omit for an auto-generated path.")] string? path,
+        ActivePageService pageService,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var resolved = ResolvePath(path, "motus-video", ".avi");
+            var page = await pageService.GetOrCreateActivePageAsync(cancellationToken).ConfigureAwait(false);
+            await page.StartVideoRecordingAsync(resolved, size: null, cancellationToken).ConfigureAwait(false);
+
+            return ToolResultHelper.Text($"Video recording started. Call video_stop to finalize {resolved}");
+        }
+        catch (Exception ex)
+        {
+            return ToolResultHelper.Error($"Starting video recording failed: {ex.Message}");
+        }
+    }
+
+    [McpServerTool(Name = "video_stop", Title = "Stop video recording", Destructive = false, ReadOnly = false)]
+    [Description("Stops the recording started by video_start and finalizes the video file. Returns the "
+        + "file path. The file is MJPEG in an AVI container; convert it externally if another format "
+        + "is needed.")]
+    public static async Task<CallToolResult> VideoStopAsync(
+        ActivePageService pageService,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var page = await pageService.GetOrCreateActivePageAsync(cancellationToken).ConfigureAwait(false);
+            var written = await page.StopVideoRecordingAsync(cancellationToken).ConfigureAwait(false);
+
+            return ToolResultHelper.Text($"Video written to {written}");
+        }
+        catch (Exception ex)
+        {
+            return ToolResultHelper.Error($"Stopping video recording failed: {ex.Message}");
         }
     }
 

@@ -108,6 +108,49 @@ public class PageIntegrationTests
     }
 
     [TestMethod]
+    public async Task SetInputFilesAsync_DeferredReadReceivesBytes()
+    {
+        // The browser reads upload payloads lazily. A change handler that reads
+        // the file asynchronously (FileReader, arrayBuffer, or a framework
+        // streaming the file to a server) must still receive the bytes after
+        // the upload action has returned.
+        var page = await _browser!.NewPageAsync();
+
+        var html =
+            "<input type=file><div id=out></div>" +
+            "<script>" +
+            "document.querySelector('input').addEventListener('change', e => {" +
+            "  const file = e.target.files[0];" +
+            "  setTimeout(async () => {" +
+            "    try {" +
+            "      const buf = await file.arrayBuffer();" +
+            "      document.getElementById('out').textContent = 'len:' + buf.byteLength;" +
+            "    } catch (err) {" +
+            "      document.getElementById('out').textContent = 'error:' + err.name;" +
+            "    }" +
+            "  }, 100);" +
+            "});" +
+            "</script>";
+        await page.GotoAsync("data:text/html," + html);
+
+        var payload = new byte[4096];
+        new Random(42).NextBytes(payload);
+        await page.Locator("input").SetInputFilesAsync(
+            [new FilePayload("data.bin", "application/octet-stream", payload)]);
+
+        var text = string.Empty;
+        for (var i = 0; i < 50 && string.IsNullOrEmpty(text); i++)
+        {
+            await Task.Delay(100);
+            text = await page.EvaluateAsync<string>("document.getElementById('out').textContent");
+        }
+
+        Assert.AreEqual($"len:{payload.Length}", text);
+
+        await page.DisposeAsync();
+    }
+
+    [TestMethod]
     public async Task ContentAsync_ReturnsHtml()
     {
         var page = await _browser!.NewPageAsync();

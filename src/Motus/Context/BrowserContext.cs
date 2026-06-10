@@ -233,7 +233,7 @@ internal sealed class BrowserContext : IBrowserContext
             {
                 var size = videoOpts.Size ?? DeriveVideoSize(_options.Viewport);
                 var path = Path.Combine(videoOpts.Dir, $"video-{Guid.NewGuid():N}.avi");
-                var recorder = new VideoRecorder(page, path, size.Width, size.Height);
+                var recorder = new VideoRecorder(page, path, size.Width, size.Height) { OwnedByContext = true };
                 await recorder.StartAsync(CancellationToken.None).ConfigureAwait(false);
                 page.SetVideoRecorder(recorder);
             }

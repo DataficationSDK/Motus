@@ -200,7 +200,7 @@ Updates the bundled CDP protocol JSON files to the latest version.
 
 ### `motus mcp`
 
-Runs the [Model Context Protocol](https://modelcontextprotocol.io) server so AI agents can drive a browser through Motus. Tools cover navigation, accessibility snapshots, interaction, network interception, accessibility and performance audits, and Page Object Model generation. Serves over stdio by default, or Streamable HTTP for concurrent remote clients.
+Runs the [Model Context Protocol](https://modelcontextprotocol.io) server so AI agents can drive a browser through Motus. Tools cover navigation, accessibility snapshots, ref-based and coordinate-based interaction (including drag and drop on canvas surfaces), viewport control, network interception, accessibility and performance audits, trace, HAR, and video recording, and Page Object Model generation. Serves over stdio by default, or Streamable HTTP for concurrent remote clients.
 
 ```bash
 # Register with Claude Code against the installed tool
@@ -210,6 +210,9 @@ claude mcp add motus -- motus mcp
 motus mcp --channel chrome
 motus mcp --headless false
 
+# Larger viewport, and a video of every page
+motus mcp --viewport 1920x1080 --record-video ./videos
+
 # Serve over Streamable HTTP (a non-loopback bind requires a token)
 motus mcp --http --host 0.0.0.0 --port 8931 --token "$MOTUS_MCP_TOKEN"
 ```
@@ -218,6 +221,8 @@ motus mcp --http --host 0.0.0.0 --port 8931 --token "$MOTUS_MCP_TOKEN"
 |--------|---------|-------------|
 | `--headless` | true | Run the browser without a visible window |
 | `--channel` | chromium | Browser to drive: `chromium`, `chrome`, `edge`, `firefox` |
+| `--viewport` | 1280x800 | Viewport size for every page, as `WIDTHxHEIGHT` |
+| `--record-video` | none | Record a video of every page into this directory (MJPEG AVI, one file per page) |
 | `--http` | false | Serve over Streamable HTTP instead of stdio |
 | `--host` | 127.0.0.1 | Interface to bind when `--http` is set |
 | `--port` | 8931 | Port to listen on when `--http` is set |

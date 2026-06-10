@@ -24,6 +24,7 @@ public static class McpServerConfiguration
 
         mcpBuilder.WithTools<CoreTools>(McpJsonUtilities.DefaultOptions);
         mcpBuilder.WithTools<InteractionTools>(McpJsonUtilities.DefaultOptions);
+        mcpBuilder.WithTools<CoordinateTools>(McpJsonUtilities.DefaultOptions);
         mcpBuilder.WithTools<SessionTools>(McpJsonUtilities.DefaultOptions);
         mcpBuilder.WithTools<PageTools>(McpJsonUtilities.DefaultOptions);
         mcpBuilder.WithTools<NetworkTools>(McpJsonUtilities.DefaultOptions);

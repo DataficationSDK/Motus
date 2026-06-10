@@ -27,6 +27,15 @@ internal sealed class VideoRecorder
 
     internal MotusVideo Video => _video ??= new MotusVideo(_outputPath, _completedTcs.Task);
 
+    internal string OutputPath => _outputPath;
+
+    /// <summary>
+    /// Whether the recorder was started by the owning context's RecordVideo
+    /// option, as opposed to an explicit per-page start. Context-owned
+    /// recordings span the page's whole life and finalize when it closes.
+    /// </summary>
+    internal bool OwnedByContext { get; init; }
+
     internal async Task StartAsync(CancellationToken ct)
     {
         var dir = Path.GetDirectoryName(_outputPath);

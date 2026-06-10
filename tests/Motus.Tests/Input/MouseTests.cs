@@ -77,4 +77,58 @@ public class MouseTests
         Assert.IsTrue(sent.Contains("mouseWheel"));
         Assert.IsTrue(sent.Contains("\"deltaY\":100"));
     }
+
+    [TestMethod]
+    public async Task ClickAsync_WithModifiers_SendsModifierBitsOnEveryEvent()
+    {
+        // move + pressed + released = 3 messages
+        for (var i = 1; i <= 3; i++)
+            _socket.QueueResponse($$$"""{"id": {{{i}}}, "sessionId": "test-session", "result": {}}""");
+
+        // Control (2) | Shift (8) = 10, matching the CDP modifier bits.
+        await _mouse.ClickAsync(50, 75,
+            new MouseButtonOptions(Modifiers: KeyModifier.Control | KeyModifier.Shift));
+
+        Assert.AreEqual(3, _socket.SentMessages.Count);
+        for (var i = 0; i < 3; i++)
+            Assert.IsTrue(_socket.GetSentJson(i).Contains("\"modifiers\":10"),
+                $"Message {i} should carry the modifier bits.");
+    }
+
+    [TestMethod]
+    public async Task ClickAsync_WithoutModifiers_OmitsModifiersField()
+    {
+        for (var i = 1; i <= 3; i++)
+            _socket.QueueResponse($$$"""{"id": {{{i}}}, "sessionId": "test-session", "result": {}}""");
+
+        await _mouse.ClickAsync(50, 75);
+
+        for (var i = 0; i < 3; i++)
+            Assert.IsFalse(_socket.GetSentJson(i).Contains("modifiers"),
+                $"Message {i} should not carry a modifiers field.");
+    }
+
+    [TestMethod]
+    public async Task MoveAsync_WithModifiers_SendsModifierBits()
+    {
+        _socket.QueueResponse("""{"id": 1, "sessionId": "test-session", "result": {}}""");
+
+        await _mouse.MoveAsync(100, 200, new MouseMoveOptions(Modifiers: KeyModifier.Alt));
+
+        Assert.IsTrue(_socket.GetSentJson(0).Contains("\"modifiers\":1"));
+    }
+
+    [TestMethod]
+    public async Task DblClickAsync_WithModifiers_SendsModifierBitsOnEveryEvent()
+    {
+        for (var i = 1; i <= 5; i++)
+            _socket.QueueResponse($$$"""{"id": {{{i}}}, "sessionId": "test-session", "result": {}}""");
+
+        await _mouse.DblClickAsync(10, 20, new MouseButtonOptions(Modifiers: KeyModifier.Meta));
+
+        Assert.AreEqual(5, _socket.SentMessages.Count);
+        for (var i = 0; i < 5; i++)
+            Assert.IsTrue(_socket.GetSentJson(i).Contains("\"modifiers\":4"),
+                $"Message {i} should carry the modifier bits.");
+    }
 }

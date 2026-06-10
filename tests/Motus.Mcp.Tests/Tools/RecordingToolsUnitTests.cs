@@ -112,4 +112,72 @@ public class RecordingToolsUnitTests
         Assert.IsTrue(result.IsError ?? false);
         StringAssert.Contains(TextOf(result), "disk full");
     }
+
+    [TestMethod]
+    public async Task VideoStart_BeginsRecordingOnTheActivePage()
+    {
+        var page = new FakeToolPage(EmptySnapshot());
+        var service = new FakeNetworkPageService(page);
+
+        var result = await RecordingTools.VideoStartAsync("/tmp/example.avi", service, Ct);
+
+        Assert.IsFalse(result.IsError ?? false);
+        Assert.AreEqual("/tmp/example.avi", page.VideoRecordingPath);
+        StringAssert.Contains(TextOf(result), "/tmp/example.avi");
+    }
+
+    [TestMethod]
+    public async Task VideoStart_GeneratesPathWhenOmitted()
+    {
+        var page = new FakeToolPage(EmptySnapshot());
+        var service = new FakeNetworkPageService(page);
+
+        var result = await RecordingTools.VideoStartAsync(path: null, service, Ct);
+
+        Assert.IsFalse(result.IsError ?? false);
+        Assert.IsFalse(string.IsNullOrEmpty(page.VideoRecordingPath));
+        StringAssert.Contains(page.VideoRecordingPath, "motus-video");
+        StringAssert.EndsWith(page.VideoRecordingPath, ".avi");
+    }
+
+    [TestMethod]
+    public async Task VideoStart_WhenAlreadyRecording_ReturnsError()
+    {
+        var page = new FakeToolPage(EmptySnapshot())
+        {
+            VideoStartError = new InvalidOperationException("Video recording is already in progress on this page."),
+        };
+        var service = new FakeNetworkPageService(page);
+
+        var result = await RecordingTools.VideoStartAsync(path: null, service, Ct);
+
+        Assert.IsTrue(result.IsError ?? false);
+        StringAssert.Contains(TextOf(result), "already in progress");
+    }
+
+    [TestMethod]
+    public async Task VideoStop_ReturnsTheFinalizedPath()
+    {
+        var page = new FakeToolPage(EmptySnapshot());
+        var service = new FakeNetworkPageService(page);
+        await RecordingTools.VideoStartAsync("/tmp/example.avi", service, Ct);
+
+        var result = await RecordingTools.VideoStopAsync(service, Ct);
+
+        Assert.IsFalse(result.IsError ?? false);
+        Assert.AreEqual("/tmp/example.avi", page.VideoStoppedPath);
+        StringAssert.Contains(TextOf(result), "/tmp/example.avi");
+    }
+
+    [TestMethod]
+    public async Task VideoStop_WithoutARecording_ReturnsError()
+    {
+        var page = new FakeToolPage(EmptySnapshot());
+        var service = new FakeNetworkPageService(page);
+
+        var result = await RecordingTools.VideoStopAsync(service, Ct);
+
+        Assert.IsTrue(result.IsError ?? false);
+        StringAssert.Contains(TextOf(result), "No video recording");
+    }
 }

@@ -84,6 +84,38 @@ public class PageSnapshotServiceTests
         Assert.IsNull(service.GetRefForNodeId(999));
     }
 
+    [TestMethod]
+    public async Task TakeSnapshot_WithNoAddressableNodes_AppendsCoordinateWorkflowNote()
+    {
+        var service = new PageSnapshotService(new FakeAccessibilityPage(EmptySnapshot()));
+
+        var text = await service.TakeSnapshotAsync();
+
+        StringAssert.Contains(text, "no addressable elements were found");
+        StringAssert.Contains(text, "click_xy");
+        Assert.AreEqual(text, service.LastSnapshot);
+    }
+
+    [TestMethod]
+    public async Task TakeSnapshot_WithAddressableNodes_HasNoDegradedNote()
+    {
+        var snapshot = new AccessibilitySnapshot(
+            Roots:
+            [
+                new AccessibilityNode("1", "button", "Go", null, null,
+                    new Dictionary<string, string?>(), [], BackendDOMNodeId: 5),
+            ],
+            IgnoredCount: 0,
+            DiagnosticMessage: null);
+
+        var service = new PageSnapshotService(new FakeAccessibilityPage(snapshot));
+
+        var text = await service.TakeSnapshotAsync();
+
+        Assert.IsFalse(text.Contains("no addressable elements"),
+            "a snapshot with refs should not carry the degraded note");
+    }
+
     private static AccessibilitySnapshot EmptySnapshot()
         => new([], IgnoredCount: 0, DiagnosticMessage: null);
 
@@ -105,6 +137,10 @@ public class PageSnapshotServiceTests
         public Task StartHarRecordingAsync(CancellationToken ct = default) => throw new NotImplementedException();
 
         public Task StopHarRecordingAsync(string path, CancellationToken ct = default) => throw new NotImplementedException();
+
+        public Task<string> StartVideoRecordingAsync(string? path = null, ViewportSize? size = null, CancellationToken ct = default) => throw new NotImplementedException();
+
+        public Task<string> StopVideoRecordingAsync(CancellationToken ct = default) => throw new NotImplementedException();
 
         public ILocator LocatorByBackendNodeId(long backendNodeId) => throw new NotImplementedException();
 

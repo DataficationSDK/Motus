@@ -104,7 +104,7 @@ public sealed class BrowserSessionManager : IAsyncDisposable
                 throw new InvalidOperationException($"A context named '{name}' already exists.");
             }
 
-            var context = await browser.NewContextAsync().ConfigureAwait(false);
+            var context = await browser.NewContextAsync(_options.ToContextOptions()).ConfigureAwait(false);
             _contexts[name] = context;
             ActiveContextName = name;
             return context;
@@ -171,7 +171,7 @@ public sealed class BrowserSessionManager : IAsyncDisposable
                 return existing;
             }
 
-            var context = await browser.NewContextAsync().ConfigureAwait(false);
+            var context = await browser.NewContextAsync(_options.ToContextOptions()).ConfigureAwait(false);
             _contexts[name] = context;
             return context;
         }
