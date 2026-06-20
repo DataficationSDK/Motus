@@ -11,8 +11,13 @@ public sealed class TrxReporter(string outputPath) : IReporter, IAccessibilityRe
     private readonly HashSet<string> _testsWithViolations = new();
     private readonly Dictionary<string, PerformanceMetrics> _perfMetrics = new();
     private readonly Guid _runId = Guid.NewGuid();
+    private TestSuiteInfo? _suite;
 
-    public Task OnTestRunStartAsync(TestSuiteInfo suite) => Task.CompletedTask;
+    public Task OnTestRunStartAsync(TestSuiteInfo suite)
+    {
+        _suite = suite;
+        return Task.CompletedTask;
+    }
 
     public Task OnTestStartAsync(TestInfo test) => Task.CompletedTask;
 
@@ -146,6 +151,14 @@ public sealed class TrxReporter(string outputPath) : IReporter, IAccessibilityRe
             definitions,
             testEntries,
             resultSummary);
+
+        // Stamp the shard coordinates as plain attributes so 'motus shard merge' can detect
+        // missing or duplicated shards. Unknown attributes are ignored by TRX consumers.
+        if (_suite is { ShardIndex: int shardIndex, ShardTotal: int shardTotal })
+        {
+            testRun.SetAttributeValue("motusShardIndex", shardIndex);
+            testRun.SetAttributeValue("motusShardTotal", shardTotal);
+        }
 
         var doc = new XDocument(new XDeclaration("1.0", "utf-8", null), testRun);
         var dir = Path.GetDirectoryName(outputPath);

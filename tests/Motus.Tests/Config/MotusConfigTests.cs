@@ -496,4 +496,45 @@ public class MotusConfigTests
         Assert.AreEqual("flake", config.Flaky!.RetryPolicy);
         Assert.AreEqual(5, config.Flaky.Retries);
     }
+
+    // ── Group 7: Shard config section ──
+
+    [TestMethod]
+    public void Deserialize_ShardSection_Populated()
+    {
+        var json = """{ "shard": { "index": 2, "total": 4 } }""";
+        var config = MotusConfigLoader.LoadFrom(json, _ => null);
+
+        Assert.AreEqual(2, config.Shard!.Index);
+        Assert.AreEqual(4, config.Shard.Total);
+    }
+
+    [TestMethod]
+    public void EnvVar_Shard_IndexAndTotal()
+    {
+        var config = MotusConfigLoader.LoadFrom(null, name => name switch
+        {
+            "MOTUS_SHARD_INDEX" => "1",
+            "MOTUS_SHARD_TOTAL" => "3",
+            _ => null,
+        });
+
+        Assert.AreEqual(1, config.Shard!.Index);
+        Assert.AreEqual(3, config.Shard.Total);
+    }
+
+    [TestMethod]
+    public void EnvVar_Shard_OverridesFileValue()
+    {
+        var json = """{ "shard": { "index": 1, "total": 2 } }""";
+        var config = MotusConfigLoader.LoadFrom(json, name => name switch
+        {
+            "MOTUS_SHARD_INDEX" => "3",
+            "MOTUS_SHARD_TOTAL" => "5",
+            _ => null,
+        });
+
+        Assert.AreEqual(3, config.Shard!.Index);
+        Assert.AreEqual(5, config.Shard.Total);
+    }
 }

@@ -81,6 +81,10 @@ internal sealed record MotusFlakyConfig(
     string? HistoryPath = null,
     string? QuarantinePath = null);
 
+internal sealed record MotusShardConfig(
+    int? Index = null,
+    int? Total = null);
+
 internal sealed record MotusRootConfig(
     string? Motus = null,
     MotusLaunchConfig? Launch = null,
@@ -93,7 +97,8 @@ internal sealed record MotusRootConfig(
     MotusAccessibilityConfig? Accessibility = null,
     MotusPerformanceConfig? Performance = null,
     MotusCoverageConfig? Coverage = null,
-    MotusFlakyConfig? Flaky = null);
+    MotusFlakyConfig? Flaky = null,
+    MotusShardConfig? Shard = null);
 
 internal static class MotusConfigLoader
 {
@@ -269,6 +274,15 @@ internal static class MotusConfigLoader
         if (envReader("MOTUS_FLAKY_QUARANTINE") is { Length: > 0 } quarantinePath)
         { flaky = flaky with { QuarantinePath = quarantinePath }; flakyChanged = true; }
 
+        var shard = config.Shard ?? new MotusShardConfig();
+        var shardChanged = false;
+
+        if (TryParseInt(envReader("MOTUS_SHARD_INDEX"), out var shardIndex))
+        { shard = shard with { Index = shardIndex }; shardChanged = true; }
+
+        if (TryParseInt(envReader("MOTUS_SHARD_TOTAL"), out var shardTotal))
+        { shard = shard with { Total = shardTotal }; shardChanged = true; }
+
         return config with
         {
             Launch = launchChanged ? launch : config.Launch,
@@ -280,6 +294,7 @@ internal static class MotusConfigLoader
             Performance = performanceChanged ? performance : config.Performance,
             Coverage = coverageChanged ? coverage : config.Coverage,
             Flaky = flakyChanged ? flaky : config.Flaky,
+            Shard = shardChanged ? shard : config.Shard,
         };
     }
 

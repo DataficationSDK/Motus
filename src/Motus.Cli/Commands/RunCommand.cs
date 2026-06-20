@@ -51,6 +51,10 @@ public static class RunCommand
         {
             Description = "Path to a JSON file that accumulates per-test run/failure/flaky-pass counts across runs.",
         };
+        var shardOpt = new Option<string?>("--shard")
+        {
+            Description = "Run only one shard of the suite: <index>/<total>, 1-based (e.g. --shard 1/4). Discovered tests are partitioned deterministically across shards so independent runs (one per CI agent) cover disjoint subsets. Write each shard to its own result file (e.g. results.shard-1.xml) and combine them with 'motus shard merge'.",
+        };
 
         var cmd = new Command("run", "Discover and execute tests from assemblies")
         {
@@ -67,6 +71,7 @@ public static class RunCommand
             failOnFlakyOpt,
             quarantineOpt,
             flakyHistoryOpt,
+            shardOpt,
         };
 
         cmd.SetAction(async (parseResult, ct) =>
@@ -97,6 +102,37 @@ public static class RunCommand
             var failOnFlaky = parseResult.GetValue(failOnFlakyOpt) ?? flakyConfig?.FailOnFlaky ?? false;
             var quarantinePath = parseResult.GetValue(quarantineOpt) ?? flakyConfig?.QuarantinePath;
             var flakyHistoryPath = parseResult.GetValue(flakyHistoryOpt) ?? flakyConfig?.HistoryPath;
+
+            // Shard coordinates resolve CLI > env/file config. The CLI form is a single
+            // "index/total" spec; config carries the two values separately.
+            int? shardIndex = null;
+            int? shardTotal = null;
+            var shardSpec = parseResult.GetValue(shardOpt);
+            if (shardSpec is not null)
+            {
+                if (!ShardSelector.TryParse(shardSpec, out var idx, out var tot, out var shardError))
+                {
+                    Console.Error.WriteLine($"Error: {shardError}");
+                    return 1;
+                }
+                shardIndex = idx;
+                shardTotal = tot;
+            }
+            else
+            {
+                var shardConfig = Motus.MotusConfigLoader.Config.Shard;
+                if (shardConfig?.Index is int cfgIndex && shardConfig.Total is int cfgTotal)
+                {
+                    if (cfgTotal < 1 || cfgIndex < 1 || cfgIndex > cfgTotal)
+                    {
+                        Console.Error.WriteLine(
+                            $"Error: Invalid shard config index/total {cfgIndex}/{cfgTotal}. The total must be at least 1 and the index between 1 and the total.");
+                        return 1;
+                    }
+                    shardIndex = cfgIndex;
+                    shardTotal = cfgTotal;
+                }
+            }
 
             if (a11yMode is not null)
             {
@@ -171,9 +207,19 @@ public static class RunCommand
                     .ToList();
             }
 
+            // Partition to a single shard after discovery, filtering, and quarantine tagging so
+            // each agent runs a disjoint subset. A shard is just a smaller test list; everything
+            // downstream (workers, reporters, coverage, retries) is unchanged.
+            if (shardIndex is int si && shardTotal is int st)
+            {
+                tests = ShardSelector.Select(tests, si, st);
+                Console.WriteLine($"Shard {si}/{st}: running {tests.Count} test(s).");
+            }
+
             var runner = new TestRunner(workers);
             var runResult = await runner.RunAsync(
-                tests, reporter, a11yMode, perfBudget, coverageReporters, retries, retryPolicy);
+                tests, reporter, a11yMode, perfBudget, coverageReporters, retries, retryPolicy,
+                shardIndex, shardTotal);
 
             return (runResult.Failed > 0
                 || runResult.CoverageThresholdsFailed

@@ -8,8 +8,13 @@ public sealed class JUnitReporter(string outputPath) : IReporter, IAccessibility
     private readonly List<(TestInfo Info, Abstractions.TestResult Result)> _results = [];
     private readonly Dictionary<string, List<AccessibilityViolation>> _violations = new();
     private readonly Dictionary<string, PerformanceMetrics> _perfMetrics = new();
+    private TestSuiteInfo? _suite;
 
-    public Task OnTestRunStartAsync(TestSuiteInfo suite) => Task.CompletedTask;
+    public Task OnTestRunStartAsync(TestSuiteInfo suite)
+    {
+        _suite = suite;
+        return Task.CompletedTask;
+    }
 
     public Task OnTestStartAsync(TestInfo test) => Task.CompletedTask;
 
@@ -46,6 +51,19 @@ public sealed class JUnitReporter(string outputPath) : IReporter, IAccessibility
             new XAttribute("skipped", summary.Skipped),
             new XAttribute("flaky", summary.Flaky),
             new XAttribute("time", (summary.TotalDurationMs / 1000).ToString("F3")));
+
+        // Stamp the shard coordinates so 'motus shard merge' can detect missing or duplicated
+        // shards when recombining per-shard result files.
+        if (_suite is { ShardIndex: int shardIndex, ShardTotal: int shardTotal })
+        {
+            testSuite.Add(new XElement("properties",
+                new XElement("property",
+                    new XAttribute("name", "motus.shard.index"),
+                    new XAttribute("value", shardIndex)),
+                new XElement("property",
+                    new XAttribute("name", "motus.shard.total"),
+                    new XAttribute("value", shardTotal))));
+        }
 
         foreach (var (info, result) in _results)
         {

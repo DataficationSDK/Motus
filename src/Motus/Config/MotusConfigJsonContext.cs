@@ -18,6 +18,7 @@ namespace Motus;
 [JsonSerializable(typeof(MotusCoverageJsConfig))]
 [JsonSerializable(typeof(MotusCoverageCssConfig))]
 [JsonSerializable(typeof(MotusFlakyConfig))]
+[JsonSerializable(typeof(MotusShardConfig))]
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]

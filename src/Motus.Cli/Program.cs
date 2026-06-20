@@ -12,6 +12,7 @@ var root = new RootCommand("Motus CLI - Browser automation toolkit")
     PdfCommand.Build(),
     TraceCommand.Build(),
     TrxCommand.Build(),
+    ShardCommand.Build(),
     CheckSelectorsCommand.Build(),
     McpCommand.Build(),
 };

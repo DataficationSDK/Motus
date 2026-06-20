@@ -6,7 +6,11 @@ namespace Motus.Abstractions;
 /// <param name="SuiteName">The name of the test suite.</param>
 /// <param name="TestCount">The total number of tests in the suite.</param>
 /// <param name="Tags">Optional tags or labels associated with the suite.</param>
+/// <param name="ShardIndex">The 1-based shard index when this run is one shard of a larger suite; null for a whole-suite run.</param>
+/// <param name="ShardTotal">The total number of shards when sharding; null for a whole-suite run.</param>
 public sealed record TestSuiteInfo(
     string SuiteName,
     int TestCount,
-    IReadOnlyList<string>? Tags = null);
+    IReadOnlyList<string>? Tags = null,
+    int? ShardIndex = null,
+    int? ShardTotal = null);

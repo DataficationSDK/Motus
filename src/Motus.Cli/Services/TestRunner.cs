@@ -45,7 +45,9 @@ public sealed class TestRunner(int maxWorkers)
         bool enforcePerfBudget,
         IReadOnlyList<ICoverageReporter>? coverageReporters,
         int maxRetries = 0,
-        RetryPolicy retryPolicy = RetryPolicy.Transient)
+        RetryPolicy retryPolicy = RetryPolicy.Transient,
+        int? shardIndex = null,
+        int? shardTotal = null)
     {
         if (maxRetries < 0)
             maxRetries = 0;
@@ -53,7 +55,8 @@ public sealed class TestRunner(int maxWorkers)
             ? tests[0].TestClass.Assembly.GetName().Name ?? "Motus Tests"
             : "Motus Tests";
 
-        await reporter.OnTestRunStartAsync(new TestSuiteInfo(suiteName, tests.Count));
+        await reporter.OnTestRunStartAsync(
+            new TestSuiteInfo(suiteName, tests.Count, ShardIndex: shardIndex, ShardTotal: shardTotal));
 
         var sw = Stopwatch.StartNew();
 
