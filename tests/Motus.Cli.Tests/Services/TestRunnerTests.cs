@@ -114,6 +114,41 @@ public class TestRunnerTests
         }
     }
 
+    public class FlakyGenericFailureFixture
+    {
+        public static int AttemptCount { get; set; }
+
+        // Throws a non-CDP exception on the first attempt, then passes. Used to exercise
+        // the flake retry policy, which retries any failure (not just disconnects).
+        public void FlakesOnce()
+        {
+            AttemptCount++;
+            if (AttemptCount == 1)
+                throw new InvalidOperationException("generic flake");
+        }
+    }
+
+    public class AlwaysFailsGenericFixture
+    {
+        public static int AttemptCount { get; set; }
+
+        public void AlwaysFails()
+        {
+            AttemptCount++;
+            throw new InvalidOperationException("always fails");
+        }
+    }
+
+    public class QuarantinedFailingFixture
+    {
+        public void Fails() => throw new InvalidOperationException("quarantined failure");
+    }
+
+    public class QuarantinedPassingFixture
+    {
+        public void Passes() { }
+    }
+
     #endregion
 
     private static NullReporter CreateReporter() => new();
@@ -128,6 +163,12 @@ public class TestRunnerTests
     {
         var method = type.GetMethod(methodName, BindingFlags.Public | BindingFlags.Instance)!;
         return new DiscoveredTest(type, method, $"{type.FullName}.{methodName}", true);
+    }
+
+    private static DiscoveredTest MakeQuarantinedTest(Type type, string methodName)
+    {
+        var method = type.GetMethod(methodName, BindingFlags.Public | BindingFlags.Instance)!;
+        return new DiscoveredTest(type, method, $"{type.FullName}.{methodName}", false, Quarantined: true);
     }
 
     [TestMethod]
@@ -409,6 +450,119 @@ public class TestRunnerTests
         Assert.AreEqual(1, result.Failed);
         Assert.AreEqual(1, AlwaysDisconnectsFixture.AttemptCount,
             "Default behaviour with no --retries flag must be a single attempt.");
+    }
+
+    [TestMethod]
+    public async Task FlakePolicy_FailThenPass_IsReportedFlaky()
+    {
+        FlakyGenericFailureFixture.AttemptCount = 0;
+        var tests = new List<DiscoveredTest>
+        {
+            MakeTest(typeof(FlakyGenericFailureFixture), nameof(FlakyGenericFailureFixture.FlakesOnce)),
+        };
+
+        var runner = new TestRunner(1);
+        var result = await runner.RunAsync(tests, CreateReporter(),
+            a11yMode: null, enforcePerfBudget: false, coverageReporters: null,
+            maxRetries: 2, retryPolicy: RetryPolicy.Flake);
+
+        Assert.AreEqual(1, result.Passed, "A test that passes on retry should be passing overall.");
+        Assert.AreEqual(0, result.Failed);
+        Assert.AreEqual(1, result.Flaky, "Passing only after a retry should be classified flaky.");
+        Assert.AreEqual(2, FlakyGenericFailureFixture.AttemptCount,
+            "Flake policy must retry a generic (non-CDP) failure.");
+    }
+
+    [TestMethod]
+    public async Task TransientPolicy_GenericFailure_IsNotRetriedOrFlaky()
+    {
+        FlakyGenericFailureFixture.AttemptCount = 0;
+        var tests = new List<DiscoveredTest>
+        {
+            MakeTest(typeof(FlakyGenericFailureFixture), nameof(FlakyGenericFailureFixture.FlakesOnce)),
+        };
+
+        var runner = new TestRunner(1);
+        // Default policy is transient: a non-disconnect failure must not be retried.
+        var result = await runner.RunAsync(tests, CreateReporter(),
+            a11yMode: null, enforcePerfBudget: false, coverageReporters: null,
+            maxRetries: 2, retryPolicy: RetryPolicy.Transient);
+
+        Assert.AreEqual(1, result.Failed);
+        Assert.AreEqual(0, result.Flaky);
+        Assert.AreEqual(1, FlakyGenericFailureFixture.AttemptCount,
+            "Transient policy must not retry a generic failure.");
+    }
+
+    [TestMethod]
+    public async Task FlakePolicy_AlwaysFails_IsHardFailureNotFlaky()
+    {
+        AlwaysFailsGenericFixture.AttemptCount = 0;
+        var tests = new List<DiscoveredTest>
+        {
+            MakeTest(typeof(AlwaysFailsGenericFixture), nameof(AlwaysFailsGenericFixture.AlwaysFails)),
+        };
+
+        var runner = new TestRunner(1);
+        var result = await runner.RunAsync(tests, CreateReporter(),
+            a11yMode: null, enforcePerfBudget: false, coverageReporters: null,
+            maxRetries: 2, retryPolicy: RetryPolicy.Flake);
+
+        Assert.AreEqual(1, result.Failed);
+        Assert.AreEqual(0, result.Flaky, "A test that never passes is a hard failure, not flaky.");
+        Assert.AreEqual(3, AlwaysFailsGenericFixture.AttemptCount,
+            "Flake policy must exhaust maxRetries+1 attempts before giving up.");
+    }
+
+    [TestMethod]
+    public async Task FlakePolicy_PassesFirstTry_IsNotFlaky()
+    {
+        LifecycleTrackingFixture.CallLog.Clear();
+        var tests = new List<DiscoveredTest>
+        {
+            MakeTest(typeof(LifecycleTrackingFixture), nameof(LifecycleTrackingFixture.PassingTest)),
+        };
+
+        var runner = new TestRunner(1);
+        var result = await runner.RunAsync(tests, CreateReporter(),
+            a11yMode: null, enforcePerfBudget: false, coverageReporters: null,
+            maxRetries: 2, retryPolicy: RetryPolicy.Flake);
+
+        Assert.AreEqual(1, result.Passed);
+        Assert.AreEqual(0, result.Flaky, "A clean first-attempt pass is not flaky.");
+    }
+
+    [TestMethod]
+    public async Task QuarantinedFailingTest_DoesNotGateRun()
+    {
+        var tests = new List<DiscoveredTest>
+        {
+            MakeQuarantinedTest(typeof(QuarantinedFailingFixture), nameof(QuarantinedFailingFixture.Fails)),
+        };
+
+        var runner = new TestRunner(1);
+        var result = await runner.RunAsync(tests, CreateReporter());
+
+        Assert.AreEqual(0, result.Failed, "A quarantined failure must not count as failed.");
+        Assert.AreEqual(0, result.Passed);
+        Assert.AreEqual(1, result.Quarantined);
+        Assert.AreEqual(1, result.Total);
+    }
+
+    [TestMethod]
+    public async Task QuarantinedPassingTest_IsBucketedQuarantined()
+    {
+        var tests = new List<DiscoveredTest>
+        {
+            MakeQuarantinedTest(typeof(QuarantinedPassingFixture), nameof(QuarantinedPassingFixture.Passes)),
+        };
+
+        var runner = new TestRunner(1);
+        var result = await runner.RunAsync(tests, CreateReporter());
+
+        Assert.AreEqual(1, result.Quarantined);
+        Assert.AreEqual(0, result.Passed, "A quarantined test occupies only the quarantined bucket.");
+        Assert.AreEqual(0, result.Failed);
     }
 
     private sealed class NullReporter : IReporter

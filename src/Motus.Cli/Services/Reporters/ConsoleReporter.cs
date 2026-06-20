@@ -23,10 +23,18 @@ public sealed class ConsoleReporter(TextWriter writer, bool useColor) : IReporte
 
     public Task OnTestEndAsync(TestInfo test, Abstractions.TestResult result)
     {
+        // Quarantine takes precedence on the label (its outcome does not gate the run);
+        // flaky is the next-most-notable state; otherwise plain pass/fail.
+        var (color, status) =
+            result.Quarantined ? (Gray, "QUARANTINE")
+            : result.Flaky ? (Yellow, "FLAKY")
+            : result.Passed ? (Green, "PASS")
+            : (Red, "FAIL");
+        var attemptsNote = result.Attempts > 1 ? $" (after {result.Attempts} attempts)" : "";
+
         if (useColor)
         {
-            var (color, status) = result.Passed ? (Green, "PASS") : (Red, "FAIL");
-            var duration = $"{Gray}({result.DurationMs:F0}ms){Reset}";
+            var duration = $"{Gray}({result.DurationMs:F0}ms){attemptsNote}{Reset}";
             writer.WriteLine($"  {color}[{status}]{Reset} {result.TestName} {duration}");
 
             if (!result.Passed && result.ErrorMessage is not null)
@@ -34,8 +42,7 @@ public sealed class ConsoleReporter(TextWriter writer, bool useColor) : IReporte
         }
         else
         {
-            var status = result.Passed ? "PASS" : "FAIL";
-            writer.WriteLine($"  [{status}] {result.TestName} ({result.DurationMs:F0}ms)");
+            writer.WriteLine($"  [{status}] {result.TestName} ({result.DurationMs:F0}ms){attemptsNote}");
 
             if (!result.Passed && result.ErrorMessage is not null)
                 writer.WriteLine($"         {result.ErrorMessage}");
@@ -116,7 +123,7 @@ public sealed class ConsoleReporter(TextWriter writer, bool useColor) : IReporte
     public Task OnTestRunEndAsync(TestRunSummary summary)
     {
         writer.WriteLine();
-        var total = summary.Passed + summary.Failed + summary.Skipped;
+        var total = summary.Passed + summary.Failed + summary.Skipped + summary.Quarantined;
 
         if (useColor)
         {
@@ -124,11 +131,21 @@ public sealed class ConsoleReporter(TextWriter writer, bool useColor) : IReporte
             var failedText = summary.Failed > 0
                 ? $"{Red}{summary.Failed} failed{Reset}"
                 : $"{summary.Failed} failed";
-            writer.WriteLine($"Results: {passedText}, {failedText}, {total} total ({summary.TotalDurationMs / 1000:F1}s)");
+            var extra = "";
+            if (summary.Flaky > 0)
+                extra += $", {Yellow}{summary.Flaky} flaky{Reset}";
+            if (summary.Quarantined > 0)
+                extra += $", {Gray}{summary.Quarantined} quarantined{Reset}";
+            writer.WriteLine($"Results: {passedText}, {failedText}{extra}, {total} total ({summary.TotalDurationMs / 1000:F1}s)");
         }
         else
         {
-            writer.WriteLine($"Results: {summary.Passed} passed, {summary.Failed} failed, {total} total ({summary.TotalDurationMs / 1000:F1}s)");
+            var extra = "";
+            if (summary.Flaky > 0)
+                extra += $", {summary.Flaky} flaky";
+            if (summary.Quarantined > 0)
+                extra += $", {summary.Quarantined} quarantined";
+            writer.WriteLine($"Results: {summary.Passed} passed, {summary.Failed} failed{extra}, {total} total ({summary.TotalDurationMs / 1000:F1}s)");
         }
 
         return Task.CompletedTask;

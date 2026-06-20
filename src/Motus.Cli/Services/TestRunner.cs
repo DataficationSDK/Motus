@@ -8,9 +8,21 @@ using CliTestResult = Motus.Cli.Services.TestResult;
 
 namespace Motus.Cli.Services;
 
-public sealed record TestResult(string FullName, bool Passed, TimeSpan Duration, string? ErrorMessage, string? StackTrace);
+public sealed record TestResult(string FullName, bool Passed, TimeSpan Duration, string? ErrorMessage, string? StackTrace, bool Flaky = false, bool Quarantined = false, int Attempts = 1);
 
-public sealed record TestRunResult(int Total, int Passed, int Failed, int Skipped, TimeSpan Duration, bool CoverageThresholdsFailed = false);
+public sealed record TestRunResult(int Total, int Passed, int Failed, int Skipped, TimeSpan Duration, bool CoverageThresholdsFailed = false, int Flaky = 0, int Quarantined = 0);
+
+/// <summary>
+/// Controls which failures the runner re-runs under <c>--retries</c>.
+/// <see cref="Transient"/> retries only transient CDP disconnects (the default, safe
+/// behavior). <see cref="Flake"/> retries any failure and reports a test that fails then
+/// passes within its retry budget as flaky rather than failed.
+/// </summary>
+public enum RetryPolicy
+{
+    Transient,
+    Flake,
+}
 
 public sealed class TestRunner(int maxWorkers)
 {
@@ -32,7 +44,8 @@ public sealed class TestRunner(int maxWorkers)
         string? a11yMode,
         bool enforcePerfBudget,
         IReadOnlyList<ICoverageReporter>? coverageReporters,
-        int maxRetries = 0)
+        int maxRetries = 0,
+        RetryPolicy retryPolicy = RetryPolicy.Transient)
     {
         if (maxRetries < 0)
             maxRetries = 0;
@@ -82,6 +95,7 @@ public sealed class TestRunner(int maxWorkers)
                 await reporter.OnTestStartAsync(testInfo);
 
                 CliTestResult result;
+                var attempts = 1;
 
                 if (failedAssemblies.Contains(test.TestClass.Assembly))
                 {
@@ -104,9 +118,11 @@ public sealed class TestRunner(int maxWorkers)
                         PerformanceMetricsSink.Begin();
                         CoverageSink.Begin();
 
+                        // Each call rebuilds the test instance (and its browser context),
+                        // so every retry runs against clean state.
                         (result, failure) = await ExecuteTestAsync(test);
 
-                        if (result.Passed || attempt >= totalAttempts || !IsTransientCdpFailure(failure))
+                        if (result.Passed || attempt >= totalAttempts || !ShouldRetry(failure, retryPolicy))
                             break;
 
                         // Discard sink data captured during the failed attempt; a clean
@@ -115,8 +131,10 @@ public sealed class TestRunner(int maxWorkers)
                         PerformanceMetricsSink.End();
                         CoverageSink.End();
 
-                        WriteRetryNotice(test.FullName, attempt + 1, totalAttempts);
+                        WriteRetryNotice(test.FullName, attempt + 1, totalAttempts, retryPolicy);
                     }
+
+                    attempts = attempt;
                 }
 
                 var violations = AccessibilityViolationSink.End();
@@ -193,6 +211,16 @@ public sealed class TestRunner(int maxWorkers)
                     };
                 }
 
+                // Classify after any enforce override above: a test the body passed on a
+                // later attempt but enforce then failed is a hard failure, not flaky.
+                var flaky = result.Passed && attempts > 1;
+                result = result with
+                {
+                    Flaky = flaky,
+                    Quarantined = test.Quarantined,
+                    Attempts = attempts,
+                };
+
                 lock (lockObj)
                 {
                     results.Add(result);
@@ -200,7 +228,8 @@ public sealed class TestRunner(int maxWorkers)
 
                 var absResult = new Abstractions.TestResult(
                     result.FullName, result.Passed, result.Duration.TotalMilliseconds,
-                    result.ErrorMessage, result.StackTrace);
+                    result.ErrorMessage, result.StackTrace,
+                    Flaky: result.Flaky, Quarantined: result.Quarantined, Attempts: result.Attempts);
                 await reporter.OnTestEndAsync(testInfo, absResult);
             }
             finally
@@ -291,11 +320,18 @@ public sealed class TestRunner(int maxWorkers)
         }
 
         var skipped = tests.Count(t => t.IsIgnored);
-        var passed = results.Count(r => r.Passed);
-        var failed = results.Count(r => !r.Passed);
-        var runResult = new TestRunResult(passed + failed + skipped, passed, failed, skipped, sw.Elapsed, coverageThresholdsFailed);
+        // Quarantined results occupy their own bucket and are excluded from passed/failed
+        // so a quarantined failure never gates the run.
+        var quarantined = results.Count(r => r.Quarantined);
+        var passed = results.Count(r => r.Passed && !r.Quarantined);
+        var failed = results.Count(r => !r.Passed && !r.Quarantined);
+        var flaky = results.Count(r => r.Flaky && !r.Quarantined);
+        var runResult = new TestRunResult(
+            passed + failed + skipped + quarantined, passed, failed, skipped, sw.Elapsed,
+            coverageThresholdsFailed, flaky, quarantined);
 
-        await reporter.OnTestRunEndAsync(new TestRunSummary(suiteName, passed, failed, skipped, sw.Elapsed.TotalMilliseconds));
+        await reporter.OnTestRunEndAsync(new TestRunSummary(
+            suiteName, passed, failed, skipped, sw.Elapsed.TotalMilliseconds, flaky, quarantined));
         return runResult;
     }
 
@@ -304,23 +340,37 @@ public sealed class TestRunner(int maxWorkers)
     /// as the [PASS]/[FAIL] lines emitted by ConsoleReporter, so the retry log
     /// reads as part of the test stream instead of free-form debug output.
     /// </summary>
-    private static void WriteRetryNotice(string testName, int attempt, int totalAttempts)
+    private static void WriteRetryNotice(string testName, int attempt, int totalAttempts, RetryPolicy policy)
     {
         const string Yellow = "\x1b[33m";
         const string Gray = "\x1b[90m";
         const string Reset = "\x1b[0m";
 
+        var reason = policy == RetryPolicy.Flake ? "failure" : "CDP disconnect";
+
         var useColor = !Console.IsErrorRedirected;
         if (useColor)
         {
             Console.Error.WriteLine(
-                $"  {Yellow}[RETRY]{Reset} {testName} {Gray}(CDP disconnect, attempt {attempt}/{totalAttempts}){Reset}");
+                $"  {Yellow}[RETRY]{Reset} {testName} {Gray}({reason}, attempt {attempt}/{totalAttempts}){Reset}");
         }
         else
         {
             Console.Error.WriteLine(
-                $"  [RETRY] {testName} (CDP disconnect, attempt {attempt}/{totalAttempts})");
+                $"  [RETRY] {testName} ({reason}, attempt {attempt}/{totalAttempts})");
         }
+    }
+
+    /// <summary>
+    /// Decides whether a failed attempt should be retried under the active policy.
+    /// <see cref="RetryPolicy.Flake"/> retries any failure; <see cref="RetryPolicy.Transient"/>
+    /// retries only transient CDP disconnects.
+    /// </summary>
+    private static bool ShouldRetry(Exception? failure, RetryPolicy policy)
+    {
+        if (failure is null)
+            return false;
+        return policy == RetryPolicy.Flake || IsTransientCdpFailure(failure);
     }
 
     /// <summary>

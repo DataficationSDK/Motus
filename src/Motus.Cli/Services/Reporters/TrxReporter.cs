@@ -36,7 +36,7 @@ public sealed class TrxReporter(string outputPath) : IReporter, IAccessibilityRe
 
     public async Task OnTestRunEndAsync(TestRunSummary summary)
     {
-        var total = summary.Passed + summary.Failed + summary.Skipped;
+        var total = summary.Passed + summary.Failed + summary.Skipped + summary.Quarantined;
 
         var results = new XElement(TrxNs + "Results");
         var definitions = new XElement(TrxNs + "TestDefinitions");
@@ -44,7 +44,8 @@ public sealed class TrxReporter(string outputPath) : IReporter, IAccessibilityRe
 
         foreach (var (info, result, executionId, testId) in _results)
         {
-            var outcome = result.Passed ? "Passed" : "Failed";
+            // Quarantined tests report as Inconclusive so they neither pass nor fail the run.
+            var outcome = result.Quarantined ? "Inconclusive" : result.Passed ? "Passed" : "Failed";
             var duration = TimeSpan.FromMilliseconds(result.DurationMs);
 
             var unitTestResult = new XElement(TrxNs + "UnitTestResult",
@@ -106,11 +107,19 @@ public sealed class TrxReporter(string outputPath) : IReporter, IAccessibilityRe
                     new XAttribute("className", className),
                     new XAttribute("name", methodName)));
 
+            var categories = new List<string>();
             if (_testsWithViolations.Contains(result.TestName))
+                categories.Add("a11y");
+            if (result.Flaky)
+                categories.Add("flaky");
+            if (result.Quarantined)
+                categories.Add("quarantine");
+
+            if (categories.Count > 0)
             {
                 unitTest.Add(new XElement(TrxNs + "TestCategory",
-                    new XElement(TrxNs + "TestCategoryItem",
-                        new XAttribute("TestCategory", "a11y"))));
+                    categories.Select(c => new XElement(TrxNs + "TestCategoryItem",
+                        new XAttribute("TestCategory", c)))));
             }
 
             definitions.Add(unitTest);
@@ -124,9 +133,10 @@ public sealed class TrxReporter(string outputPath) : IReporter, IAccessibilityRe
             new XAttribute("outcome", summary.Failed > 0 ? "Failed" : "Completed"),
             new XElement(TrxNs + "Counters",
                 new XAttribute("total", total),
-                new XAttribute("executed", summary.Passed + summary.Failed),
+                new XAttribute("executed", summary.Passed + summary.Failed + summary.Quarantined),
                 new XAttribute("passed", summary.Passed),
                 new XAttribute("failed", summary.Failed),
+                new XAttribute("inconclusive", summary.Quarantined),
                 new XAttribute("notExecuted", summary.Skipped)));
 
         var testRun = new XElement(TrxNs + "TestRun",

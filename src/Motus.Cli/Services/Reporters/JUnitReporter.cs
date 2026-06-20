@@ -38,12 +38,13 @@ public sealed class JUnitReporter(string outputPath) : IReporter, IAccessibility
 
     public async Task OnTestRunEndAsync(TestRunSummary summary)
     {
-        var total = summary.Passed + summary.Failed + summary.Skipped;
+        var total = summary.Passed + summary.Failed + summary.Skipped + summary.Quarantined;
         var testSuite = new XElement("testsuite",
             new XAttribute("name", summary.SuiteName),
             new XAttribute("tests", total),
             new XAttribute("failures", summary.Failed),
             new XAttribute("skipped", summary.Skipped),
+            new XAttribute("flaky", summary.Flaky),
             new XAttribute("time", (summary.TotalDurationMs / 1000).ToString("F3")));
 
         foreach (var (info, result) in _results)
@@ -53,11 +54,27 @@ public sealed class JUnitReporter(string outputPath) : IReporter, IAccessibility
                 new XAttribute("classname", info.SuiteName),
                 new XAttribute("time", (result.DurationMs / 1000).ToString("F3")));
 
-            if (!result.Passed)
+            if (result.Quarantined)
+            {
+                // A quarantined test must not count as a failure; record its real outcome
+                // as informational output instead of a <failure>.
+                var note = result.Passed
+                    ? "QUARANTINED (passed)"
+                    : $"QUARANTINED (failed: {result.ErrorMessage})";
+                testCase.Add(new XElement("system-out", note));
+            }
+            else if (!result.Passed)
             {
                 testCase.Add(new XElement("failure",
                     new XAttribute("message", result.ErrorMessage ?? ""),
                     result.StackTrace ?? ""));
+            }
+            else if (result.Flaky)
+            {
+                // Surefire convention: a passing test that needed reruns carries a
+                // <flakyFailure> so CI surfaces it without failing the build.
+                testCase.Add(new XElement("flakyFailure",
+                    new XAttribute("message", $"passed after {result.Attempts} attempts")));
             }
 
             if (_violations.TryGetValue(result.TestName, out var violations) && violations.Count > 0)

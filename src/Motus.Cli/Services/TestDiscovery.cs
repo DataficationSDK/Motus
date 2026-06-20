@@ -2,7 +2,7 @@ using System.Reflection;
 
 namespace Motus.Cli.Services;
 
-public sealed record DiscoveredTest(Type TestClass, MethodInfo TestMethod, string FullName, bool IsIgnored);
+public sealed record DiscoveredTest(Type TestClass, MethodInfo TestMethod, string FullName, bool IsIgnored, bool Quarantined = false);
 
 public sealed class TestDiscovery
 {
@@ -22,6 +22,11 @@ public sealed class TestDiscovery
     private static readonly HashSet<string> IgnoreAttributes = new(StringComparer.Ordinal)
     {
         "IgnoreAttribute",  // MSTest + NUnit
+    };
+
+    private static readonly HashSet<string> QuarantineAttributes = new(StringComparer.Ordinal)
+    {
+        "QuarantineAttribute",
     };
 
     public List<DiscoveredTest> Discover(string[] assemblyPaths, string? filter)
@@ -50,6 +55,9 @@ public sealed class TestDiscovery
                 var classIgnored = type.GetCustomAttributes(true)
                     .Any(a => IgnoreAttributes.Contains(a.GetType().Name));
 
+                var classQuarantined = type.GetCustomAttributes(true)
+                    .Any(a => QuarantineAttributes.Contains(a.GetType().Name));
+
                 foreach (var method in type.GetMethods(BindingFlags.Public | BindingFlags.Instance))
                 {
                     if (!IsTestMethod(method))
@@ -61,7 +69,8 @@ public sealed class TestDiscovery
                         continue;
 
                     var isIgnored = classIgnored || IsIgnoredMethod(method);
-                    tests.Add(new DiscoveredTest(type, method, fullName, isIgnored));
+                    var quarantined = classQuarantined || IsQuarantinedMethod(method);
+                    tests.Add(new DiscoveredTest(type, method, fullName, isIgnored, quarantined));
                 }
             }
         }
@@ -102,5 +111,11 @@ public sealed class TestDiscovery
         }
 
         return false;
+    }
+
+    private static bool IsQuarantinedMethod(MethodInfo method)
+    {
+        return method.GetCustomAttributes(true)
+            .Any(a => QuarantineAttributes.Contains(a.GetType().Name));
     }
 }

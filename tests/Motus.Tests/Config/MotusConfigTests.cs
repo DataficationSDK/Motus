@@ -442,4 +442,58 @@ public class MotusConfigTests
         var budget = ConfigMerge.ToBudget(null);
         Assert.IsNull(budget);
     }
+
+    // ── Group 6: Flaky config section ──
+
+    [TestMethod]
+    public void Deserialize_FlakySection_Populated()
+    {
+        var json = """
+        {
+            "flaky": { "retryPolicy": "flake", "retries": 3, "failOnFlaky": true, "historyPath": "out/flake.json", "quarantinePath": "quarantine.txt" }
+        }
+        """;
+        var config = MotusConfigLoader.LoadFrom(json, _ => null);
+
+        Assert.AreEqual("flake", config.Flaky!.RetryPolicy);
+        Assert.AreEqual(3, config.Flaky.Retries);
+        Assert.AreEqual(true, config.Flaky.FailOnFlaky);
+        Assert.AreEqual("out/flake.json", config.Flaky.HistoryPath);
+        Assert.AreEqual("quarantine.txt", config.Flaky.QuarantinePath);
+    }
+
+    [TestMethod]
+    public void EnvVar_Flaky_AllFields()
+    {
+        var config = MotusConfigLoader.LoadFrom(null, name => name switch
+        {
+            "MOTUS_FLAKY_RETRY_POLICY" => "flake",
+            "MOTUS_FLAKY_RETRIES" => "2",
+            "MOTUS_FLAKY_FAIL" => "true",
+            "MOTUS_FLAKY_HISTORY" => "h.json",
+            "MOTUS_FLAKY_QUARANTINE" => "q.txt",
+            _ => null,
+        });
+
+        Assert.AreEqual("flake", config.Flaky!.RetryPolicy);
+        Assert.AreEqual(2, config.Flaky.Retries);
+        Assert.AreEqual(true, config.Flaky.FailOnFlaky);
+        Assert.AreEqual("h.json", config.Flaky.HistoryPath);
+        Assert.AreEqual("q.txt", config.Flaky.QuarantinePath);
+    }
+
+    [TestMethod]
+    public void EnvVar_Flaky_OverridesFileValue()
+    {
+        var json = """{ "flaky": { "retryPolicy": "transient", "retries": 0 } }""";
+        var config = MotusConfigLoader.LoadFrom(json, name => name switch
+        {
+            "MOTUS_FLAKY_RETRY_POLICY" => "flake",
+            "MOTUS_FLAKY_RETRIES" => "5",
+            _ => null,
+        });
+
+        Assert.AreEqual("flake", config.Flaky!.RetryPolicy);
+        Assert.AreEqual(5, config.Flaky.Retries);
+    }
 }

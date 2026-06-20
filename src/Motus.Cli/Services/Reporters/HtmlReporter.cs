@@ -42,7 +42,7 @@ public sealed class HtmlReporter(string outputPath) : IReporter, IAccessibilityR
 
     public async Task OnTestRunEndAsync(TestRunSummary summary)
     {
-        var total = summary.Passed + summary.Failed + summary.Skipped;
+        var total = summary.Passed + summary.Failed + summary.Skipped + summary.Quarantined;
         var sb = new StringBuilder();
         sb.AppendLine("<!DOCTYPE html>");
         sb.AppendLine("<html><head><meta charset=\"utf-8\"><title>Motus Test Report</title>");
@@ -55,6 +55,8 @@ h1 { margin-top: 0; }
 .stat.passed { background: #dcffe4; color: #22863a; }
 .stat.failed { background: #ffeef0; color: #cb2431; }
 .stat.skipped { background: #fff8c5; color: #735c0f; }
+.stat.flaky { background: #fff8c5; color: #735c0f; }
+.stat.quarantined { background: #f6f8fa; color: #586069; }
 .stat.total { background: #f1f8ff; color: #0366d6; }
 .test-list { list-style: none; padding: 0; }
 .test-item { border: 1px solid #e1e4e8; border-radius: 6px; margin-bottom: 0.5rem; background: #fff; }
@@ -65,6 +67,8 @@ h1 { margin-top: 0; }
 .badge.pass { background: #dcffe4; color: #22863a; }
 .badge.fail { background: #ffeef0; color: #cb2431; }
 .badge.skip { background: #fff8c5; color: #735c0f; }
+.badge.flaky { background: #fff8c5; color: #735c0f; }
+.badge.quarantine { background: #f6f8fa; color: #586069; }
 .test-name { flex: 1; }
 .duration { color: #6a737d; font-size: 0.875rem; }
 .detail-body { padding: 0.75rem 1rem; border-top: 1px solid #e1e4e8; }
@@ -98,6 +102,10 @@ pre.stack-trace { background: #f6f8fa; padding: 1rem; border-radius: 4px; overfl
         sb.AppendLine("<div class=\"summary\">");
         sb.AppendLine($"<div class=\"stat passed\">{summary.Passed} Passed</div>");
         sb.AppendLine($"<div class=\"stat failed\">{summary.Failed} Failed</div>");
+        if (summary.Flaky > 0)
+            sb.AppendLine($"<div class=\"stat flaky\">{summary.Flaky} Flaky</div>");
+        if (summary.Quarantined > 0)
+            sb.AppendLine($"<div class=\"stat quarantined\">{summary.Quarantined} Quarantined</div>");
         if (summary.Skipped > 0)
             sb.AppendLine($"<div class=\"stat skipped\">{summary.Skipped} Skipped</div>");
         sb.AppendLine($"<div class=\"stat total\">{total} Total ({summary.TotalDurationMs / 1000:F1}s)</div>");
@@ -107,11 +115,14 @@ pre.stack-trace { background: #f6f8fa; padding: 1rem; border-radius: 4px; overfl
         sb.AppendLine("<ul class=\"test-list\">");
         foreach (var (info, r) in _results)
         {
-            var badgeClass = r.Passed ? "pass" : "fail";
-            var badgeText = r.Passed ? "PASS" : "FAIL";
+            var (badgeClass, badgeText) =
+                r.Quarantined ? ("quarantine", "QUARANTINE")
+                : r.Flaky ? ("flaky", "FLAKY")
+                : r.Passed ? ("pass", "PASS")
+                : ("fail", "FAIL");
             var hasA11y = _violations.TryGetValue(r.TestName, out var testViolations) && testViolations.Count > 0;
             var hasPerf = _perfMetrics.TryGetValue(r.TestName, out var perfData);
-            var hasDetails = !r.Passed || r.Attachments is { Count: > 0 } || hasA11y || hasPerf;
+            var hasDetails = !r.Passed || r.Flaky || r.Attachments is { Count: > 0 } || hasA11y || hasPerf;
 
             sb.AppendLine("<li class=\"test-item\">");
 

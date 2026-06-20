@@ -74,6 +74,13 @@ internal sealed record MotusCoverageConfig(
     MotusCoverageJsConfig? Js = null,
     MotusCoverageCssConfig? Css = null);
 
+internal sealed record MotusFlakyConfig(
+    string? RetryPolicy = null,
+    int? Retries = null,
+    bool? FailOnFlaky = null,
+    string? HistoryPath = null,
+    string? QuarantinePath = null);
+
 internal sealed record MotusRootConfig(
     string? Motus = null,
     MotusLaunchConfig? Launch = null,
@@ -85,7 +92,8 @@ internal sealed record MotusRootConfig(
     MotusFailureConfig? Failure = null,
     MotusAccessibilityConfig? Accessibility = null,
     MotusPerformanceConfig? Performance = null,
-    MotusCoverageConfig? Coverage = null);
+    MotusCoverageConfig? Coverage = null,
+    MotusFlakyConfig? Flaky = null);
 
 internal static class MotusConfigLoader
 {
@@ -243,6 +251,24 @@ internal static class MotusConfigLoader
         if (TryParseBool(envReader("MOTUS_COVERAGE_INCLUDE_CSS"), out var coverageCss))
         { coverage = coverage with { IncludeCss = coverageCss }; coverageChanged = true; }
 
+        var flaky = config.Flaky ?? new MotusFlakyConfig();
+        var flakyChanged = false;
+
+        if (envReader("MOTUS_FLAKY_RETRY_POLICY") is { Length: > 0 } retryPolicy)
+        { flaky = flaky with { RetryPolicy = retryPolicy }; flakyChanged = true; }
+
+        if (TryParseInt(envReader("MOTUS_FLAKY_RETRIES"), out var flakyRetries))
+        { flaky = flaky with { Retries = flakyRetries }; flakyChanged = true; }
+
+        if (TryParseBool(envReader("MOTUS_FLAKY_FAIL"), out var failOnFlaky))
+        { flaky = flaky with { FailOnFlaky = failOnFlaky }; flakyChanged = true; }
+
+        if (envReader("MOTUS_FLAKY_HISTORY") is { Length: > 0 } historyPath)
+        { flaky = flaky with { HistoryPath = historyPath }; flakyChanged = true; }
+
+        if (envReader("MOTUS_FLAKY_QUARANTINE") is { Length: > 0 } quarantinePath)
+        { flaky = flaky with { QuarantinePath = quarantinePath }; flakyChanged = true; }
+
         return config with
         {
             Launch = launchChanged ? launch : config.Launch,
@@ -253,6 +279,7 @@ internal static class MotusConfigLoader
             Accessibility = accessibilityChanged ? accessibility : config.Accessibility,
             Performance = performanceChanged ? performance : config.Performance,
             Coverage = coverageChanged ? coverage : config.Coverage,
+            Flaky = flakyChanged ? flaky : config.Flaky,
         };
     }
 

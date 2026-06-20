@@ -32,8 +32,24 @@ public static class RunCommand
         };
         var retriesOpt = new Option<int>("--retries")
         {
-            Description = "Re-run a failing test up to N additional times when the failure is a transient CDP disconnect. Default: 0 (no retries).",
-            DefaultValueFactory = _ => 0,
+            Description = "Re-run a failing test up to N additional times. Which failures are retried depends on --retry-policy. Default: 0 (no retries).",
+            DefaultValueFactory = _ => -1,
+        };
+        var retryPolicyOpt = new Option<string?>("--retry-policy")
+        {
+            Description = "Which failures --retries re-runs: 'transient' (only CDP disconnects, the default) or 'flake' (any failure; a test that then passes is reported as flaky). Flake detection needs --retries >= 1.",
+        };
+        var failOnFlakyOpt = new Option<bool?>("--fail-on-flaky")
+        {
+            Description = "Make the run exit non-zero when any test is flaky. By default flaky tests pass the run with a warning.",
+        };
+        var quarantineOpt = new Option<string?>("--quarantine")
+        {
+            Description = "Path to a quarantine list file (one fully qualified test name per line; '#' comments allowed). Listed tests run but their failures do not gate the run.",
+        };
+        var flakyHistoryOpt = new Option<string?>("--flaky-history")
+        {
+            Description = "Path to a JSON file that accumulates per-test run/failure/flaky-pass counts across runs.",
         };
 
         var cmd = new Command("run", "Discover and execute tests from assemblies")
@@ -47,6 +63,10 @@ public static class RunCommand
             perfBudgetOpt,
             coverageOpt,
             retriesOpt,
+            retryPolicyOpt,
+            failOnFlakyOpt,
+            quarantineOpt,
+            flakyHistoryOpt,
         };
 
         cmd.SetAction(async (parseResult, ct) =>
@@ -60,7 +80,23 @@ public static class RunCommand
             var perfBudget = parseResult.GetValue(perfBudgetOpt);
             var coverageSpecs = parseResult.GetValue(coverageOpt);
             var coverageRequested = parseResult.GetResult(coverageOpt) is not null;
-            var retries = parseResult.GetValue(retriesOpt);
+
+            // Flaky settings resolve CLI > env/file config > built-in default.
+            var flakyConfig = Motus.MotusConfigLoader.Config.Flaky;
+
+            var retriesCli = parseResult.GetValue(retriesOpt);
+            var retries = retriesCli >= 0 ? retriesCli : (flakyConfig?.Retries ?? 0);
+
+            var retryPolicySpec = parseResult.GetValue(retryPolicyOpt) ?? flakyConfig?.RetryPolicy ?? "transient";
+            if (!TryParseRetryPolicy(retryPolicySpec, out var retryPolicy))
+            {
+                Console.Error.WriteLine($"Error: Unknown --retry-policy '{retryPolicySpec}'. Use 'transient' or 'flake'.");
+                return 1;
+            }
+
+            var failOnFlaky = parseResult.GetValue(failOnFlakyOpt) ?? flakyConfig?.FailOnFlaky ?? false;
+            var quarantinePath = parseResult.GetValue(quarantineOpt) ?? flakyConfig?.QuarantinePath;
+            var flakyHistoryPath = parseResult.GetValue(flakyHistoryOpt) ?? flakyConfig?.HistoryPath;
 
             if (a11yMode is not null)
             {
@@ -94,7 +130,10 @@ public static class RunCommand
                 ? Environment.ProcessorCount
                 : int.Parse(workersSpec);
 
-            var reporter = ReporterFactory.Create(reporterSpecs);
+            var reporters = new List<Motus.Abstractions.IReporter> { ReporterFactory.Create(reporterSpecs) };
+            if (flakyHistoryPath is not null)
+                reporters.Add(new FlakeHistoryReporter(flakyHistoryPath));
+            var reporter = reporters.Count == 1 ? reporters[0] : new CompositeReporter(reporters);
 
             IReadOnlyList<Motus.Abstractions.ICoverageReporter>? coverageReporters = null;
             if (coverageRequested)
@@ -114,12 +153,62 @@ public static class RunCommand
             var discovery = new TestDiscovery();
             var tests = discovery.Discover(assemblies, filter);
 
-            var runner = new TestRunner(workers);
-            var runResult = await runner.RunAsync(tests, reporter, a11yMode, perfBudget, coverageReporters, retries);
+            if (quarantinePath is not null)
+            {
+                HashSet<string> quarantineList;
+                try
+                {
+                    quarantineList = LoadQuarantineList(quarantinePath);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    Console.Error.WriteLine($"Error: Could not read quarantine file '{quarantinePath}': {ex.Message}");
+                    return 1;
+                }
 
-            return (runResult.Failed > 0 || runResult.CoverageThresholdsFailed) ? 1 : 0;
+                tests = tests
+                    .Select(t => t with { Quarantined = t.Quarantined || quarantineList.Contains(t.FullName) })
+                    .ToList();
+            }
+
+            var runner = new TestRunner(workers);
+            var runResult = await runner.RunAsync(
+                tests, reporter, a11yMode, perfBudget, coverageReporters, retries, retryPolicy);
+
+            return (runResult.Failed > 0
+                || runResult.CoverageThresholdsFailed
+                || (failOnFlaky && runResult.Flaky > 0)) ? 1 : 0;
         });
 
         return cmd;
+    }
+
+    private static bool TryParseRetryPolicy(string spec, out RetryPolicy policy)
+    {
+        switch (spec.Trim().ToLowerInvariant())
+        {
+            case "transient":
+                policy = RetryPolicy.Transient;
+                return true;
+            case "flake":
+                policy = RetryPolicy.Flake;
+                return true;
+            default:
+                policy = RetryPolicy.Transient;
+                return false;
+        }
+    }
+
+    private static HashSet<string> LoadQuarantineList(string path)
+    {
+        var set = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var raw in File.ReadAllLines(path))
+        {
+            var line = raw.Trim();
+            if (line.Length == 0 || line.StartsWith('#'))
+                continue;
+            set.Add(line);
+        }
+        return set;
     }
 }
