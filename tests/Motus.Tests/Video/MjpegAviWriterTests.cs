@@ -98,6 +98,39 @@ public class MjpegAviWriterTests
     }
 
     [TestMethod]
+    public async Task FinalizeAsync_WithEffectiveFps_PatchesTimingHeadersToMeasuredRate()
+    {
+        using var ms = new MemoryStream();
+        // Nominal 25 fps at construction, but the measured capture rate is 10 fps.
+        var writer = new MjpegAviWriter(ms, 320, 240, 25) { EffectiveFps = 10.0 };
+        await writer.AddFrameAsync(CreateSyntheticJpeg());
+        await writer.AddFrameAsync(CreateSyntheticJpeg());
+        await writer.FinalizeAsync();
+
+        var data = ms.ToArray();
+        var microSecPerFrame = BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(32, 4)); // avih
+        var dwScale = BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(128, 4));          // strh
+        var dwRate = BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(132, 4));           // strh
+
+        Assert.AreEqual(100_000u, microSecPerFrame, "10 fps is 100000 microseconds per frame");
+        Assert.AreEqual(1000u, dwScale);
+        Assert.AreEqual(10_000u, dwRate, "dwRate/dwScale should resolve to the measured 10 fps");
+    }
+
+    [TestMethod]
+    public async Task FinalizeAsync_WithoutEffectiveFps_KeepsNominalRate()
+    {
+        using var ms = new MemoryStream();
+        var writer = new MjpegAviWriter(ms, 320, 240, 25);
+        await writer.AddFrameAsync(CreateSyntheticJpeg());
+        await writer.FinalizeAsync();
+
+        var data = ms.ToArray();
+        var microSecPerFrame = BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(32, 4));
+        Assert.AreEqual(40_000u, microSecPerFrame, "25 fps is 40000 microseconds per frame");
+    }
+
+    [TestMethod]
     public async Task AddFrameAsync_OddSizeFrame_PadsToEvenBoundary()
     {
         using var ms = new MemoryStream();

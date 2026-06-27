@@ -131,4 +131,80 @@ public class MouseTests
             Assert.IsTrue(_socket.GetSentJson(i).Contains("\"modifiers\":4"),
                 $"Message {i} should carry the modifier bits.");
     }
+
+    [TestMethod]
+    public async Task MoveAsync_WithNaturalMotion_SendsCurvedMultiStepPathEndingOnTarget()
+    {
+        // Distance 400 from the origin yields the capped 48 steps (400 / 8 = 50, clamped to 48),
+        // each a single mouseMoved. The count is deterministic; only the path shape is randomized.
+        var natural = new Mouse(_session, CancellationToken.None, naturalMotion: true);
+        for (var i = 1; i <= 48; i++)
+            _socket.QueueResponse($$$"""{"id": {{{i}}}, "sessionId": "test-session", "result": {}}""");
+
+        await natural.MoveAsync(400, 0);
+
+        Assert.AreEqual(48, _socket.SentMessages.Count);
+        for (var i = 0; i < _socket.SentMessages.Count; i++)
+            Assert.IsTrue(_socket.GetSentJson(i).Contains("mouseMoved"), $"Message {i} should be a move.");
+
+        // The final event lands exactly on the target, not on a jittered intermediate point.
+        var last = _socket.GetSentJson(_socket.SentMessages.Count - 1);
+        Assert.IsTrue(last.Contains("\"x\":400") && last.Contains("\"y\":0"),
+            $"The last move should land on the target: {last}");
+    }
+
+    [TestMethod]
+    public async Task WheelAsync_WithNaturalMotion_SplitsIntoEasedStepsSummingToDelta()
+    {
+        // A 700px scroll yields clamp(700/40, 8, 30) = 17 eased wheel events whose deltas sum
+        // exactly to the requested total, so the final scroll position is unchanged.
+        var natural = new Mouse(_session, CancellationToken.None, naturalMotion: true);
+        for (var i = 1; i <= 30; i++)
+            _socket.QueueResponse($$$"""{"id": {{{i}}}, "sessionId": "test-session", "result": {}}""");
+
+        await natural.WheelAsync(0, 700);
+
+        Assert.AreEqual(17, _socket.SentMessages.Count);
+
+        double sum = 0;
+        for (var i = 0; i < _socket.SentMessages.Count; i++)
+        {
+            var json = _socket.GetSentJson(i);
+            Assert.IsTrue(json.Contains("mouseWheel"), $"Message {i} should be a wheel event.");
+            var match = System.Text.RegularExpressions.Regex.Match(json, "\"deltaY\":(-?[0-9.]+)");
+            Assert.IsTrue(match.Success, $"Message {i} should carry deltaY: {json}");
+            sum += double.Parse(match.Groups[1].Value,
+                System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        Assert.AreEqual(700.0, sum, 0.0001, "The eased increments should sum to the requested delta.");
+    }
+
+    [TestMethod]
+    public async Task WheelAsync_WithNaturalMotion_SmallScroll_SendsSingleEvent()
+    {
+        // Small nudges stay a single wheel event even with natural motion enabled.
+        var natural = new Mouse(_session, CancellationToken.None, naturalMotion: true);
+        _socket.QueueResponse("""{"id": 1, "sessionId": "test-session", "result": {}}""");
+
+        await natural.WheelAsync(0, 40);
+
+        Assert.AreEqual(1, _socket.SentMessages.Count);
+        Assert.IsTrue(_socket.GetSentJson(0).Contains("\"deltaY\":40"));
+    }
+
+    [TestMethod]
+    public async Task MoveAsync_WithNaturalMotion_ShortHop_SendsSingleEvent()
+    {
+        // Moves under the small-distance threshold collapse to one event at the target.
+        var natural = new Mouse(_session, CancellationToken.None, naturalMotion: true);
+        _socket.QueueResponse("""{"id": 1, "sessionId": "test-session", "result": {}}""");
+
+        await natural.MoveAsync(2, 2);
+
+        Assert.AreEqual(1, _socket.SentMessages.Count);
+        var only = _socket.GetSentJson(0);
+        Assert.IsTrue(only.Contains("mouseMoved"));
+        Assert.IsTrue(only.Contains("\"x\":2") && only.Contains("\"y\":2"), only);
+    }
 }

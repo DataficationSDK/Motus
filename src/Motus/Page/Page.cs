@@ -38,7 +38,7 @@ internal sealed partial class Page : IPage
         _context = context;
         _targetId = targetId;
         _keyboard = new Keyboard(session, _pageCts.Token);
-        _mouse = new Mouse(session, _pageCts.Token);
+        _mouse = new Mouse(session, _pageCts.Token, context.Options?.NaturalMouseMotion ?? false);
         _touchscreen = new Touchscreen(session, _pageCts.Token);
     }
 

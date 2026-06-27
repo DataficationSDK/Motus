@@ -49,6 +49,10 @@ internal sealed class BrowserContext : IBrowserContext
                 _extraHeaders[kv.Key] = kv.Value;
         }
 
+        // Seeding the overlay as an init script means every page (and every navigation) picks it
+        // up through the existing addScriptToEvaluateOnNewDocument loop in Page.InitializeAsync.
+        if (_options?.ShowCursor == true)
+            _initScripts.Add(CursorOverlayScript.Js);
     }
 
     public IBrowser Browser => _browser;

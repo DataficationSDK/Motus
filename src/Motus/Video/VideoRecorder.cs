@@ -14,6 +14,7 @@ internal sealed class VideoRecorder
     private CancellationTokenSource? _pumpCts;
     private Task? _pumpTask;
     private readonly TaskCompletionSource _completedTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly System.Diagnostics.Stopwatch _clock = new();
     private MotusVideo? _video;
 
     internal VideoRecorder(Page page, string outputPath, int width, int height, double fps = 25)
@@ -50,6 +51,7 @@ internal sealed class VideoRecorder
         await _page.StartScreencastAsync("jpeg", quality: 80, maxWidth: _width, maxHeight: _height, ct: ct)
             .ConfigureAwait(false);
 
+        _clock.Start();
         _pumpTask = PumpFramesAsync(_pumpCts.Token);
     }
 
@@ -65,6 +67,8 @@ internal sealed class VideoRecorder
             catch (OperationCanceledException) { }
         }
 
+        _clock.Stop();
+
         try
         {
             await _page.StopScreencastAsync().ConfigureAwait(false);
@@ -72,7 +76,16 @@ internal sealed class VideoRecorder
         catch { /* session may be gone */ }
 
         if (_writer is not null)
+        {
+            // The screencast delivers frames as the page changes, not at a fixed cadence, and the
+            // effective rate falls as resolution rises. Stamp the measured rate so the file plays
+            // back at real-time instead of the nominal fps. Needs at least two frames to be a rate.
+            var seconds = _clock.Elapsed.TotalSeconds;
+            if (_writer.FrameCount >= 2 && seconds > 0.1)
+                _writer.EffectiveFps = Math.Clamp(_writer.FrameCount / seconds, 1.0, 60.0);
+
             await _writer.DisposeAsync().ConfigureAwait(false);
+        }
 
         _completedTcs.TrySetResult();
     }

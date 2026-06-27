@@ -46,4 +46,19 @@ public sealed record ContextOptions
 
     /// <summary>Base URL to use for relative URL navigations.</summary>
     public string? BaseURL { get; init; }
+
+    /// <summary>
+    /// Draws an on-screen pseudo-cursor in every page of the context. Synthetic input does
+    /// not move the OS pointer and screen capture does not record it, so this injected overlay
+    /// is the only way to show where actions occur in screenshots and recordings. The cursor
+    /// follows the element's CSS cursor style and renders a click effect. Off by default.
+    /// </summary>
+    public bool ShowCursor { get; init; }
+
+    /// <summary>
+    /// Makes mouse movement follow a curved, eased, time-spaced path instead of jumping
+    /// straight to the target, so motion looks human in recordings and the page receives a
+    /// realistic event stream. Adds latency to every move. Off by default.
+    /// </summary>
+    public bool NaturalMouseMotion { get; init; }
 }

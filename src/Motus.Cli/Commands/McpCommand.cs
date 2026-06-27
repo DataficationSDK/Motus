@@ -49,6 +49,18 @@ public static class McpCommand
         {
             Description = "Record a video of every page into this directory (MJPEG AVI, one file per page)",
         };
+        var showCursorOpt = new Option<bool>("--show-cursor")
+        {
+            Description = "Draw an on-screen pseudo-cursor in screenshots and recordings (follows the "
+                + "element cursor style and shows a click effect); enables natural mouse motion "
+                + "unless --natural-mouse is set explicitly",
+            DefaultValueFactory = _ => false,
+        };
+        var naturalMouseOpt = new Option<bool?>("--natural-mouse")
+        {
+            Description = "Humanize mouse movement with curved, eased paths. Defaults to the value of "
+                + "--show-cursor; pass --natural-mouse false to keep the cursor without it",
+        };
 
         var cmd = new Command("mcp", "Run the Motus MCP server for agent clients (stdio by default, or --http)")
         {
@@ -60,6 +72,8 @@ public static class McpCommand
             tokenOpt,
             viewportOpt,
             recordVideoOpt,
+            showCursorOpt,
+            naturalMouseOpt,
         };
 
         cmd.SetAction(async (parseResult, ct) =>
@@ -85,6 +99,11 @@ public static class McpCommand
             // leave the path unset so the framework auto-detects a system browser.
             var executablePath = BrowserPathHelper.Resolve(channelText);
 
+            // Natural motion defaults to the cursor flag so a single --show-cursor gives a
+            // legible, human-looking capture; --natural-mouse overrides either way.
+            var showCursor = parseResult.GetValue(showCursorOpt);
+            var naturalMouse = parseResult.GetValue(naturalMouseOpt) ?? showCursor;
+
             var defaults = new McpServerLaunchOptions();
             var launchOptions = new McpServerLaunchOptions
             {
@@ -92,6 +111,8 @@ public static class McpCommand
                 ExecutablePath = executablePath,
                 Viewport = viewport ?? defaults.Viewport,
                 RecordVideoDir = parseResult.GetValue(recordVideoOpt),
+                ShowCursor = showCursor,
+                NaturalMouseMotion = naturalMouse,
             };
 
             if (!useHttp)

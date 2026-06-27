@@ -40,6 +40,20 @@ public sealed record McpServerLaunchOptions
     /// </summary>
     public string? RecordVideoDir { get; init; }
 
+    /// <summary>
+    /// When true, every context the session creates draws an on-screen pseudo-cursor that
+    /// follows the synthetic pointer, reflects the element's CSS cursor style, and shows a
+    /// click effect. Synthetic input and screen capture do not show a cursor on their own, so
+    /// this makes screenshots and recordings legible. Defaults to false.
+    /// </summary>
+    public bool ShowCursor { get; init; }
+
+    /// <summary>
+    /// When true, mouse movement follows a curved, eased, time-spaced path instead of jumping
+    /// to the target. The CLI defaults this to <see cref="ShowCursor"/>. Defaults to false.
+    /// </summary>
+    public bool NaturalMouseMotion { get; init; }
+
     /// <summary>Maps these options onto the browser launch options.</summary>
     internal LaunchOptions ToLaunchOptions() => new()
     {
@@ -64,5 +78,7 @@ public sealed record McpServerLaunchOptions
             // Record at the viewport size; the library's own default would
             // scale the capture down.
             : new RecordVideoOptions { Dir = RecordVideoDir, Size = Viewport },
+        ShowCursor = ShowCursor,
+        NaturalMouseMotion = NaturalMouseMotion,
     };
 }

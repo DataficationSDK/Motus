@@ -109,9 +109,10 @@ public sealed class RecordingTools
 
     [McpServerTool(Name = "video_start", Title = "Start video recording", Destructive = false, ReadOnly = false)]
     [Description("Begins recording the active page to a video file at the viewport's resolution. Call "
-        + "video_stop to finalize it and get the path. The capture follows screen updates and shows no "
-        + "mouse cursor, which suits verification footage. Not available when the server was launched "
-        + "with whole-session recording; those videos finalize when each page closes.")]
+        + "video_stop to finalize it and get the path. The capture follows screen updates; it shows a "
+        + "pseudo-cursor only when the server was launched with --show-cursor, otherwise no cursor is "
+        + "drawn. Not available when the server was launched with whole-session recording; those videos "
+        + "finalize when each page closes.")]
     public static async Task<CallToolResult> VideoStartAsync(
         [Description("Where to write the video (MJPEG AVI). Omit for an auto-generated path.")] string? path,
         ActivePageService pageService,

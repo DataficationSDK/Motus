@@ -16,6 +16,18 @@ internal sealed class MjpegAviWriter : IAsyncDisposable
     private long _moviStartOffset;
     private bool _finalized;
 
+    // Header offsets of the timing fields, captured as they are written so they can be patched
+    // in place at finalize once the true capture rate is known.
+    private long _microSecPerFramePos = -1;
+    private long _dwScalePos = -1;
+    private long _dwRatePos = -1;
+
+    /// <summary>
+    /// The measured capture rate, set by the recorder before finalize. When present it replaces
+    /// the constructor's nominal fps in the header so playback matches the real recording duration.
+    /// </summary>
+    internal double? EffectiveFps { get; set; }
+
     internal MjpegAviWriter(Stream output, int width, int height, double fps)
     {
         _output = output;
@@ -80,6 +92,18 @@ internal sealed class MjpegAviWriter : IAsyncDisposable
         _output.Seek(_moviStartOffset - 4, SeekOrigin.Begin);
         await WriteUInt32Async((uint)moviSize).ConfigureAwait(false);
 
+        // Patch the timing fields with the measured rate so playback runs at real-time. dwScale of
+        // 1000 keeps fractional rates (for example 13.4 fps) precise rather than truncating to an int.
+        if (EffectiveFps is double efps && efps > 0 && _microSecPerFramePos >= 0)
+        {
+            _output.Seek(_microSecPerFramePos, SeekOrigin.Begin);
+            await WriteUInt32Async((uint)Math.Round(1_000_000.0 / efps)).ConfigureAwait(false);
+            _output.Seek(_dwScalePos, SeekOrigin.Begin);
+            await WriteUInt32Async(1000).ConfigureAwait(false);
+            _output.Seek(_dwRatePos, SeekOrigin.Begin);
+            await WriteUInt32Async((uint)Math.Round(efps * 1000)).ConfigureAwait(false);
+        }
+
         _output.Seek(0, SeekOrigin.End);
         await _output.FlushAsync().ConfigureAwait(false);
     }
@@ -105,6 +129,7 @@ internal sealed class MjpegAviWriter : IAsyncDisposable
         // avih (main AVI header) - 56 bytes
         await WriteFourCcAsync("avih").ConfigureAwait(false);
         await WriteUInt32Async(56).ConfigureAwait(false);
+        _microSecPerFramePos = _output.Position;
         await WriteUInt32Async(microSecPerFrame).ConfigureAwait(false); // dwMicroSecPerFrame
         await WriteUInt32Async(0).ConfigureAwait(false); // dwMaxBytesPerSec
         await WriteUInt32Async(0).ConfigureAwait(false); // dwPaddingGranularity
@@ -132,7 +157,9 @@ internal sealed class MjpegAviWriter : IAsyncDisposable
         await WriteUInt16Async(0).ConfigureAwait(false); // wPriority
         await WriteUInt16Async(0).ConfigureAwait(false); // wLanguage
         await WriteUInt32Async(0).ConfigureAwait(false); // dwInitialFrames
+        _dwScalePos = _output.Position;
         await WriteUInt32Async(1).ConfigureAwait(false); // dwScale
+        _dwRatePos = _output.Position;
         await WriteUInt32Async((uint)_fps).ConfigureAwait(false); // dwRate
         await WriteUInt32Async(0).ConfigureAwait(false); // dwStart
         await WriteUInt32Async(0).ConfigureAwait(false); // dwLength (patched: not critical)
