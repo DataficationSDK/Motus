@@ -321,6 +321,8 @@ Budget thresholds are not part of `PerformanceOptions`. They are configured via 
 | `StorageState` | `StorageState?` | `null` | Pre-seeded cookies and local storage. Not currently mapped from the config file; set in code. |
 | `ExtraHttpHeaders` | `IDictionary<string, string>?` | `null` | Extra HTTP headers sent with every request. Not currently mapped from the config file; set in code. |
 | `BaseURL` | `string?` | `null` | Base URL for relative navigations. Not currently mapped from the config file; set in code. |
+| `ShowCursor` | `bool` | `false` | Draw an on-screen pseudo-cursor in every page of the context, so screenshots and recordings show where actions occur. Follows the element's CSS cursor style and renders a click effect. Not currently mapped from the config file; set in code. |
+| `NaturalMouseMotion` | `bool` | `false` | Move the mouse along a curved, eased, time-spaced path instead of jumping to the target, so motion looks human and the page receives a realistic event stream. Adds latency to every move. Not currently mapped from the config file; set in code. |
 
 ---
 

@@ -223,6 +223,8 @@ motus mcp --http --host 0.0.0.0 --port 8931 --token "$MOTUS_MCP_TOKEN"
 | `--channel` | chromium | Browser to drive: `chromium`, `chrome`, `edge`, `firefox` |
 | `--viewport` | 1280x800 | Viewport size for every page, as `WIDTHxHEIGHT` |
 | `--record-video` | none | Record a video of every page into this directory (MJPEG AVI, one file per page) |
+| `--show-cursor` | false | Draw an on-screen pseudo-cursor in screenshots and recordings; enables natural mouse motion unless `--natural-mouse` is set |
+| `--natural-mouse` | --show-cursor | Move the mouse along curved, eased paths; pass `--natural-mouse false` to keep the cursor without it |
 | `--http` | false | Serve over Streamable HTTP instead of stdio |
 | `--host` | 127.0.0.1 | Interface to bind when `--http` is set |
 | `--port` | 8931 | Port to listen on when `--http` is set |

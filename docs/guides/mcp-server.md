@@ -134,7 +134,7 @@ All coordinate input is dispatched as trusted browser-level events, exactly like
 
 `video_start` and `video_stop` record the active page to a video file, following the same start/stop convention as traces and HARs: stopping finalizes the file and returns its path, and an omitted path is auto-generated under the temporary directory. The capture runs at the viewport's resolution.
 
-Two characteristics are inherent to the browser's screencast and worth knowing before scripting a session around it: frames are paced by screen updates rather than a fixed clock, and no mouse cursor appears in the footage, so recordings show the interface changing without a visible pointer. This suits verification and failure-record footage well; for presentation-grade recordings, capture the headed browser with a screen recorder instead.
+Two characteristics are inherent to the browser's screencast and worth knowing before scripting a session around it: frames are paced by screen updates rather than a fixed clock, and no mouse cursor appears in the footage, so recordings show the interface changing without a visible pointer. This suits verification and failure-record footage well; for presentation-grade recordings, capture the headed browser with a screen recorder instead. Launch the server with `--show-cursor` to draw a pseudo-cursor that follows the synthetic pointer and flashes on each click, which makes the action legible in screenshots and recordings.
 
 The output container is MJPEG in AVI, written without external dependencies. Most editors and players open it directly; convert with ffmpeg (`ffmpeg -i in.avi -c:v libx264 out.mp4`) when another format is needed.
 
@@ -152,10 +152,20 @@ To record everything without per-page tool calls, launch the server with `--reco
 | `--channel` | `chromium` | Browser to drive: `chromium`, `chrome`, `edge`, or `firefox`. |
 | `--viewport` | `1280x800` | Viewport size for every page, as `WIDTHxHEIGHT`. The `resize` tool changes it per page at runtime. |
 | `--record-video` | _(none)_ | Record a video of every page into this directory, one MJPEG AVI per page, finalized when the page closes. |
+| `--show-cursor` | `false` | Draw an on-screen pseudo-cursor in screenshots and recordings. It follows the element's CSS cursor style and shows a click effect. Enables `--natural-mouse` unless that is set explicitly. |
+| `--natural-mouse` | `--show-cursor` | Move the mouse along a curved, eased path instead of jumping to the target, so motion looks human and the page receives a realistic event stream. Pass `--natural-mouse false` to keep the cursor without it. Adds latency to every move. |
 | `--http` | `false` | Serve over Streamable HTTP for concurrent remote clients instead of stdio. |
 | `--host` | `127.0.0.1` | Interface to bind when `--http` is set. |
 | `--port` | `8931` | TCP port to listen on when `--http` is set. |
 | `--token` | _(none)_ | Bearer token required on every HTTP request. May also be supplied via the `MOTUS_MCP_TOKEN` environment variable. Required when binding a non-loopback host. |
+
+---
+
+## Recovery after a browser crash
+
+Each session holds one browser. If its process crashes or stops responding (for example, a renderer abort on a heavy WebGL or canvas page), the next tool call that touches the browser disposes the dead instance, launches a fresh one in its place, and proceeds. The one call that raced the crash returns an error; the call after it recovers on its own, so a transient browser failure does not require restarting the server or reconnecting the client.
+
+A relaunched browser starts clean. Open tabs and named contexts do not carry over, and the refs from the last `snapshot` no longer resolve, so `navigate` and take a fresh `snapshot` before addressing elements again.
 
 ---
 

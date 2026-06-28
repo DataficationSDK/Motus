@@ -227,6 +227,8 @@ Both handlers are guarded by an `Interlocked.CompareExchange` on `_disconnectedF
 
 **`IBrowser.IsHealthy`.** The `IsHealthy` property (defined as a default interface member on `IBrowser`) returns `true` when the browser is connected. The `Browser` implementation overrides this with a process-aware check: `_isConnected && (_process is null || !_process.HasExited)`. For browsers obtained via `ConnectAsync` (no process ownership), `IsHealthy` is equivalent to `IsConnected`.
 
+**Recovery built on health detection.** `IsHealthy` and the `Disconnected` event are the primitives consumers use to survive a dead browser rather than fail for good. The browser pool relaunches replacements proactively (see [Browser pooling](#browser-pooling) below). A single-browser holder, such as the MCP server's session manager, instead checks `IsHealthy` lazily on the next use: finding the cached browser unhealthy, it disposes it and launches a fresh one in its place, so a crash costs one failed operation rather than the whole session.
+
 ### Signal handlers
 
 When a browser is launched (not connected), signal handlers are registered if the corresponding `LaunchOptions` flags are set:
