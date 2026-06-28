@@ -26,6 +26,7 @@ public class ActivePageService
     private readonly ConditionalWeakTable<IPage, PageSnapshotService> _snapshots = new();
 
     private IPage? _activePage;
+    private int _activePageGeneration;
     private int _disposed;
 
     public ActivePageService(
@@ -43,18 +44,31 @@ public class ActivePageService
 
     /// <summary>
     /// Returns the active page, reusing the cached one while it is still open and
-    /// otherwise resolving a fresh one. The browser and its active context are
-    /// launched lazily through <see cref="BrowserSessionManager"/>.
+    /// belongs to the current browser, and otherwise resolving a fresh one. The
+    /// browser and its active context are launched lazily through
+    /// <see cref="BrowserSessionManager"/>.
     /// </summary>
+    /// <remarks>
+    /// A page whose browser has crashed keeps reporting <see cref="IPage.IsClosed"/> as false
+    /// (nothing disposes it), so the open check alone is not enough to drop it. Two further
+    /// guards handle a crash: the current browser must not be dead (catches a crash not yet
+    /// relaunched, since the relaunch only happens while re-resolving), and the page's browser
+    /// generation must still be current (catches a page left over from before a relaunch that a
+    /// context-level call already performed). When either fails, a fresh page is resolved against
+    /// the live browser.
+    /// </remarks>
     public async Task<IPage> GetOrCreateActivePageAsync(CancellationToken cancellationToken = default)
     {
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (_activePage is { IsClosed: false })
+            if (_activePage is { IsClosed: false }
+                && !_sessions.IsBrowserDead
+                && _activePageGeneration == _sessions.Generation)
                 return _activePage;
 
             _activePage = await ResolvePageAsync(cancellationToken).ConfigureAwait(false);
+            _activePageGeneration = _sessions.Generation;
             SubscribeObservers(_activePage);
             return _activePage;
         }
@@ -116,6 +130,7 @@ public class ActivePageService
         // protocol delivers one at a time, so there is no concurrent reader of the
         // active page to race against here.
         _activePage = page;
+        _activePageGeneration = _sessions.Generation;
         SubscribeObservers(page);
     }
 

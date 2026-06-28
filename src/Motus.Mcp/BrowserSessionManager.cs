@@ -30,6 +30,7 @@ public sealed class BrowserSessionManager : IAsyncDisposable
 
     private IBrowser? _browser;
     private int _disposed;
+    private int _generation;
 
     public BrowserSessionManager(McpServerLaunchOptions options, ILogger<BrowserSessionManager>? logger = null)
     {
@@ -37,22 +38,43 @@ public sealed class BrowserSessionManager : IAsyncDisposable
         _logger = logger ?? NullLogger<BrowserSessionManager>.Instance;
     }
 
+    /// <summary>
+    /// Launch seam used by tests to supply a controllable browser without spawning a real
+    /// process. When null, the real launcher is used.
+    /// </summary>
+    internal Func<CancellationToken, Task<IBrowser>>? LaunchOverride { get; init; }
+
     /// <summary>The name of the context that unscoped tool calls act on.</summary>
     public string ActiveContextName { get; private set; } = DefaultContextName;
 
     /// <summary>Whether the browser process has been launched.</summary>
     public bool IsBrowserLaunched => _browser is not null;
 
+    /// <summary>
+    /// Whether a browser was launched but has since died (its process exited or its CDP transport
+    /// dropped). False when no browser has been launched yet and when the current one is alive.
+    /// </summary>
+    public bool IsBrowserDead => _browser is { IsHealthy: false };
+
+    /// <summary>
+    /// A counter that increments each time a browser is launched, including relaunches after a
+    /// crash. Layers that cache browser-bound objects (pages, contexts) compare against this to
+    /// tell whether their cache belongs to the current browser or a dead one.
+    /// </summary>
+    public int Generation => Volatile.Read(ref _generation);
+
     /// <summary>A snapshot of the currently open context names.</summary>
     public IReadOnlyCollection<string> ContextNames => _contexts.Keys.ToArray();
 
     /// <summary>
-    /// Returns the live browser, launching it lazily on first use. Concurrent
-    /// first callers share a single launch.
+    /// Returns the live browser, launching it lazily on first use. If the cached browser has
+    /// died (its process crashed or its CDP transport dropped), it is disposed and a fresh one
+    /// is launched in its place, so a transient browser crash recovers on the next tool call
+    /// rather than wedging the session. Concurrent first callers share a single launch.
     /// </summary>
     public async Task<IBrowser> EnsureBrowserAsync(CancellationToken cancellationToken = default)
     {
-        if (_browser is not null)
+        if (_browser is { IsHealthy: true })
         {
             return _browser;
         }
@@ -61,14 +83,26 @@ public sealed class BrowserSessionManager : IAsyncDisposable
         try
         {
             ThrowIfDisposed();
+
+            // A cached-but-dead browser must be torn down before relaunching: its contexts and
+            // pages all reference a CDP session that is gone, so reusing them would keep failing.
+            if (_browser is { IsHealthy: false } dead)
+            {
+                _logger.LogWarning("Browser is no longer healthy; disposing it and relaunching.");
+                await DiscardBrowserAsync(dead).ConfigureAwait(false);
+            }
+
             if (_browser is null)
             {
                 _logger.LogInformation(
                     "Launching browser (headless={Headless}, channel={Channel}).",
                     _options.Headless,
                     _options.Channel);
-                _browser = await MotusLauncher.LaunchAsync(_options.ToLaunchOptions(), cancellationToken)
-                    .ConfigureAwait(false);
+                _browser = LaunchOverride is not null
+                    ? await LaunchOverride(cancellationToken).ConfigureAwait(false)
+                    : await MotusLauncher.LaunchAsync(_options.ToLaunchOptions(), cancellationToken)
+                        .ConfigureAwait(false);
+                Interlocked.Increment(ref _generation);
             }
 
             return _browser;
@@ -77,6 +111,27 @@ public sealed class BrowserSessionManager : IAsyncDisposable
         {
             _gate.Release();
         }
+    }
+
+    /// <summary>
+    /// Disposes a dead browser and forgets it along with its now-invalid contexts. Best-effort:
+    /// the browser is already gone, so a disposal failure must not propagate out of recovery.
+    /// Must be called while holding <see cref="_gate"/>.
+    /// </summary>
+    private async Task DiscardBrowserAsync(IBrowser dead)
+    {
+        try
+        {
+            await dead.DisposeAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to dispose the dead browser cleanly; discarding it anyway.");
+        }
+
+        _contexts.Clear();
+        ActiveContextName = DefaultContextName;
+        _browser = null;
     }
 
     /// <summary>
