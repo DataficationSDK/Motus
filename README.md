@@ -367,10 +367,6 @@ dotnet test Motus.sln
 
 Contributions are welcome. Open an issue to discuss what you'd like to work on.
 
-## Sponsors
-
-Thanks to [@fiVISION](https://github.com/fiVISION) for supporting this project.
-
 ## License
 
 [MIT](LICENSE.md)
