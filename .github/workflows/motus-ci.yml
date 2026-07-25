@@ -28,7 +28,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        # macOS is pinned rather than following the latest label. The browser suite ran green on
+        # macos-15 in 47 seconds and has not finished since the label rolled to macOS 26, with no
+        # change on our side in between. Pinning keeps the leg meaningful while what the newer
+        # image does differently is worked out; it is the same free runner either way.
+        os: [ubuntu-latest, windows-latest, macos-15]
 
     steps:
       - uses: actions/checkout@v4
