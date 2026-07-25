@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO.Compression;
 using System.Runtime.InteropServices;
 using System.Text.Json;
@@ -75,6 +76,10 @@ public sealed class BrowserInstaller
         {
             Console.WriteLine($"Chromium {version} already installed at {destDir}");
             WriteMarker(cachePath, "chromium", FindChromiumExecutable(destDir, platformKey));
+
+            // Also granted here, not only after a fresh download, so that installing again repairs
+            // a copy laid down before this ran rather than asking for it to be deleted first.
+            await GrantSandboxAccessAsync(destDir);
             return;
         }
 
@@ -101,6 +106,7 @@ public sealed class BrowserInstaller
         WriteMarker(cachePath, "chromium", execPath);
 
         SetExecutablePermissions(execPath);
+        await GrantSandboxAccessAsync(destDir);
 
         Console.WriteLine($"Chromium {version} installed at {execPath}");
     }
@@ -251,6 +257,84 @@ public sealed class BrowserInstaller
         // Also write legacy marker for backward compatibility
         var legacyMarkerPath = Path.Combine(cachePath, ".installed");
         File.WriteAllText(legacyMarkerPath, executablePath);
+    }
+
+    // ALL RESTRICTED APPLICATION PACKAGES, the identity Chromium's most restricted child processes
+    // run under. Named by its identifier because the readable name is localised, and matching on a
+    // translated name would work on an English machine and nowhere else.
+    private const string RestrictedAppPackagesSid = "S-1-15-2-2";
+
+    /// <summary>
+    /// Read and execute for the sandbox, applied to the directory and inherited by what it holds.
+    /// The same grant Chromium's own tooling applies to a browser it is about to run.
+    /// </summary>
+    internal static string[] SandboxAclArguments(string installDir) =>
+        new[] { installDir, "/grant", $"*{RestrictedAppPackagesSid}:(OI)(CI)(RX)", "/q" };
+
+    /// <summary>
+    /// Chromium runs several of its child processes, the network service among them, under an
+    /// identity separate from the user's, and those children read the browser's own files. An
+    /// installed browser is granted that access by its installer. A browser unzipped into a user's
+    /// own directory has none, so the first child that needs it is denied access to the executable
+    /// and dies, and the browser starts a replacement. It recovers, at the cost of a failed child
+    /// on every launch and a sandbox error in its output that the user has no way to act on.
+    /// Granting the access here is what an installer would have done. It is a no-op off Windows,
+    /// and a failure is reported rather than raised: a browser without it still runs.
+    /// </summary>
+    private static async Task GrantSandboxAccessAsync(string installDir)
+    {
+        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            return;
+
+        try
+        {
+            var startInfo = new ProcessStartInfo("icacls")
+            {
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+            };
+
+            foreach (var argument in SandboxAclArguments(installDir))
+                startInfo.ArgumentList.Add(argument);
+
+            using var process = Process.Start(startInfo);
+            if (process is null)
+                return;
+
+            // Both streams are drained from the moment the process starts. Either one left unread
+            // can fill and stop the process writing it, which would turn a permission change into
+            // a hang.
+            _ = process.StandardOutput.ReadToEndAsync();
+            var errors = process.StandardError.ReadToEndAsync();
+
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+            try
+            {
+                await process.WaitForExitAsync(timeout.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                process.Kill(entireProcessTree: true);
+                ReportSandboxAccessNotGranted(installDir, "Granting it did not finish within a minute.");
+                return;
+            }
+
+            if (process.ExitCode != 0)
+                ReportSandboxAccessNotGranted(installDir, (await errors).Trim());
+        }
+        catch (Exception ex)
+        {
+            ReportSandboxAccessNotGranted(installDir, ex.Message);
+        }
+    }
+
+    private static void ReportSandboxAccessNotGranted(string installDir, string detail)
+    {
+        Console.Error.WriteLine(
+            $"Could not give the browser sandbox access to {installDir}. The browser will still "
+            + "run, and may report that it cannot reach its own executable each time it starts. "
+            + detail);
     }
 
     private static void SetExecutablePermissions(string execPath)

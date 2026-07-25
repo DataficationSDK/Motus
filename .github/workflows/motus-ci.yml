@@ -33,11 +33,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # macOS is pinned rather than following the latest label. The browser suite ran green on
-        # macos-15 in 47 seconds and has not finished since the label rolled to macOS 26, with no
-        # change on our side in between. Pinning keeps the leg meaningful while what the newer
-        # image does differently is worked out; it is the same free runner either way.
-        os: [ubuntu-latest, windows-latest, macos-15]
+        # macOS followed a pinned label for a while, on the belief that a newer image was at fault
+        # for a suite that stopped finishing. It was not: the pinned image hung the same way on the
+        # browser it shipped, and went green on the browser pinned below. The runner was never the
+        # variable, so the label follows latest and the browser is what stays fixed.
+        os: [ubuntu-latest, windows-latest, macos-latest]
 
     steps:
       - uses: actions/checkout@v4
@@ -96,7 +96,8 @@ jobs:
           # Ubuntu 24.04 refuses unprivileged user namespaces to programs that have no AppArmor
           # profile of their own, and a browser downloaded rather than installed by the distribution
           # has none. Chrome's sandbox is built on those namespaces, so without this it starts and
-          # then goes nowhere. The check below says plainly whether that was the whole story.
+          # then goes nowhere. That was the whole of it: on this line alone the leg went from a
+          # browser that never became drivable to a green run.
           if [ "$RUNNER_OS" = "Linux" ]; then
             sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
           fi
@@ -134,7 +135,11 @@ jobs:
             exit 1
           fi
 
-          echo "The pinned browser starts and accepts a debugging connection."
+          # Printed on the way past, not only on the way down. A browser that starts and still
+          # complains about its own sandbox is worth seeing from a run that went green, which is
+          # the only kind of run that would ever carry that complaint quietly.
+          echo "The pinned browser starts and accepts a debugging connection. It wrote:"
+          cat "$smoke_log"
 
       # Coverage is collected only where it is read. The report below is built from the Linux run
       # alone, so instrumenting the other two spends their time and memory producing a file nothing
@@ -373,39 +378,3 @@ jobs:
           name: firefox-integration-test-results
           path: TestResults/**/*.trx
           retention-days: 14
-
-  # nuget-validate:
-  #   name: NuGet Validation
-  #   runs-on: ubuntu-latest
-  #   needs: dotnet
-  #
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #
-  #     - name: Setup .NET
-  #       uses: actions/setup-dotnet@v4
-  #       with:
-  #         dotnet-version: 10.0.x
-  #
-  #     - name: Build
-  #       run: dotnet build Motus.sln -c Release
-  #
-  #     - name: Pack NuGet packages
-  #       run: |
-  #         dotnet pack src/Motus.Abstractions/Motus.Abstractions.csproj -c Release --no-build -o packages
-  #         dotnet pack src/Motus/Motus.csproj -c Release --no-build -o packages
-  #
-  #     - name: Validate packages
-  #       run: |
-  #         for pkg in packages/*.nupkg; do
-  #           echo "Validating $pkg..."
-  #           dotnet nuget verify "$pkg" --all 2>/dev/null || echo "  (signature verification skipped — package is unsigned)"
-  #           unzip -t "$pkg" > /dev/null
-  #           echo "  OK"
-  #         done
-  #
-  #     - name: Upload NuGet packages
-  #       uses: actions/upload-artifact@v4
-  #       with:
-  #         name: nuget-packages
-  #         path: packages/*.nupkg

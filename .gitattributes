@@ -1,0 +1,39 @@
+# Line endings are decided here rather than by whatever each contributor's machine is set to.
+# Without this the repository ends up holding both kinds at once, which it did: the same extension
+# arrived CRLF from one machine and LF from another, a few files held both, and any tool that
+# rewrote a file wholesale turned a one-line change into a diff nobody could read.
+#
+# Text is stored with LF and checked out however the platform prefers, so nothing about how anyone
+# edits has to change.
+* text=auto
+
+# Endings that are not a matter of taste. A shell script with CRLF fails to run on Linux, where the
+# carriage return becomes part of the interpreter's name, and CI runs these on Linux.
+*.sh   text eol=lf
+*.bash text eol=lf
+
+# Windows reads these, and a batch file with LF endings is unreliable there.
+*.cmd  text eol=crlf
+*.bat  text eol=crlf
+
+# Hunk headers that name the member a change sits in, rather than the nearest line that happens to
+# start at the left margin.
+*.cs   text diff=csharp
+*.css  text diff=css
+*.md   text diff=markdown
+
+# Left alone byte for byte. Git detects most of these on its own; declaring them removes the guess,
+# which matters here because a browser automation repository accumulates screenshots, traces, and
+# recordings as test output.
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.webm  binary
+*.mp4   binary
+*.zip   binary
+*.dll   binary
+*.exe   binary
+*.pdb   binary
+*.snk   binary

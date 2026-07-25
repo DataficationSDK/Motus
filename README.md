@@ -241,6 +241,8 @@ Or in `motus.config.json`:
 }
 ```
 
+On Windows, `motus install` also grants the browser's directory the read and execute access Chromium's sandbox needs, which an installed browser is given by its own installer and a downloaded one is not. Without it the browser still starts, but the first child process it sandboxes is denied access to the executable and has to be replaced, and it reports that on every launch. Running the install again over a copy you already have applies the grant to it.
+
 ### MCP Server for AI Agents
 
 Motus exposes its browser engine to AI agents through a [Model Context Protocol](https://modelcontextprotocol.io) server, shipped as the `motus mcp` verb on the CLI tool. Agents navigate, snapshot the accessibility tree, click and type against referenced elements, act at raw coordinates on canvas surfaces (including drag and drop), intercept network traffic, run accessibility and performance audits, record traces, HARs, and videos, and generate Page Object Model code, all over stdio or Streamable HTTP.
