@@ -30,6 +30,12 @@ internal static class ToolResultHelper
     /// machine-readable structured content, and a text rendering is included for
     /// readability (the JSON itself when no text is supplied).
     /// </summary>
+    /// <param name="value">
+    /// A JSON object. Structured content has no place for a bare number, string, or array,
+    /// and a client rejects one before the model sees the result, so a scalar has to travel
+    /// as a field of an object.
+    /// </param>
+    /// <param name="text">The text rendering, or null to use the JSON itself.</param>
     public static CallToolResult Structured(JsonElement value, string? text = null)
         => new()
         {

@@ -60,7 +60,7 @@ public class PageSessionIntegrationTests
         var eval = await PageTools.EvaluateAsync("window.answer", null, service, ct);
         Assert.IsFalse(eval.IsError ?? false, TextOf(eval));
         Assert.IsNotNull(eval.StructuredContent);
-        Assert.AreEqual(42, eval.StructuredContent.Value.GetInt32());
+        Assert.AreEqual(42, eval.StructuredContent.Value.GetProperty("result").GetInt32());
 
         // Open and navigate a second tab, then confirm both are listed.
         AssertOk(await SessionTools.TabOpenAsync(PageB, service, ct), "tab_open");

@@ -157,8 +157,65 @@ public class PageToolsUnitTests
         Assert.IsFalse(result.IsError ?? false);
         Assert.AreEqual("1 + 41", page.EvaluatedExpression);
         Assert.IsNotNull(result.StructuredContent);
-        Assert.AreEqual(42, result.StructuredContent.Value.GetInt32());
-        Assert.AreEqual("42", TextOf(result));
+        Assert.AreEqual(42, result.StructuredContent.Value.GetProperty("result").GetInt32());
+        Assert.AreEqual("{\"result\":42}", TextOf(result));
+    }
+
+    [TestMethod]
+    public async Task Evaluate_ScalarResult_IsWrappedInAnObject()
+    {
+        // Structured content is an object, so a scalar result has to arrive as a field of one
+        // or the client rejects the reply before the model reads it.
+        var page = new FakeToolPage(Snapshot()) { EvaluateReturn = Json("\"ready\"") };
+        var service = new FakeActivePageService(page);
+
+        var result = await PageTools.EvaluateAsync("document.readyState", null, service, Ct);
+
+        Assert.IsNotNull(result.StructuredContent);
+        Assert.AreEqual(JsonValueKind.Object, result.StructuredContent.Value.ValueKind);
+        Assert.AreEqual("ready", result.StructuredContent.Value.GetProperty("result").GetString());
+    }
+
+    [TestMethod]
+    public async Task Evaluate_ObjectResult_KeepsItsShapeUnderResult()
+    {
+        var page = new FakeToolPage(Snapshot()) { EvaluateReturn = Json("{\"cells\":3,\"names\":[\"a\",\"b\"]}") };
+        var service = new FakeActivePageService(page);
+
+        var result = await PageTools.EvaluateAsync("({ cells: 3, names: ['a', 'b'] })", null, service, Ct);
+
+        Assert.IsNotNull(result.StructuredContent);
+        var value = result.StructuredContent.Value.GetProperty("result");
+        Assert.AreEqual(3, value.GetProperty("cells").GetInt32());
+        Assert.AreEqual(2, value.GetProperty("names").GetArrayLength());
+    }
+
+    [TestMethod]
+    public async Task Evaluate_ArrayResult_IsWrappedInAnObject()
+    {
+        var page = new FakeToolPage(Snapshot()) { EvaluateReturn = Json("[1,2,3]") };
+        var service = new FakeActivePageService(page);
+
+        var result = await PageTools.EvaluateAsync("[1, 2, 3]", null, service, Ct);
+
+        Assert.IsNotNull(result.StructuredContent);
+        Assert.AreEqual(JsonValueKind.Object, result.StructuredContent.Value.ValueKind);
+        Assert.AreEqual(3, result.StructuredContent.Value.GetProperty("result").GetArrayLength());
+    }
+
+    [TestMethod]
+    public async Task Evaluate_NoValue_ReturnsNullResult()
+    {
+        // An expression yielding undefined leaves a default JsonElement, which has no JSON form.
+        var page = new FakeToolPage(Snapshot()) { EvaluateReturn = default };
+        var service = new FakeActivePageService(page);
+
+        var result = await PageTools.EvaluateAsync("window.setTitle()", null, service, Ct);
+
+        Assert.IsFalse(result.IsError ?? false);
+        Assert.IsNotNull(result.StructuredContent);
+        Assert.AreEqual(JsonValueKind.Null, result.StructuredContent.Value.GetProperty("result").ValueKind);
+        Assert.AreEqual("{\"result\":null}", TextOf(result));
     }
 
     [TestMethod]
@@ -172,7 +229,7 @@ public class PageToolsUnitTests
         Assert.IsFalse(result.IsError ?? false);
         Assert.AreEqual("el => el.textContent", page.RecordingLocator.EvaluatedElementExpression);
         Assert.IsNotNull(result.StructuredContent);
-        Assert.AreEqual(JsonValueKind.String, result.StructuredContent.Value.ValueKind);
+        Assert.AreEqual("hello", result.StructuredContent.Value.GetProperty("result").GetString());
     }
 
     [TestMethod]

@@ -110,9 +110,10 @@ public sealed class PageTools
     }
 
     [McpServerTool(Name = "evaluate", Title = "Evaluate JavaScript", Destructive = true)]
-    [Description("Evaluates a JavaScript expression and returns its result as structured JSON. With no ref it runs "
-        + "in the page; with a ref it runs against that element, passed as the function's argument. Results that "
-        + "cannot be serialized (undefined, functions, DOM nodes) come back as null.")]
+    [Description("Evaluates a JavaScript expression and returns its result as structured JSON under a \"result\" "
+        + "key, so an expression may return a value of any shape: a number, a string, an array, or an object. "
+        + "With no ref it runs in the page; with a ref it runs against that element, passed as the function's "
+        + "argument. Results that cannot be serialized (undefined, functions, DOM nodes) come back as null.")]
     public static async Task<CallToolResult> EvaluateAsync(
         [Description("The JavaScript expression to evaluate.")] string expression,
         [Description("An element ref from the latest snapshot to evaluate against. Omit to evaluate in the page.")] string? @ref,
@@ -126,12 +127,12 @@ public sealed class PageTools
             if (string.IsNullOrEmpty(@ref))
             {
                 var pageResult = await page.EvaluateAsync<JsonElement>(expression).ConfigureAwait(false);
-                return ToolResultHelper.Structured(pageResult);
+                return EvaluationResult(pageResult);
             }
 
             var locator = pageService.GetSnapshotService(page).ResolveRef(@ref);
             var elementResult = await locator.EvaluateWithElementAsync<JsonElement>(expression).ConfigureAwait(false);
-            return ToolResultHelper.Structured(elementResult);
+            return EvaluationResult(elementResult);
         }
         catch (SnapshotNotTakenException)
         {
@@ -145,5 +146,24 @@ public sealed class PageTools
         {
             return ToolResultHelper.Error($"Evaluate failed: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// Wraps an evaluated value under a "result" key.
+    /// </summary>
+    /// <remarks>
+    /// Structured content is a JSON object, so a bare number, string, or array is rejected by
+    /// the client before the model ever sees it. Sending every value under one key keeps the
+    /// shape of the reply the same whatever the expression returns, so reading a single count
+    /// off the page works as readily as returning a record.
+    /// </remarks>
+    private static CallToolResult EvaluationResult(JsonElement value)
+    {
+        // An expression that yields nothing (undefined, a function, a DOM node) leaves a default
+        // JsonElement behind, which has no JSON form of its own.
+        var raw = value.ValueKind == JsonValueKind.Undefined ? "null" : value.GetRawText();
+
+        using var document = JsonDocument.Parse($"{{\"result\":{raw}}}");
+        return ToolResultHelper.Structured(document.RootElement.Clone());
     }
 }
