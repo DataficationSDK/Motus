@@ -6,7 +6,7 @@ namespace Motus.Samples.Tests;
 /// Live web tests that navigate to real URLs.
 /// Tagged with TestCategory("Integration") so CI can run them separately.
 /// </summary>
-[TestClass]
+[MotusTestClass]
 [TestCategory("Integration")]
 public class LiveWebTests : MotusTestBase
 {

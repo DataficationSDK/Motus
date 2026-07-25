@@ -3,7 +3,7 @@ namespace Motus.Samples.Tests;
 /// <summary>
 /// Screenshots (page and element level) and tracing.
 /// </summary>
-[TestClass]
+[MotusTestClass]
 public class ScreenshotAndTracingTests : MotusTestBase
 {
     [TestMethod]

@@ -3,7 +3,7 @@ namespace Motus.Samples.Tests;
 /// <summary>
 /// Form interactions including fill, type, press, check, select, and clear.
 /// </summary>
-[TestClass]
+[MotusTestClass]
 public class FormInteractionTests : MotusTestBase
 {
     [TestMethod]

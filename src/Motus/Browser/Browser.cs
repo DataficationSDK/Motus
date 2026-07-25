@@ -15,6 +15,7 @@ internal sealed class Browser : IBrowser
     private readonly bool _handleSigint;
     private readonly bool _handleSigterm;
     private readonly LaunchOptions _launchOptions;
+    private readonly BrowserOutputDrain? _output;
 
     private readonly List<BrowserContext> _contexts = [];
 
@@ -32,7 +33,8 @@ internal sealed class Browser : IBrowser
         string? tempUserDataDir,
         bool handleSigint,
         bool handleSigterm,
-        LaunchOptions? launchOptions = null)
+        LaunchOptions? launchOptions = null,
+        BrowserOutputDrain? output = null)
     {
         _transport = transport;
         _registry = registry;
@@ -41,6 +43,7 @@ internal sealed class Browser : IBrowser
         _handleSigint = handleSigint;
         _handleSigterm = handleSigterm;
         _launchOptions = launchOptions ?? new LaunchOptions();
+        _output = output;
 
         _transport.Disconnected += OnTransportDisconnected;
 
@@ -262,6 +265,7 @@ internal sealed class Browser : IBrowser
             return;
 
         _isConnected = false;
+        ReportUnexpectedLoss("the connection to the browser closed");
         Disconnected?.Invoke(this, EventArgs.Empty);
     }
 
@@ -271,6 +275,7 @@ internal sealed class Browser : IBrowser
             return;
 
         _isConnected = false;
+        ReportUnexpectedLoss("the browser exited");
 
         // Dispose transport to fault all pending CDP commands immediately
         _ = _transport.DisposeAsync().AsTask();
@@ -284,11 +289,40 @@ internal sealed class Browser : IBrowser
             return;
 
         _isConnected = false;
+        ReportUnexpectedLoss("the browser stopped answering");
 
         // Dispose transport to fault all pending CDP commands (browser is frozen)
         _ = _transport.DisposeAsync().AsTask();
 
         Disconnected?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// Says that the browser went away on its own, and what it wrote on the way.
+    /// </summary>
+    /// <remarks>
+    /// Every command in flight is about to fail with a closed connection, which says only that the
+    /// browser is gone, never why. What the browser itself wrote is the one account of that, and it
+    /// goes with the process unless it is repeated here while there is still a test run to read it.
+    /// A browser being shut down deliberately says nothing, because there is nothing to explain.
+    /// </remarks>
+    private void ReportUnexpectedLoss(string what)
+    {
+        if (Volatile.Read(ref _closedFlag) != 0)
+            return;
+
+        var exitCode = string.Empty;
+        try
+        {
+            if (_process is { HasExited: true })
+                exitCode = $" (exit code {_process.ExitCode})";
+        }
+        catch (InvalidOperationException)
+        {
+            // The process was disposed from under us; the reason below is worth saying regardless.
+        }
+
+        Console.Error.WriteLine($"Motus: {what}{exitCode}.{_output?.Describe()}");
     }
 
     private void UnregisterProcessExitHandler()

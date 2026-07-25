@@ -137,7 +137,7 @@ public static class MotusLauncher
                     transport, registry, process,
                     ownsTempDir ? profileOrDataDir : null,
                     options.HandleSIGINT, options.HandleSIGTERM,
-                    options);
+                    options, output);
 
                 await browser.InitializeAsync(readyCts.Token).ConfigureAwait(false);
                 return browser;

@@ -9,7 +9,7 @@ namespace Motus.Samples.Tests;
 /// When run in the visual runner, navigate steps appear as annotated timeline markers
 /// with LCP, FCP, and CLS values, and the step detail panel shows a Performance section.
 /// </summary>
-[TestClass]
+[MotusTestClass]
 [TestCategory("Integration")]
 [PerformanceBudget(Lcp = 5000, Fcp = 5000, Cls = 1.0)]
 public class PerformanceTests : MotusTestBase

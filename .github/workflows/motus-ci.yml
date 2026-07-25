@@ -70,18 +70,26 @@ jobs:
       - name: Build
         run: dotnet build Motus.sln --configuration Release --no-restore
 
+      # Coverage is collected only where it is read. The report below is built from the Linux run
+      # alone, so instrumenting the other two spends their time and memory producing a file nothing
+      # opens, and macOS is the runner with the least of both to spare.
       - name: Test (unit)
         timeout-minutes: 15
-        run: >-
-          dotnet test Motus.sln
-          --configuration Release
-          --no-build
-          --filter "TestCategory!=Integration&FullyQualifiedName!~Motus.Samples"
-          --logger "trx;LogFilePrefix=results"
-          --collect:"XPlat Code Coverage"
-          --results-directory TestResults
-          --settings coverage.runsettings
-          --blame-hang --blame-hang-timeout 5m --blame-hang-dump-type mini
+        shell: bash
+        run: |
+          coverage=()
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            coverage=(--collect:"XPlat Code Coverage" --settings coverage.runsettings)
+          fi
+
+          dotnet test Motus.sln \
+            --configuration Release \
+            --no-build \
+            --filter "TestCategory!=Integration&FullyQualifiedName!~Motus.Samples" \
+            --logger "trx;LogFilePrefix=results" \
+            --results-directory TestResults \
+            --blame-hang --blame-hang-timeout 5m --blame-hang-dump-type mini \
+            "${coverage[@]}"
 
       # The sample suite drives a real browser, so it runs on its own rather than inside the unit
       # step. A browser that stalls or dies is then reported as itself, with its own bound, instead
@@ -97,21 +105,53 @@ jobs:
         shell: bash
         run: |
           mkdir -p TestResults
-          if dotnet test samples/Motus.Samples/Motus.Samples.csproj \
-              --configuration Release \
-              --no-build \
-              --filter "TestCategory!=Integration" \
-              --logger "trx;LogFilePrefix=samples" \
-              --collect:"XPlat Code Coverage" \
-              --results-directory TestResults \
-              --settings coverage.runsettings \
-              --blame-hang --blame-hang-timeout 3m --blame-hang-dump-type mini \
-              < /dev/null > TestResults/samples-console.log 2>&1; then
-            status=0
-          else
-            status=$?
+
+          coverage=()
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            coverage=(--collect:"XPlat Code Coverage" --settings coverage.runsettings)
           fi
+
+          dotnet test samples/Motus.Samples/Motus.Samples.csproj \
+            --configuration Release \
+            --no-build \
+            --filter "TestCategory!=Integration" \
+            --logger "trx;LogFilePrefix=samples" \
+            --results-directory TestResults \
+            --blame-hang --blame-hang-timeout 3m --blame-hang-dump-type mini \
+            "${coverage[@]}" \
+            < /dev/null > TestResults/samples-console.log 2>&1 &
+          tests=$!
+
+          # The step timeout above has twice failed to end this step, so the run is bounded from
+          # inside it as well. A step that ends here leaves its console log and a picture of the
+          # machine behind; a job the runner never manages to cancel leaves nothing at all. The
+          # watchdog holds no streams of its own, so being orphaned cannot keep the step open.
+          ( sleep 540; kill -9 $tests 2>/dev/null ) < /dev/null > /dev/null 2>&1 &
+          watchdog=$!
+          disown $watchdog 2>/dev/null || true
+
+          status=0
+          wait $tests || status=$?
+          kill $watchdog 2>/dev/null || true
+
           cat TestResults/samples-console.log
+
+          # What the machine had left is the question a hang here raises, and it cannot be asked
+          # after the fact.
+          if [ $status -ne 0 ]; then
+            echo "--- the machine, once the run ended ---"
+            case "$RUNNER_OS" in
+              macOS)
+                vm_stat
+                ps -Ao pid,ppid,%cpu,%mem,rss,comm | sort -k5 -rn | head -12
+                ;;
+              Linux)
+                free -m
+                ps -eo pid,ppid,%cpu,%mem,rss,comm --sort=-rss | head -12
+                ;;
+            esac
+          fi
+
           exit $status
 
       # A browser that outlived the run is what wedges the next step, so it goes now rather than

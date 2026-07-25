@@ -6,7 +6,7 @@ namespace Motus.Samples.Tests;
 /// Page Object Model pattern using TodoAppPage.
 /// Demonstrates the same POM structure that <c>dotnet motus codegen</c> produces.
 /// </summary>
-[TestClass]
+[MotusTestClass]
 public class PageObjectModelTests : MotusTestBase
 {
     private TodoAppPage _todo = null!;

@@ -39,7 +39,9 @@ using Motus.Abstractions;
 using Motus.Testing.MSTest;
 using static Motus.Assertions.Expect;
 
-[TestClass]
+// [MotusTestClass] stands in for [TestClass] and re-runs any test whose browser
+// disconnects underneath it. Failed assertions are never re-run.
+[MotusTestClass]
 public class SearchTests : MotusTestBase
 {
     [TestMethod]

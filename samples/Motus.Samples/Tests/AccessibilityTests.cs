@@ -4,7 +4,7 @@ namespace Motus.Samples.Tests;
 /// Accessibility testing showcase: page-level audits, rule skipping, locator AX queries,
 /// and the .Not negation. Uses inline HTML with intentional WCAG violations.
 /// </summary>
-[TestClass]
+[MotusTestClass]
 public class AccessibilityTests : MotusTestBase
 {
     /// <summary>

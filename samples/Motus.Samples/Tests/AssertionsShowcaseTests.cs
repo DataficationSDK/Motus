@@ -3,7 +3,7 @@ namespace Motus.Samples.Tests;
 /// <summary>
 /// Assertion showcase covering Expect.That, .Not, custom options, and various matchers.
 /// </summary>
-[TestClass]
+[MotusTestClass]
 public class AssertionsShowcaseTests : MotusTestBase
 {
     [TestMethod]

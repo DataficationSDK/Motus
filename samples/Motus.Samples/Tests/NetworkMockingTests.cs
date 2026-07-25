@@ -6,7 +6,7 @@ namespace Motus.Samples.Tests;
 /// Note: FulfillAsync tests require a route-capable origin; they are tagged Integration
 /// because about:blank and data: URIs have opaque origins that limit Fetch domain interception.
 /// </summary>
-[TestClass]
+[MotusTestClass]
 public class NetworkMockingTests : MotusTestBase
 {
     [TestMethod]

@@ -4,7 +4,7 @@ namespace Motus.Samples.Tests;
 /// Captures a rich trace ZIP with screenshots and multiple interaction steps.
 /// Run this test to generate a sample trace file for use with <c>motus trace show</c>.
 /// </summary>
-[TestClass]
+[MotusTestClass]
 public class TraceCaptureSampleTest : MotusTestBase
 {
     [TestMethod]

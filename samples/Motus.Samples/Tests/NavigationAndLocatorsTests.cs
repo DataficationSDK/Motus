@@ -4,7 +4,7 @@ namespace Motus.Samples.Tests;
 /// Navigation, locator factories, and locator chaining.
 /// Demonstrates every built-in locator strategy and how to compose them.
 /// </summary>
-[TestClass]
+[MotusTestClass]
 public class NavigationAndLocatorsTests : MotusTestBase
 {
     [TestMethod]

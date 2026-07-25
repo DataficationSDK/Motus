@@ -36,7 +36,7 @@ namespace Motus.Samples.Tests;
 ///   - <c>GetByText</c>        → fragile to copy edits
 ///   - <c>Locator(css)</c>     → most fragile; class renames break this immediately
 /// </summary>
-[TestClass]
+[MotusTestClass]
 public class SelectorMaintenanceShowcaseTests : MotusTestBase
 {
     [TestMethod]

@@ -383,12 +383,17 @@ public sealed class TestRunner(int maxWorkers)
     /// </summary>
     private static bool IsTransientCdpFailure(Exception? ex)
     {
-        while (ex is not null)
+        if (Abstractions.BrowserFailure.IsBrowserLost(ex))
+            return true;
+
+        // The transport's own disconnect reaches the runner unwrapped when it escapes from outside
+        // a command, where nothing has turned it into the public failure yet.
+        for (var current = ex; current is not null; current = current.InnerException)
         {
-            if (ex is CdpDisconnectedException || ex is Abstractions.MotusTargetClosedException)
+            if (current is CdpDisconnectedException)
                 return true;
-            ex = ex.InnerException;
         }
+
         return false;
     }
 
