@@ -74,17 +74,32 @@ public abstract class MotusTestBase
         const int maxAttempts = 3;
         for (int attempt = 1; ; attempt++)
         {
+            IBrowserContext? context = null;
             try
             {
-                _context = await s_fixture.NewContextAsync(ContextOptions).ConfigureAwait(false);
-                _page = await _context.NewPageAsync().ConfigureAwait(false);
+                context = await s_fixture.NewContextAsync(ContextOptions).ConfigureAwait(false);
+                _page = await context.NewPageAsync().ConfigureAwait(false);
+                _context = context;
                 break;
             }
-            catch when (attempt < maxAttempts)
+            catch
             {
-                // Give the browser fixture time to restart Chrome.
+                // A context created before the failure holds one of the fixture's slots, and the
+                // fixture hands out a fixed few. Dropping it without closing it retires that slot
+                // for the rest of the run, and a run that has retired them all waits here forever.
+                if (context is not null)
+                {
+                    try { await s_fixture.CloseContextAsync(context).ConfigureAwait(false); }
+                    catch { /* the browser it belonged to is already gone */ }
+                }
+
                 _context = null;
                 _page = null;
+
+                if (attempt >= maxAttempts)
+                    throw;
+
+                // Give the browser fixture time to restart Chrome.
                 await Task.Delay(1000 * attempt).ConfigureAwait(false);
             }
         }
@@ -118,13 +133,23 @@ public abstract class MotusTestBase
                 var testFailed = TestContext?.CurrentTestOutcome != UnitTestOutcome.Passed;
                 if (_failureTracing is not null)
                     await _failureTracing.StopAsync(_context, testFailed).ConfigureAwait(false);
-
-                await s_fixture.CloseContextAsync(_context).ConfigureAwait(false);
             }
-            catch (Exception) when (_context is not null)
+            catch (Exception)
             {
                 // Browser may have crashed or disconnected; swallow so we don't
                 // mask the original test failure with a cleanup exception.
+            }
+
+            try
+            {
+                // Always reached, even when tracing above failed: this is the only place the
+                // context's slot goes back to the fixture, and a slot that never comes back is one
+                // fewer test that can ever start.
+                await s_fixture.CloseContextAsync(_context).ConfigureAwait(false);
+            }
+            catch (Exception)
+            {
+                // The context went with the browser it belonged to.
             }
             finally
             {

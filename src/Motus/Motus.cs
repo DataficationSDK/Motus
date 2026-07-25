@@ -72,51 +72,83 @@ public static class MotusLauncher
         var process = Process.Start(psi)
                       ?? throw new InvalidOperationException($"Failed to start browser process: {executablePath}");
 
+        // Both streams above are redirected, and a redirected stream nobody reads is a pipe that
+        // fills and then blocks the browser writing to it. Draining begins before the first command
+        // is sent. Firefox's stderr is left alone: the endpoint reader below reads it line by line
+        // and keeps doing so for the life of the process.
+        var output = isFirefox
+            ? BrowserOutputDrain.Start(process.StandardOutput)
+            : BrowserOutputDrain.Start(process.StandardOutput, process.StandardError);
+
         try
         {
             var timeout = TimeSpan.FromMilliseconds(options.Timeout);
 
-            IMotusTransport transport;
-            IMotusSessionRegistry registry;
-
-            if (isFirefox)
+            Uri wsEndpoint;
+            try
             {
-                var stderrSource = new ProcessStderrAdapter(process);
-                var wsEndpoint = await FirefoxEndpointReader.WaitForEndpointAsync(stderrSource, timeout, ct)
-                    .ConfigureAwait(false);
-
-                // TODO: BiDiTransport does not support SlowMo yet
-                var socket = new CdpSocket();
-                var bidiTransport = new BiDiTransport(socket);
-                await bidiTransport.ConnectAsync(wsEndpoint, ct).ConfigureAwait(false);
-
-                var sessionId = await bidiTransport.CreateSessionAsync(ct).ConfigureAwait(false);
-
-                transport = bidiTransport;
-                registry = new BiDiSessionRegistry(bidiTransport, sessionId);
+                wsEndpoint = isFirefox
+                    ? await FirefoxEndpointReader
+                        .WaitForEndpointAsync(new ProcessStderrAdapter(process), timeout, ct).ConfigureAwait(false)
+                    : await CdpEndpointPoller.WaitForEndpointAsync(port, timeout, ct).ConfigureAwait(false);
             }
-            else
+            catch (MotusTimeoutException ex)
             {
-                var wsEndpoint = await CdpEndpointPoller.WaitForEndpointAsync(port, timeout, ct)
-                    .ConfigureAwait(false);
-
-                var slowMo = TimeSpan.FromMilliseconds(options.SlowMo);
-                var socket = new CdpSocket();
-                var cdpTransport = new CdpTransport(socket, slowMo);
-                await cdpTransport.ConnectAsync(wsEndpoint, ct).ConfigureAwait(false);
-
-                transport = cdpTransport;
-                registry = new CdpSessionRegistry(cdpTransport);
+                // A browser that never offered an endpoint has usually said why on its way down.
+                throw new MotusTimeoutException(timeoutDuration: timeout, message: $"{ex.Message}{output.Describe()}");
             }
 
-            var browser = new Browser(
-                transport, registry, process,
-                ownsTempDir ? profileOrDataDir : null,
-                options.HandleSIGINT, options.HandleSIGTERM,
-                options);
+            // Everything from here to the first answered command is bounded by the launch timeout.
+            // Neither the WebSocket handshake nor the opening command carries a bound of its own, so
+            // a browser that accepts a connection and then answers nothing on it would otherwise
+            // hold the caller for good.
+            using var readyCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            readyCts.CancelAfter(timeout);
 
-            await browser.InitializeAsync(ct).ConfigureAwait(false);
-            return browser;
+            try
+            {
+                IMotusTransport transport;
+                IMotusSessionRegistry registry;
+
+                if (isFirefox)
+                {
+                    // TODO: BiDiTransport does not support SlowMo yet
+                    var socket = new CdpSocket();
+                    var bidiTransport = new BiDiTransport(socket);
+                    await bidiTransport.ConnectAsync(wsEndpoint, readyCts.Token).ConfigureAwait(false);
+
+                    var sessionId = await bidiTransport.CreateSessionAsync(readyCts.Token).ConfigureAwait(false);
+
+                    transport = bidiTransport;
+                    registry = new BiDiSessionRegistry(bidiTransport, sessionId);
+                }
+                else
+                {
+                    var slowMo = TimeSpan.FromMilliseconds(options.SlowMo);
+                    var socket = new CdpSocket();
+                    var cdpTransport = new CdpTransport(socket, slowMo);
+                    await cdpTransport.ConnectAsync(wsEndpoint, readyCts.Token).ConfigureAwait(false);
+
+                    transport = cdpTransport;
+                    registry = new CdpSessionRegistry(cdpTransport);
+                }
+
+                var browser = new Browser(
+                    transport, registry, process,
+                    ownsTempDir ? profileOrDataDir : null,
+                    options.HandleSIGINT, options.HandleSIGTERM,
+                    options);
+
+                await browser.InitializeAsync(readyCts.Token).ConfigureAwait(false);
+                return browser;
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            {
+                throw new MotusTimeoutException(
+                    timeoutDuration: timeout,
+                    message: $"Browser offered a debugging endpoint but did not finish connecting "
+                             + $"within {timeout.TotalSeconds}s.{output.Describe()}");
+            }
         }
         catch
         {

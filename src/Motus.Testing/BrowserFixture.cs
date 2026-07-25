@@ -31,6 +31,11 @@ public sealed class BrowserFixture : IAsyncDisposable
     private const int MaxLaunchAttempts = 3;
 
     /// <summary>
+    /// How long disposal waits for a restart already under way to hand the fixture back.
+    /// </summary>
+    private static readonly TimeSpan RestartHandoverTimeout = TimeSpan.FromSeconds(30);
+
+    /// <summary>
     /// Launches a browser instance with the given options, retrying on transient failures.
     /// </summary>
     public async Task InitializeAsync(LaunchOptions? options = null)
@@ -97,20 +102,25 @@ public sealed class BrowserFixture : IAsyncDisposable
         if (Interlocked.CompareExchange(ref _disposed, 1, 0) != 0)
             return;
 
-        await _restartGate.WaitAsync().ConfigureAwait(false);
+        // A restart in flight holds the gate while it waits on a browser to come up, and the last
+        // thing a test run does is dispose the fixture. Waiting on that without a bound is how a
+        // finished run fails to end: every test has passed and the process still will not exit.
+        // The browser being built is about to be thrown away regardless, so the wait is worth only
+        // as long as an orderly handover takes.
+        var entered = await _restartGate.WaitAsync(RestartHandoverTimeout).ConfigureAwait(false);
         try
         {
-            if (_browser is not null)
+            var browser = Interlocked.Exchange(ref _browser, null);
+            if (browser is not null)
             {
-                _browser.Disconnected -= OnBrowserDisconnected;
-                await _browser.DisposeAsync().ConfigureAwait(false);
-                _browser = null;
+                browser.Disconnected -= OnBrowserDisconnected;
+                await browser.DisposeAsync().ConfigureAwait(false);
             }
         }
         finally
         {
-            _restartGate.Release();
-            _restartGate.Dispose();
+            if (entered)
+                _restartGate.Release();
         }
     }
 
@@ -142,6 +152,21 @@ public sealed class BrowserFixture : IAsyncDisposable
             }
 
             await LaunchWithRetryAsync(_launchOptions).ConfigureAwait(false);
+
+            if (Volatile.Read(ref _disposed) != 0)
+            {
+                // Disposal came while this browser was starting and gave up waiting for the gate.
+                // Nothing will use it and nothing else will close it, so it goes now rather than
+                // outliving the run that launched it.
+                var stray = Interlocked.Exchange(ref _browser, null);
+                if (stray is not null)
+                {
+                    try { await stray.DisposeAsync().ConfigureAwait(false); }
+                    catch { /* nothing left to salvage */ }
+                }
+
+                return;
+            }
 
             if (_browser is not null)
                 SubscribeDisconnected(_browser);

@@ -86,18 +86,46 @@ jobs:
       # The sample suite drives a real browser, so it runs on its own rather than inside the unit
       # step. A browser that stalls or dies is then reported as itself, with its own bound, instead
       # of stopping the run that covers everything else.
+      #
+      # Output goes to a file rather than straight to the log. A browser launched by the tests
+      # inherits this step's stdout and stderr, and if it outlives the run the runner waits on
+      # those pipes for output that will never come: the step timeout below then has nothing to
+      # cancel and the job hangs until the six-hour ceiling. Writing to a file leaves the runner
+      # holding nothing, and the file survives a killed step for the artifact to carry out.
       - name: Test (browser samples)
         timeout-minutes: 12
-        run: >-
-          dotnet test samples/Motus.Samples/Motus.Samples.csproj
-          --configuration Release
-          --no-build
-          --filter "TestCategory!=Integration"
-          --logger "trx;LogFilePrefix=samples"
-          --collect:"XPlat Code Coverage"
-          --results-directory TestResults
-          --settings coverage.runsettings
-          --blame-hang --blame-hang-timeout 3m --blame-hang-dump-type mini
+        shell: bash
+        run: |
+          mkdir -p TestResults
+          if dotnet test samples/Motus.Samples/Motus.Samples.csproj \
+              --configuration Release \
+              --no-build \
+              --filter "TestCategory!=Integration" \
+              --logger "trx;LogFilePrefix=samples" \
+              --collect:"XPlat Code Coverage" \
+              --results-directory TestResults \
+              --settings coverage.runsettings \
+              --blame-hang --blame-hang-timeout 3m --blame-hang-dump-type mini \
+              < /dev/null > TestResults/samples-console.log 2>&1; then
+            status=0
+          else
+            status=$?
+          fi
+          cat TestResults/samples-console.log
+          exit $status
+
+      # A browser that outlived the run is what wedges the next step, so it goes now rather than
+      # at the end of the job.
+      - name: Stop stray browsers
+        if: always()
+        shell: bash
+        run: |
+          case "$RUNNER_OS" in
+            Windows) taskkill //F //IM chrome.exe //T 2>/dev/null || true ;;
+            *) pkill -f "\.motus/browsers" || true
+               pkill -f "remote-debugging-port" || true ;;
+          esac
+          exit 0
 
       - name: Upload test results
         if: always()
@@ -110,6 +138,7 @@ jobs:
             TestResults/**/*.trx
             TestResults/**/*Sequence.xml
             TestResults/**/*.dmp
+            TestResults/samples-console.log
           retention-days: 14
 
       - name: Install ReportGenerator

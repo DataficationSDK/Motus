@@ -20,6 +20,7 @@ internal sealed class Browser : IBrowser
 
     private volatile bool _isConnected;
     private int _disconnectedFlag;
+    private int _closedFlag;
     private BrowserHeartbeat? _heartbeat;
     private ConsoleCancelEventHandler? _cancelHandler;
     private EventHandler? _processExitHandler;
@@ -88,8 +89,21 @@ internal sealed class Browser : IBrowser
 
     public async Task CloseAsync()
     {
-        if (!_isConnected)
+        // Closing twice is not a fault. A signal handler and an explicit close can both arrive, and
+        // the second must not cut short what the first is doing.
+        if (Interlocked.CompareExchange(ref _closedFlag, 1, 0) != 0)
             return;
+
+        if (!_isConnected)
+        {
+            // The browser was already given up on, by a lost connection or by a heartbeat that
+            // stopped being answered. Neither of those ends the process: a frozen browser does not
+            // leave on its own, and one left behind holds its profile directory and its port.
+            UnregisterSignalHandlers();
+            UnregisterProcessExitHandler();
+            await EndProcessAsync().ConfigureAwait(false);
+            return;
+        }
 
         _isConnected = false;
 
@@ -127,22 +141,41 @@ internal sealed class Browser : IBrowser
         // Dispose the transport to terminate the WebSocket receive loop
         await _transport.DisposeAsync().ConfigureAwait(false);
 
-        if (_process is not null && !_process.HasExited)
+        await EndProcessAsync().ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Gives the browser process a moment to leave on its own, then ends it.
+    /// </summary>
+    private async Task EndProcessAsync()
+    {
+        if (_process is null || _process.HasExited)
+            return;
+
+        using var exitCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        try
         {
-            using var exitCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            await _process.WaitForExitAsync(exitCts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
             try
             {
-                await _process.WaitForExitAsync(exitCts.Token).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
                 _process.Kill(entireProcessTree: true);
+            }
+            catch (InvalidOperationException)
+            {
+                // It left while we were waiting on it
             }
         }
     }
 
     public async ValueTask DisposeAsync()
     {
+        // Disposal ends the process itself, and the Process object with it, so a close arriving
+        // afterwards has nothing left to act on.
+        Interlocked.Exchange(ref _closedFlag, 1);
+
         if (_heartbeat is not null)
             await _heartbeat.DisposeAsync().ConfigureAwait(false);
 
