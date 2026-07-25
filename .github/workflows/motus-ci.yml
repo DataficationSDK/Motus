@@ -84,6 +84,7 @@ jobs:
       # with nothing changed on our side: a suite that cannot say which browser it ran against cannot
       # tell that apart from a regression of its own. Every leg uses the same build from here on.
       - name: Install pinned browser
+        timeout-minutes: 10
         shell: bash
         run: |
           dotnet run --project src/Motus.Cli/Motus.Cli.csproj --configuration Release --framework net8.0 --no-build -- \
@@ -101,9 +102,12 @@ jobs:
           fi
 
           # A browser that cannot be driven says so here, in a line or two of its own words, rather
-          # than thirty seconds into the first test that tries to drive it.
-          "$exe" --version
-
+          # than thirty seconds into the first test that tries to drive it. The version is not asked
+          # for separately: the installer above already printed it, and asking a browser its version
+          # is not the same question on every platform. On Windows chrome.exe has no console to
+          # answer on and opens a window instead of exiting, which hangs the step rather than
+          # failing it. Driving it is the question that matters, and the answer is the same
+          # everywhere.
           smoke_log="${RUNNER_TEMP:-/tmp}/chrome-smoke.log"
           "$exe" --headless=new --remote-debugging-port=9333 \
             --user-data-dir="${RUNNER_TEMP:-/tmp}/chrome-smoke-profile" \
@@ -115,7 +119,14 @@ jobs:
             if curl -sf http://127.0.0.1:9333/json/version > /dev/null; then ready=1; break; fi
             sleep 1
           done
-          kill $smoke 2>/dev/null || true
+
+          # The whole tree goes, not just the process bash knows about. A browser leaves children
+          # behind, and one still holding the debugging port would meet the first test that tries
+          # to open its own.
+          case "$RUNNER_OS" in
+            Windows) taskkill //F //IM chrome.exe //T > /dev/null 2>&1 || true ;;
+            *) kill $smoke 2>/dev/null || true ;;
+          esac
 
           if [ "$ready" -ne 1 ]; then
             echo "The pinned browser never accepted a debugging connection. It wrote:"
