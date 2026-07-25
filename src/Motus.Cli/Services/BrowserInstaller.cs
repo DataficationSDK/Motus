@@ -30,25 +30,37 @@ public sealed class BrowserInstaller
         var cachePath = cachePathOverride ?? DefaultCachePath();
         Directory.CreateDirectory(cachePath);
 
-        Console.WriteLine("Querying latest stable Chromium build...");
-
-        var json = await Http.GetStringAsync(
-            "https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions-with-downloads.json");
-        using var doc = JsonDocument.Parse(json);
-
-        var stable = doc.RootElement.GetProperty("channels").GetProperty("Stable");
-        var version = revision ?? stable.GetProperty("version").GetString()!;
-
         var platformKey = GetPlatformKey();
-        var downloads = stable.GetProperty("downloads").GetProperty("chrome");
+        string version;
+        string? downloadUrl;
 
-        string? downloadUrl = null;
-        foreach (var item in downloads.EnumerateArray())
+        if (revision is not null)
         {
-            if (item.GetProperty("platform").GetString() == platformKey)
+            // A pinned build is addressed directly. The stable listing describes one version, the
+            // current one, so asking it for any other returns today's binary under yesterday's name.
+            version = revision;
+            downloadUrl = $"https://storage.googleapis.com/chrome-for-testing-public/"
+                          + $"{version}/{platformKey}/chrome-{platformKey}.zip";
+        }
+        else
+        {
+            Console.WriteLine("Querying latest stable Chromium build...");
+
+            var json = await Http.GetStringAsync(
+                "https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions-with-downloads.json");
+            using var doc = JsonDocument.Parse(json);
+
+            var stable = doc.RootElement.GetProperty("channels").GetProperty("Stable");
+            version = stable.GetProperty("version").GetString()!;
+
+            downloadUrl = null;
+            foreach (var item in stable.GetProperty("downloads").GetProperty("chrome").EnumerateArray())
             {
-                downloadUrl = item.GetProperty("url").GetString();
-                break;
+                if (item.GetProperty("platform").GetString() == platformKey)
+                {
+                    downloadUrl = item.GetProperty("url").GetString();
+                    break;
+                }
             }
         }
 

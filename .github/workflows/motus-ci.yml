@@ -18,6 +18,11 @@ on:
       - "Motus.sln"
       - ".github/workflows/motus-ci.yml"
 
+env:
+  # The browser every leg tests against. Raise it deliberately, the way a dependency is raised, so a
+  # browser change and a code change are never the same red build.
+  CHROME_VERSION: 149.0.7827.156
+
 jobs:
   dotnet:
     name: .NET (${{ matrix.os }})
@@ -73,6 +78,17 @@ jobs:
 
       - name: Build
         run: dotnet build Motus.sln --configuration Release --no-restore
+
+      # The browser is pinned rather than taken from whatever the runner image happens to ship. An
+      # image update swapped Chrome 149 for 150 under this suite and the macOS leg stopped finishing,
+      # with nothing changed on our side: a suite that cannot say which browser it ran against cannot
+      # tell that apart from a regression of its own. Every leg uses the same build from here on.
+      - name: Install pinned browser
+        shell: bash
+        run: |
+          dotnet run --project src/Motus.Cli/Motus.Cli.csproj --configuration Release --framework net8.0 --no-build -- \
+            install --channel chromium --revision "$CHROME_VERSION"
+          echo "MOTUS_EXECUTABLE_PATH=$(cat "$HOME/.motus/browsers/.installed.chromium")" >> "$GITHUB_ENV"
 
       # Coverage is collected only where it is read. The report below is built from the Linux run
       # alone, so instrumenting the other two spends their time and memory producing a file nothing

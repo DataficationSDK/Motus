@@ -177,6 +177,47 @@ public class MotusConfigTests
     }
 
     [TestMethod]
+    public void ExecutablePath_ReachesTheLaunchOptions()
+    {
+        var config = MotusConfigLoader.LoadFrom("""{ "launch": { "executablePath": "/opt/chrome-149/chrome" } }""", _ => null);
+
+        var options = ConfigMerge.ApplyConfig(new LaunchOptions(), config);
+
+        Assert.AreEqual("/opt/chrome-149/chrome", options.ExecutablePath);
+    }
+
+    [TestMethod]
+    public void ExecutablePath_LeavesAPathTheCallerNamed()
+    {
+        var config = MotusConfigLoader.LoadFrom("""{ "launch": { "executablePath": "/opt/chrome-149/chrome" } }""", _ => null);
+
+        var options = ConfigMerge.ApplyConfig(new LaunchOptions { ExecutablePath = "/opt/chosen/chrome" }, config);
+
+        Assert.AreEqual("/opt/chosen/chrome", options.ExecutablePath);
+    }
+
+    [TestMethod]
+    public void ExecutablePath_ComesFromTheFile()
+    {
+        var json = """{ "launch": { "executablePath": "/opt/chrome-149/chrome" } }""";
+
+        var config = MotusConfigLoader.LoadFrom(json, _ => null);
+
+        Assert.AreEqual("/opt/chrome-149/chrome", config.Launch!.ExecutablePath);
+    }
+
+    [TestMethod]
+    public void ExecutablePath_ComesFromTheEnvironment()
+    {
+        // Pinning the browser a build runs against is a per-machine decision, so it has to be
+        // sayable without editing a file that is checked in.
+        var config = MotusConfigLoader.LoadFrom(
+            null, name => name == "MOTUS_EXECUTABLE_PATH" ? "/opt/chrome-149/chrome" : null);
+
+        Assert.AreEqual("/opt/chrome-149/chrome", config.Launch!.ExecutablePath);
+    }
+
+    [TestMethod]
     public void EnvVar_AllScalarProperties()
     {
         var config = MotusConfigLoader.LoadFrom(null, name => name switch

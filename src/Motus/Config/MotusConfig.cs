@@ -15,7 +15,8 @@ internal sealed record MotusLaunchConfig(
     bool? Headless = null,
     string? Channel = null,
     int? SlowMo = null,
-    int? Timeout = null);
+    int? Timeout = null,
+    string? ExecutablePath = null);
 
 internal sealed record MotusContextConfig(
     string? Locale = null,
@@ -168,6 +169,12 @@ internal static class MotusConfigLoader
 
         if (TryParseInt(envReader("MOTUS_LAUNCH_TIMEOUT"), out var launchTimeout))
         { launch = launch with { Timeout = launchTimeout }; launchChanged = true; }
+
+        // A named browser on the machine is whichever one the machine happens to have that day. This
+        // says exactly which binary to run, which is how a suite pins its browser the way it pins
+        // its packages, and how a build says what it actually tested against.
+        if (envReader("MOTUS_EXECUTABLE_PATH") is { Length: > 0 } executablePath)
+        { launch = launch with { ExecutablePath = executablePath }; launchChanged = true; }
 
         var context = config.Context ?? new MotusContextConfig();
         var contextChanged = false;

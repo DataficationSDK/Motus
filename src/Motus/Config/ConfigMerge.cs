@@ -5,10 +5,17 @@ namespace Motus;
 internal static class ConfigMerge
 {
     internal static LaunchOptions ApplyConfig(LaunchOptions options)
+        => ApplyConfig(options, MotusConfigLoader.Config);
+
+    /// <summary>
+    /// Applied against a given configuration rather than the loaded one, so what the merging does
+    /// can be read and tested without a file or an environment standing behind it.
+    /// </summary>
+    internal static LaunchOptions ApplyConfig(LaunchOptions options, MotusRootConfig config)
     {
         var result = options;
 
-        var launch = MotusConfigLoader.Config.Launch;
+        var launch = config.Launch;
         if (launch is not null)
         {
             if (options.Headless && launch.Headless.HasValue)
@@ -18,6 +25,11 @@ internal static class ConfigMerge
                 && Enum.TryParse<BrowserChannel>(launch.Channel, ignoreCase: true, out var channel))
                 result = result with { Channel = channel };
 
+            // An explicit path outranks a channel, so this is set whatever the channel says. Code
+            // that named a path itself still wins, as everywhere else here.
+            if (options.ExecutablePath is null && launch.ExecutablePath is { Length: > 0 } executablePath)
+                result = result with { ExecutablePath = executablePath };
+
             if (options.SlowMo == 0 && launch.SlowMo.HasValue)
                 result = result with { SlowMo = launch.SlowMo.Value };
 
@@ -25,7 +37,7 @@ internal static class ConfigMerge
                 result = result with { Timeout = launch.Timeout.Value };
         }
 
-        var a11y = MotusConfigLoader.Config.Accessibility;
+        var a11y = config.Accessibility;
         if (a11y is not null && options.Accessibility is null)
         {
             var mode = AccessibilityMode.Enforce;
@@ -46,7 +58,7 @@ internal static class ConfigMerge
             };
         }
 
-        var perf = MotusConfigLoader.Config.Performance;
+        var perf = config.Performance;
         if (perf is not null && options.Performance is null)
         {
             result = result with
@@ -59,7 +71,7 @@ internal static class ConfigMerge
             };
         }
 
-        var cov = MotusConfigLoader.Config.Coverage;
+        var cov = config.Coverage;
         if (cov is not null && options.Coverage is null)
         {
             result = result with

@@ -217,6 +217,30 @@ motus run ./bin/Debug/net8.0/MyTests.dll --retries 2
 
 Each retry runs the entire test fresh: new browser context, new WebSocket, new test instance. A `[RETRY]` line is logged to stderr for every attempt so flake patterns are visible.
 
+Under `dotnet test`, `[MotusTestClass]` does the same for an MSTest suite: it re-runs a test whose browser disconnected, and never one that failed an assertion.
+
+### Pinning the Browser
+
+A suite is only reproducible if it can say which browser it ran against. A CI image update can change Chrome underneath a build that was green yesterday, and the failure that follows is indistinguishable from a regression in your own code.
+
+`motus install --revision` downloads an exact Chrome for Testing build, and `MOTUS_EXECUTABLE_PATH` points a test run at it. Code that sets `LaunchOptions.ExecutablePath` itself still wins.
+
+```bash
+motus install --channel chromium --revision 149.0.7827.156
+export MOTUS_EXECUTABLE_PATH="$(cat ~/.motus/browsers/.installed.chromium)"
+dotnet test
+```
+
+Or in `motus.config.json`:
+
+```json
+{
+  "launch": {
+    "executablePath": "/opt/chrome-149/chrome"
+  }
+}
+```
+
 ### MCP Server for AI Agents
 
 Motus exposes its browser engine to AI agents through a [Model Context Protocol](https://modelcontextprotocol.io) server, shipped as the `motus mcp` verb on the CLI tool. Agents navigate, snapshot the accessibility tree, click and type against referenced elements, act at raw coordinates on canvas surfaces (including drag and drop), intercept network traffic, run accessibility and performance audits, record traces, HARs, and videos, and generate Page Object Model code, all over stdio or Streamable HTTP.
