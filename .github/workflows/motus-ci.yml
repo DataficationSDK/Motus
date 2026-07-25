@@ -22,6 +22,9 @@ jobs:
   dotnet:
     name: .NET (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    # A backstop above the step timeouts below. Without it a stalled run holds a runner for the
+    # six-hour default, and the log of a job that never ends cannot be read until it does.
+    timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix:
@@ -29,6 +32,32 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      # Recorded on every run because the runners differ in ways that decide whether a browser
+      # test passes: core count, memory, and the browser build shipped in the image.
+      - name: Runner facts
+        shell: bash
+        run: |
+          echo "runner: $RUNNER_NAME ($RUNNER_OS/$RUNNER_ARCH)"
+          echo "image:  ${ImageOS:-n/a} ${ImageVersion:-n/a}"
+          echo "system: $(uname -srm)"
+          case "$RUNNER_OS" in
+            macOS)
+              echo "cores:  $(sysctl -n hw.ncpu)"
+              echo "memory: $(( $(sysctl -n hw.memsize) / 1024 / 1024 )) MB"
+              "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --version || true
+              ;;
+            Linux)
+              echo "cores:  $(nproc)"
+              echo "memory: $(free -m | awk '/^Mem:/ {print $2}') MB"
+              google-chrome --version || true
+              ;;
+            Windows)
+              echo "cores:  ${NUMBER_OF_PROCESSORS:-n/a}"
+              powershell -Command "(Get-Item 'C:\Program Files\Google\Chrome\Application\chrome.exe').VersionInfo.ProductVersion" || true
+              ;;
+          esac
+          df -h .
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
@@ -42,22 +71,45 @@ jobs:
         run: dotnet build Motus.sln --configuration Release --no-restore
 
       - name: Test (unit)
+        timeout-minutes: 15
         run: >-
           dotnet test Motus.sln
           --configuration Release
           --no-build
-          --filter "TestCategory!=Integration"
+          --filter "TestCategory!=Integration&FullyQualifiedName!~Motus.Samples"
           --logger "trx;LogFilePrefix=results"
           --collect:"XPlat Code Coverage"
           --results-directory TestResults
           --settings coverage.runsettings
+          --blame-hang --blame-hang-timeout 5m --blame-hang-dump-type mini
+
+      # The sample suite drives a real browser, so it runs on its own rather than inside the unit
+      # step. A browser that stalls or dies is then reported as itself, with its own bound, instead
+      # of stopping the run that covers everything else.
+      - name: Test (browser samples)
+        timeout-minutes: 12
+        run: >-
+          dotnet test samples/Motus.Samples/Motus.Samples.csproj
+          --configuration Release
+          --no-build
+          --filter "TestCategory!=Integration"
+          --logger "trx;LogFilePrefix=samples"
+          --collect:"XPlat Code Coverage"
+          --results-directory TestResults
+          --settings coverage.runsettings
+          --blame-hang --blame-hang-timeout 3m --blame-hang-dump-type mini
 
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: test-results-${{ matrix.os }}
-          path: TestResults/**/*.trx
+          # The sequence file and the dump are what a hang leaves behind: the first names the test
+          # that was running when everything stopped, the second says where it was.
+          path: |
+            TestResults/**/*.trx
+            TestResults/**/*Sequence.xml
+            TestResults/**/*.dmp
           retention-days: 14
 
       - name: Install ReportGenerator
