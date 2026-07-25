@@ -88,7 +88,42 @@ jobs:
         run: |
           dotnet run --project src/Motus.Cli/Motus.Cli.csproj --configuration Release --framework net8.0 --no-build -- \
             install --channel chromium --revision "$CHROME_VERSION"
-          echo "MOTUS_EXECUTABLE_PATH=$(cat "$HOME/.motus/browsers/.installed.chromium")" >> "$GITHUB_ENV"
+
+          exe="$(cat "$HOME/.motus/browsers/.installed.chromium")"
+          echo "MOTUS_EXECUTABLE_PATH=$exe" >> "$GITHUB_ENV"
+
+          # Ubuntu 24.04 refuses unprivileged user namespaces to programs that have no AppArmor
+          # profile of their own, and a browser downloaded rather than installed by the distribution
+          # has none. Chrome's sandbox is built on those namespaces, so without this it starts and
+          # then goes nowhere. The check below says plainly whether that was the whole story.
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+          fi
+
+          # A browser that cannot be driven says so here, in a line or two of its own words, rather
+          # than thirty seconds into the first test that tries to drive it.
+          "$exe" --version
+
+          smoke_log="${RUNNER_TEMP:-/tmp}/chrome-smoke.log"
+          "$exe" --headless=new --remote-debugging-port=9333 \
+            --user-data-dir="${RUNNER_TEMP:-/tmp}/chrome-smoke-profile" \
+            < /dev/null > "$smoke_log" 2>&1 &
+          smoke=$!
+
+          ready=0
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:9333/json/version > /dev/null; then ready=1; break; fi
+            sleep 1
+          done
+          kill $smoke 2>/dev/null || true
+
+          if [ "$ready" -ne 1 ]; then
+            echo "The pinned browser never accepted a debugging connection. It wrote:"
+            cat "$smoke_log"
+            exit 1
+          fi
+
+          echo "The pinned browser starts and accepts a debugging connection."
 
       # Coverage is collected only where it is read. The report below is built from the Linux run
       # alone, so instrumenting the other two spends their time and memory producing a file nothing
