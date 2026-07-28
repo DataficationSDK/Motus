@@ -1,3 +1,4 @@
+using System.Runtime.ExceptionServices;
 using Motus.Abstractions;
 
 namespace Motus.Assertions;
@@ -24,8 +25,14 @@ internal static class AssertionRetryHelper
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         cts.CancelAfter(TimeSpan.FromMilliseconds(timeoutMs));
 
+        const string NeverEvaluated = "<not evaluated>";
+
         var linkedToken = cts.Token;
-        string lastActual = "<not evaluated>";
+        string lastActual = NeverEvaluated;
+
+        // Kept so a poll that only ever failed can still say why. Without it the reason is
+        // discarded on every iteration and the timeout is all that survives.
+        Exception? lastRetriedError = null;
 
         try
         {
@@ -53,6 +60,7 @@ internal static class AssertionRetryHelper
                     or TimeoutException)               // inner operation timeouts
                 {
                     // Retriable error from element resolution or JS evaluation; retry
+                    lastRetriedError = ex;
                 }
 
                 await Task.Delay(PollingIntervalMs, linkedToken).ConfigureAwait(false);
@@ -60,6 +68,17 @@ internal static class AssertionRetryHelper
         }
         catch (OperationCanceledException)
         {
+            // A target that went away is retried above, because during a navigation the old
+            // execution context dies and the next poll succeeds against the new one. When the
+            // browser itself is gone no poll ever succeeds, so the condition is never evaluated
+            // and the loop runs out the clock. Reporting that as an assertion failure states a
+            // verdict about the page that was never reached, and it hides the loss from
+            // BrowserFailure.IsBrowserLost, which is what both retry paths ask. So when nothing
+            // was ever evaluated and the last error was the target closing, that error is what
+            // happened and it is what propagates.
+            if (lastActual == NeverEvaluated && BrowserFailure.IsBrowserLost(lastRetriedError))
+                ExceptionDispatchInfo.Capture(lastRetriedError!).Throw();
+
             var negateLabel = negate ? "NOT " : "";
             var message = customMessage
                 ?? $"Assertion {negateLabel}{assertionName} failed after {timeoutMs}ms."
