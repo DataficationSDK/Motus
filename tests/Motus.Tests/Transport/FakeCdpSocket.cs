@@ -23,12 +23,13 @@ internal sealed class FakeCdpSocket : ICdpSocket
 
     public Task SendAsync(ReadOnlyMemory<byte> message, CancellationToken ct)
     {
-        _sent.Add(message.ToArray());
+        var bytes = message.ToArray();
+        _sent.Add(bytes);
         // Dequeue auto-response if available. This runs inside SendRawAsync,
         // after the TCS is registered in _pending but before await tcs.Task,
         // guaranteeing the response is dispatched to the correct pending request.
         if (_autoResponses.TryDequeue(out var response))
-            Enqueue(response);
+            Enqueue(CdpFakeResponse.WithIdOf(bytes, response));
         return Task.CompletedTask;
     }
 
@@ -62,6 +63,9 @@ internal sealed class FakeCdpSocket : ICdpSocket
     /// enqueued inside <see cref="SendAsync"/>, after the transport registers
     /// the pending TCS but before it awaits the result.
     /// </summary>
+    /// <remarks>
+    /// The <c>id</c> written into the queued JSON is ignored; see <see cref="CdpFakeResponse.WithIdOf"/>.
+    /// </remarks>
     internal void QueueResponse(string json)
         => _autoResponses.Enqueue(json);
 

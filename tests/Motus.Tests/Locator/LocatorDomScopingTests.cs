@@ -37,6 +37,7 @@ public class LocatorDomScopingTests
         _socket.Respond(6, """{"id": 6, "sessionId": "session-1", "result": {}}""");
         _socket.Respond(7, """{"id": 7, "sessionId": "session-1", "result": {}}""");
         _socket.Respond(8, """{"id": 8, "sessionId": "session-1", "result": {}}""");
+        _socket.Respond(9, """{"id": 9, "sessionId": "session-1", "result": {}}""");
         return await _browser.NewPageAsync();
     }
 

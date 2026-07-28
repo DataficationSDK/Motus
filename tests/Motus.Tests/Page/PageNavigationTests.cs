@@ -43,6 +43,7 @@ public class PageNavigationTests
         _socket.QueueResponse("""{"id": 6, "sessionId": "session-1", "result": {}}""");
         _socket.QueueResponse("""{"id": 7, "sessionId": "session-1", "result": {}}""");
         _socket.QueueResponse("""{"id": 8, "sessionId": "session-1", "result": {}}""");
+        _socket.QueueResponse("""{"id": 9, "sessionId": "session-1", "result": {}}""");
         var page = await _browser.NewPageAsync();
 
         // Inject initial frame
@@ -76,7 +77,7 @@ public class PageNavigationTests
         // Page.navigate response
         _socket.Enqueue("""
             {
-                "id": 9,
+                "id": 10,
                 "sessionId": "session-1",
                 "result": { "frameId": "frame-main" }
             }
@@ -116,7 +117,7 @@ public class PageNavigationTests
 
         _socket.Enqueue("""
             {
-                "id": 9,
+                "id": 10,
                 "sessionId": "session-1",
                 "result": { "frameId": "frame-main", "errorText": "net::ERR_NAME_NOT_RESOLVED" }
             }
@@ -135,7 +136,7 @@ public class PageNavigationTests
 
         _socket.Enqueue("""
             {
-                "id": 9,
+                "id": 10,
                 "sessionId": "session-1",
                 "result": { "frameId": "frame-main" }
             }
@@ -161,7 +162,7 @@ public class PageNavigationTests
 
         _socket.Enqueue("""
             {
-                "id": 9,
+                "id": 10,
                 "sessionId": "session-1",
                 "result": {}
             }

@@ -37,6 +37,7 @@ public class XPathSelectorStrategyTests
         _socket.QueueResponse("""{"id": 6, "sessionId": "session-1", "result": {}}""");
         _socket.QueueResponse("""{"id": 7, "sessionId": "session-1", "result": {}}""");
         _socket.QueueResponse("""{"id": 8, "sessionId": "session-1", "result": {}}""");
+        _socket.QueueResponse("""{"id": 9, "sessionId": "session-1", "result": {}}""");
         var page = await _browser.NewPageAsync();
 
         _socket.QueueResponse("""{"id": 9, "sessionId": "session-1", "result": {"result": {"type": "object", "objectId": "arr-1"}}}""");

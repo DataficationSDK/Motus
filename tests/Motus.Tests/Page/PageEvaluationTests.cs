@@ -43,6 +43,7 @@ public class PageEvaluationTests
         _socket.QueueResponse("""{"id": 6, "sessionId": "session-1", "result": {}}""");
         _socket.QueueResponse("""{"id": 7, "sessionId": "session-1", "result": {}}""");
         _socket.QueueResponse("""{"id": 8, "sessionId": "session-1", "result": {}}""");
+        _socket.QueueResponse("""{"id": 9, "sessionId": "session-1", "result": {}}""");
         var page = await _browser.NewPageAsync();
 
         // Inject frame navigated + execution context
@@ -90,7 +91,7 @@ public class PageEvaluationTests
 
         _socket.Enqueue("""
             {
-                "id": 9,
+                "id": 10,
                 "sessionId": "session-1",
                 "result": {
                     "result": { "type": "string", "value": "Test Page" }
@@ -111,7 +112,7 @@ public class PageEvaluationTests
 
         _socket.Enqueue("""
             {
-                "id": 9,
+                "id": 10,
                 "sessionId": "session-1",
                 "result": {
                     "result": { "type": "number", "value": 2 }
@@ -132,7 +133,7 @@ public class PageEvaluationTests
 
         _socket.Enqueue("""
             {
-                "id": 9,
+                "id": 10,
                 "sessionId": "session-1",
                 "result": {
                     "result": { "type": "undefined" },
@@ -158,7 +159,7 @@ public class PageEvaluationTests
 
         _socket.Enqueue("""
             {
-                "id": 9,
+                "id": 10,
                 "sessionId": "session-1",
                 "result": {
                     "result": { "type": "object", "objectId": "obj-123" }
@@ -179,7 +180,7 @@ public class PageEvaluationTests
 
         _socket.Enqueue("""
             {
-                "id": 9,
+                "id": 10,
                 "sessionId": "session-1",
                 "result": { "result": { "type": "string", "value": "T" } }
             }
@@ -187,7 +188,7 @@ public class PageEvaluationTests
 
         await evalTask;
 
-        var sentExpression = GetEvaluateExpression(_socket.GetSentJson(8));
+        var sentExpression = GetEvaluateExpression(_socket.GetSentJson(9));
         Assert.AreEqual("document.title", sentExpression);
     }
 
@@ -200,7 +201,7 @@ public class PageEvaluationTests
 
         _socket.Enqueue("""
             {
-                "id": 9,
+                "id": 10,
                 "sessionId": "session-1",
                 "result": { "result": { "type": "number", "value": 42 } }
             }
@@ -209,7 +210,7 @@ public class PageEvaluationTests
         var result = await evalTask;
         Assert.AreEqual(42, result);
 
-        var sentExpression = GetEvaluateExpression(_socket.GetSentJson(8));
+        var sentExpression = GetEvaluateExpression(_socket.GetSentJson(9));
         Assert.AreEqual("((() => 42)(undefined))", sentExpression);
     }
 
@@ -222,7 +223,7 @@ public class PageEvaluationTests
 
         _socket.Enqueue("""
             {
-                "id": 9,
+                "id": 10,
                 "sessionId": "session-1",
                 "result": { "result": { "type": "number", "value": 10 } }
             }
@@ -231,7 +232,7 @@ public class PageEvaluationTests
         var result = await evalTask;
         Assert.AreEqual(10, result);
 
-        var sentExpression = GetEvaluateExpression(_socket.GetSentJson(8));
+        var sentExpression = GetEvaluateExpression(_socket.GetSentJson(9));
         Assert.AreEqual("((function(x) { return x * 2; })(5))", sentExpression);
     }
 
@@ -253,7 +254,7 @@ public class PageEvaluationTests
 
         _socket.Enqueue("""
             {
-                "id": 9,
+                "id": 10,
                 "sessionId": "session-1",
                 "result": { "result": { "type": "boolean", "value": true } }
             }
@@ -262,7 +263,7 @@ public class PageEvaluationTests
         var result = await waitTask;
         Assert.IsTrue(result);
 
-        var sentExpression = GetEvaluateExpression(_socket.GetSentJson(8));
+        var sentExpression = GetEvaluateExpression(_socket.GetSentJson(9));
         Assert.AreEqual("((() => window.ready === true)(undefined))", sentExpression);
     }
 
@@ -272,7 +273,7 @@ public class PageEvaluationTests
         var page = await CreatePageWithFrameAsync();
 
         _socket.QueueResponse("""
-            {"id": 9, "sessionId": "session-1",
+            {"id": 10, "sessionId": "session-1",
              "result": { "result": { "type": "boolean", "value": false } }}
             """);
         _socket.QueueResponse("""

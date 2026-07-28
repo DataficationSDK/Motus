@@ -76,6 +76,7 @@ public class ConcurrentContextStressTests
             _socket.QueueResponse($@"{{""id"": {baseId + 3}, ""sessionId"": ""{sessionId}"", ""result"": {{}}}}");
             _socket.QueueResponse($@"{{""id"": {baseId + 4}, ""sessionId"": ""{sessionId}"", ""result"": {{}}}}");
             _socket.QueueResponse($@"{{""id"": {baseId + 5}, ""sessionId"": ""{sessionId}"", ""result"": {{}}}}");
+            _socket.QueueResponse($@"{{""id"": {baseId + 5}, ""sessionId"": ""{sessionId}"", ""result"": {{}}}}");
 
             pages.Add(await context.NewPageAsync());
         }
@@ -112,6 +113,7 @@ public class ConcurrentContextStressTests
             var sessionId = $"session-{i}";
             _socket.QueueResponse($@"{{""id"": {id++}, ""result"": {{""targetId"": ""target-{i}""}}}}");
             _socket.QueueResponse($@"{{""id"": {id++}, ""result"": {{""sessionId"": ""{sessionId}""}}}}");
+            _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""{sessionId}"", ""result"": {{}}}}");
             _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""{sessionId}"", ""result"": {{}}}}");
             _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""{sessionId}"", ""result"": {{}}}}");
             _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""{sessionId}"", ""result"": {{}}}}");
@@ -209,6 +211,7 @@ public class ConcurrentContextStressTests
         var id = startId;
         _socket.QueueResponse($@"{{""id"": {id++}, ""result"": {{""targetId"": ""{targetId}""}}}}");
         _socket.QueueResponse($@"{{""id"": {id++}, ""result"": {{""sessionId"": ""{sessionId}""}}}}");
+        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""{sessionId}"", ""result"": {{}}}}");
         _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""{sessionId}"", ""result"": {{}}}}");
         _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""{sessionId}"", ""result"": {{}}}}");
         _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""{sessionId}"", ""result"": {{}}}}");

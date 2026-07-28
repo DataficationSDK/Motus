@@ -154,6 +154,7 @@ public class PluginHostTests
         _socket.QueueResponse("""{"id": 6, "sessionId": "session-1", "result": {}}""");
         _socket.QueueResponse("""{"id": 7, "sessionId": "session-1", "result": {}}""");
         _socket.QueueResponse("""{"id": 8, "sessionId": "session-1", "result": {}}""");
+        _socket.QueueResponse("""{"id": 9, "sessionId": "session-1", "result": {}}""");
 
         await context.NewPageAsync();
 

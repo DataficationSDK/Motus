@@ -1,0 +1,301 @@
+using Motus.Abstractions;
+
+namespace Motus.Tests.Page;
+
+/// <summary>
+/// Pins that a frame the browser renders in its own process behaves like any other frame.
+/// </summary>
+/// <remarks>
+/// The fixture is served from two origins rather than written as a <c>data:</c> URL, because a
+/// <c>data:</c> URL is cross-origin to nothing and so can never produce a frame in its own process.
+/// Site isolation is forced through browser arguments so the test measures out-of-process behavior
+/// rather than whatever Chromium currently decides about loopback hosts.
+/// </remarks>
+[TestClass]
+[TestCategory("Integration")]
+public class OutOfProcessFrameTests
+{
+    private CrossOriginFixtureServer _server = null!;
+    private IBrowser? _browser;
+    private IPage? _page;
+
+    [TestInitialize]
+    public async Task Setup()
+    {
+        _server = new CrossOriginFixtureServer();
+
+        try
+        {
+            _browser = await MotusLauncher.LaunchAsync(new LaunchOptions
+            {
+                Headless = true,
+                Args = _server.IsolationArgs
+            });
+        }
+        catch (FileNotFoundException)
+        {
+            Assert.Inconclusive("No browser found; skipping integration tests.");
+            return;
+        }
+
+        _page = await _browser.NewPageAsync();
+        await _page.GotoAsync(_server.OuterUrl);
+        await WaitForFixtureFramesAsync();
+    }
+
+    [TestCleanup]
+    public async Task Cleanup()
+    {
+        if (_browser is not null)
+            await _browser.DisposeAsync();
+
+        _server?.Dispose();
+    }
+
+    // The outer document holds a cross-origin frame and a sandboxed one, and the cross-origin frame
+    // holds a third. All four arrive as events after the navigation settles, and the nested one only
+    // after its parent's session has been armed, so the wait covers both levels.
+    private async Task WaitForFixtureFramesAsync()
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(20);
+        while (DateTime.UtcNow < deadline)
+        {
+            if (_page!.Frames.Count >= 4 && (await MarkersAsync()).Count >= 3)
+                return;
+
+            await Task.Delay(100);
+        }
+
+        Assert.Inconclusive(
+            $"The fixture's frames never became addressable (saw {_page!.Frames.Count} frames).");
+    }
+
+    private async Task<Dictionary<string, IFrame>> MarkersAsync()
+    {
+        var found = new Dictionary<string, IFrame>(StringComparer.Ordinal);
+
+        foreach (var frame in _page!.Frames)
+        {
+            if (frame == _page.MainFrame)
+                continue;
+
+            try
+            {
+                var marker = await frame.EvaluateAsync<string>("window.marker");
+                if (!string.IsNullOrEmpty(marker))
+                    found[marker] = frame;
+            }
+            catch (InvalidOperationException)
+            {
+                // The frame's context is not published yet.
+            }
+        }
+
+        return found;
+    }
+
+    private async Task<IFrame> FrameAsync(string marker)
+    {
+        var markers = await MarkersAsync();
+        Assert.IsTrue(markers.TryGetValue(marker, out var frame), $"No frame reported marker '{marker}'.");
+        return frame!;
+    }
+
+    [TestMethod]
+    public async Task CrossOriginFrame_IsDiscoveredWithItsParent()
+    {
+        var middle = await FrameAsync("middle");
+
+        Assert.AreEqual(_page!.MainFrame, middle.ParentFrame,
+            "The cross-origin frame was not attached to the page's main frame.");
+        Assert.IsTrue(middle.Url.StartsWith(_server.SecondaryOrigin, StringComparison.Ordinal));
+
+        // Without this the rest of the class would still pass over a same-process frame, and the
+        // phase would look covered when the isolation flags had quietly stopped working.
+        Assert.IsTrue(((Motus.Page)_page).HasOwnSession(middle),
+            "The frame is not rendering in its own process, so this fixture proves nothing.");
+    }
+
+    [TestMethod]
+    public async Task NestedCrossOriginFrame_IsReachableByTraversal()
+    {
+        var middle = await FrameAsync("middle");
+        var deep = middle.ChildFrames.SingleOrDefault(f => f.Url.EndsWith("/deep.html", StringComparison.Ordinal));
+
+        Assert.IsNotNull(deep, "The frame nested inside the cross-origin frame was never discovered.");
+        Assert.AreEqual("deep", await deep.EvaluateAsync<string>("window.marker"));
+        Assert.AreEqual("deep", await deep.Locator("#target").TextContentAsync());
+
+        // Two process boundaries lie between this element and the page, so a click that lands is
+        // what proves the frame offsets accumulate rather than only handling the first hop.
+        await deep.Locator("#target").ClickAsync();
+        Assert.AreEqual(1, await deep.EvaluateAsync<int>("window.clicks"));
+    }
+
+    [TestMethod]
+    public async Task LocatorInCrossOriginFrame_ResolvesInsideThatFrame()
+    {
+        var middle = await FrameAsync("middle");
+
+        Assert.AreEqual("middle", await middle.Locator("#target").TextContentAsync());
+        Assert.AreEqual("main", await _page!.Locator("#target").TextContentAsync());
+    }
+
+    [TestMethod]
+    public async Task GetByTestId_ScopesToTheCrossOriginFrame()
+    {
+        var middle = await FrameAsync("middle");
+
+        Assert.AreEqual("middle", await middle.GetByTestId("go").TextContentAsync());
+    }
+
+    [TestMethod]
+    public async Task RoleSelector_ScopesToTheCrossOriginFrame()
+    {
+        var middle = await FrameAsync("middle");
+
+        Assert.AreEqual("middle", await middle.Locator("""role=button[name="Go"]""").TextContentAsync());
+    }
+
+    [TestMethod]
+    public async Task Click_ActsInTheCrossOriginFrame()
+    {
+        var middle = await FrameAsync("middle");
+
+        await middle.Locator("#target").ClickAsync();
+
+        Assert.AreEqual(1, await middle.EvaluateAsync<int>("window.clicks"),
+            "The click did not land on the element, which usually means it was aimed in the frame's "
+            + "own coordinate space rather than the page's.");
+    }
+
+    /// <summary>
+    /// A renderer measures against its own root, so an element inside a frame with its own process
+    /// reports coordinates the page knows nothing about. The click test above catches that as a
+    /// miss; this one says by how much and in which direction.
+    /// </summary>
+    [TestMethod]
+    public async Task BoundingBox_IsReportedInPageCoordinates()
+    {
+        var middle = await FrameAsync("middle");
+
+        // Both readings are taken from the page rather than assumed, so the test still means
+        // something if the fixture's layout is ever edited.
+        var inside = await middle.EvaluateAsync<double[]>(
+            """
+            (() => {
+                const r = document.getElementById('target').getBoundingClientRect();
+                return [r.left, r.top];
+            })()
+            """);
+
+        var frameOrigin = await _page!.EvaluateAsync<double[]>(
+            """
+            (() => {
+                const r = document.getElementById('remote').getBoundingClientRect();
+                return [r.left, r.top];
+            })()
+            """);
+
+        var box = await middle.Locator("#target").BoundingBoxAsync();
+        Assert.IsNotNull(box, "The element reported no bounding box.");
+
+        Assert.AreEqual(inside[0] + frameOrigin[0], box!.X, 2.0,
+            "The box's X is not the element's offset inside the frame plus the frame's own offset.");
+        Assert.AreEqual(inside[1] + frameOrigin[1], box.Y, 2.0,
+            $"The box's Y is {box.Y}, but the element sits {inside[1]} inside a frame that starts "
+            + $"{frameOrigin[1]} down the page.");
+    }
+
+    /// <remarks>
+    /// A sandboxed frame has an opaque origin, which under forced site isolation is a site of its
+    /// own, so this frame is out of process too even though its content came from the parent
+    /// document. It is covered because it reaches that state by a different route than a
+    /// cross-origin <c>src</c> does, not because it stays in the page's process.
+    /// </remarks>
+    [TestMethod]
+    public async Task SandboxedSrcdocFrame_ResolvesThroughTheSameRouting()
+    {
+        var sandboxed = await FrameAsync("sandboxed");
+
+        Assert.AreEqual("about:srcdoc", sandboxed.Url);
+        Assert.AreEqual("sandboxed", await sandboxed.Locator("#target").TextContentAsync());
+    }
+
+    [TestMethod]
+    public async Task IsolatedWorld_SeesTheDomButNotThePageGlobals()
+    {
+        var middle = await FrameAsync("middle");
+        var isolated = new EvaluateOptions { World = ExecutionWorld.Isolated };
+
+        Assert.AreEqual("middle", await middle.EvaluateAsync<string>("window.marker"),
+            "The main world should see what the frame's own script defined.");
+
+        Assert.AreEqual("undefined",
+            await middle.EvaluateAsync<string>("typeof window.marker", null, isolated),
+            "A global defined by page script must not be visible in the isolated world.");
+
+        Assert.AreEqual("middle",
+            await middle.EvaluateAsync<string>(
+                "document.getElementById('target').textContent", null, isolated),
+            "The DOM must be fully present in the isolated world.");
+    }
+
+    [TestMethod]
+    public async Task DetachingAFrame_LeavesItsHandleReportingDetached()
+    {
+        var middle = await FrameAsync("middle");
+        Assert.IsFalse(middle.IsDetached);
+
+        await _page!.EvaluateAsync<object?>(
+            "document.getElementById('remote').remove()");
+
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        while (!middle.IsDetached && DateTime.UtcNow < deadline)
+            await Task.Delay(100);
+
+        Assert.IsTrue(middle.IsDetached, "The removed frame never reported itself detached.");
+        Assert.IsFalse(_page.Frames.Contains(middle), "The removed frame is still listed on the page.");
+    }
+
+    [TestMethod]
+    public async Task ClosingThePage_LeavesItReportingClosed()
+    {
+        Assert.IsFalse(_page!.IsClosed);
+
+        await _page.CloseAsync();
+
+        Assert.IsTrue(_page.IsClosed);
+    }
+
+    [TestMethod]
+    public async Task FrameAttached_IsRaisedForFramesFoundAfterTheFirstNavigation()
+    {
+        var seen = new List<IFrame>();
+        _page!.FrameAttached += (_, frame) => { lock (seen) seen.Add(frame); };
+
+        await _page.EvaluateAsync<object?>(
+            $$"""
+            (() => {
+                const f = document.createElement('iframe');
+                f.id = 'late';
+                f.src = '{{_server.SecondaryOrigin}}/middle.html';
+                document.body.appendChild(f);
+            })()
+            """);
+
+        var deadline = DateTime.UtcNow.AddSeconds(15);
+        while (DateTime.UtcNow < deadline)
+        {
+            lock (seen)
+            {
+                if (seen.Any(f => f.Url.EndsWith("/middle.html", StringComparison.Ordinal)))
+                    return;
+            }
+
+            await Task.Delay(100);
+        }
+
+        Assert.Fail("No FrameAttached event named the frame that was added after load.");
+    }
+}

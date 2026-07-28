@@ -236,9 +236,13 @@ internal sealed partial class Page
         var waitUntil = options?.WaitUntil ?? WaitUntil.Load;
         var timeout = TimeSpan.FromMilliseconds(options?.Timeout ?? 30_000);
 
+        await WhenFrameReadyAsync(frameId).ConfigureAwait(false);
+
         var waiter = CreateFrameLifecycleWaiter(frameId, waitUntil, timeout);
 
-        var result = await _session.SendAsync(
+        _frames.TryGetValue(frameId, out var frame);
+
+        var result = await SessionFor(frame).SendAsync(
             "Page.navigate",
             new PageNavigateParams(url, Referrer: options?.Referer, FrameId: frameId),
             CdpJsonContext.Default.PageNavigateParams,

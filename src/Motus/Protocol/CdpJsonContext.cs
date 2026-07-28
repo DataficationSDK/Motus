@@ -49,6 +49,8 @@ namespace Motus;
 [JsonSerializable(typeof(PageAddScriptToEvaluateOnNewDocumentParams))]
 [JsonSerializable(typeof(PageAddScriptToEvaluateOnNewDocumentResult))]
 [JsonSerializable(typeof(PageGetFrameTreeResult))]
+[JsonSerializable(typeof(PageCreateIsolatedWorldParams))]
+[JsonSerializable(typeof(PageCreateIsolatedWorldResult))]
 [JsonSerializable(typeof(PageLoadEventFiredEvent))]
 [JsonSerializable(typeof(PageDomContentEventFiredEvent))]
 [JsonSerializable(typeof(PageFrameNavigatedEvent))]
@@ -170,6 +172,8 @@ namespace Motus;
 [JsonSerializable(typeof(PageScreencastFrameEvent))]
 [JsonSerializable(typeof(PageScreencastFrameMetadata))]
 // --- DOM domain (box model) ---
+[JsonSerializable(typeof(DomGetFrameOwnerParams))]
+[JsonSerializable(typeof(DomGetFrameOwnerResult))]
 [JsonSerializable(typeof(DomGetBoxModelParams))]
 [JsonSerializable(typeof(DomGetBoxModelResult))]
 [JsonSerializable(typeof(DomBoxModel))]
@@ -416,6 +420,17 @@ internal sealed record PageFrameTreeNode(
     PageFrameTreeNode[]? ChildFrames = null);
 
 internal sealed record PageGetFrameTreeResult(PageFrameTreeNode FrameTree);
+
+/// <remarks>
+/// <c>grantUniveralAccess</c> is misspelled in the protocol itself, not here. The wire name has to
+/// match what the browser expects, so the property carries the misspelling too.
+/// </remarks>
+internal sealed record PageCreateIsolatedWorldParams(
+    string FrameId,
+    string? WorldName = null,
+    bool? GrantUniveralAccess = null);
+
+internal sealed record PageCreateIsolatedWorldResult(int ExecutionContextId);
 
 internal sealed record PageLoadEventFiredEvent(double Timestamp);
 
@@ -1145,6 +1160,14 @@ internal sealed record DomBoxModel(
     double Height);
 
 internal sealed record DomGetBoxModelResult(DomBoxModel Model);
+
+/// <summary>
+/// Asks a session for the element that hosts one of its child frames, which is how a frame's
+/// position within its parent is found.
+/// </summary>
+internal sealed record DomGetFrameOwnerParams(string FrameId);
+
+internal sealed record DomGetFrameOwnerResult(int BackendNodeId, int? NodeId = null);
 
 // ============================================================================
 // DOM domain (highlight)

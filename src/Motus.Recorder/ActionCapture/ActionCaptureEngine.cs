@@ -92,7 +92,7 @@ public sealed class ActionCaptureEngine : IActionCaptureEngine
         }
 
         // Use Page's internal events for navigation (avoids competing with Page's own CDP pump)
-        _page.FrameNavigated += OnFrameNavigated;
+        _page.MainFrameNavigated += OnFrameNavigated;
 
         // Dialog: use Page's Dialog event for opening, CDP for closing (Page does not subscribe to closed)
         _page.Dialog += OnDialogEvent;
@@ -138,7 +138,7 @@ public sealed class ActionCaptureEngine : IActionCaptureEngine
         // Unhook page events
         if (_page is not null)
         {
-            _page.FrameNavigated -= OnFrameNavigated;
+            _page.MainFrameNavigated -= OnFrameNavigated;
             _page.Dialog -= OnDialogEvent;
             _page.FileChooser -= OnFileChooser;
             _page.Close -= OnPageClose;

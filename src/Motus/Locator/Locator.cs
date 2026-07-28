@@ -270,6 +270,10 @@ internal sealed class Locator : ILocator
         if (!registry.TryGetStrategy(prefix, out var strategy))
             throw new InvalidOperationException($"No selector strategy registered for prefix: {prefix}");
 
+        // A frame that renders in its own process is announced before it can be talked to, so a
+        // locator built the moment it appears would otherwise fail for being early.
+        await _page.WhenFrameReadyAsync(_frameRoot).ConfigureAwait(false);
+
         var handles = await strategy!.ResolveAsync(expression, ResolutionFrame, _pierceShadow, ct).ConfigureAwait(false);
         var baseMatchCount = handles.Count;
 
@@ -513,7 +517,7 @@ internal sealed class Locator : ILocator
     // is unavailable, leaving the caller to fall back to measuring through the element.
     private async Task<BoundingBox?> GetPageRelativeBoxAsync(string objectId, CancellationToken ct)
     {
-        var model = await _page.GetBoxModelAsync(objectId, ct).ConfigureAwait(false);
+        var model = await _page.GetBoxModelAsync(objectId, ct, Session).ConfigureAwait(false);
         if (model is null || model.Model.Border.Length < 8)
             return null;
 
@@ -521,9 +525,15 @@ internal sealed class Locator : ILocator
         var width = quad[2] - quad[0];
         var height = quad[5] - quad[1];
 
-        return width == 0 && height == 0
-            ? null
-            : new BoundingBox(quad[0], quad[1], width, height);
+        if (width == 0 && height == 0)
+            return null;
+
+        // A frame in its own process measures against its own renderer, which knows nothing about
+        // where it sits on the page, so its origin has to be added back on. A frame the page hosts
+        // is already measured against the page and the offset is zero.
+        var (offsetX, offsetY) = await _page.GetFrameOriginAsync(_frameRoot, ct).ConfigureAwait(false);
+
+        return new BoundingBox(quad[0] + offsetX, quad[1] + offsetY, width, height);
     }
 
     // --- Action Hook Helper ---
@@ -678,7 +688,7 @@ internal sealed class Locator : ILocator
         await RunWithHooksAsync("click", async () =>
         {
             var objectId = await ActionabilityChecker.WaitForActionabilityAsync(
-                _page, ResolveObjectIdCoreAsync,
+                _page, Session, ResolveObjectIdCoreAsync,
                 ActionabilityFlags.Visible | ActionabilityFlags.Enabled | ActionabilityFlags.Stable | ActionabilityFlags.ReceivesEvents,
                 _selector, cts.Token).ConfigureAwait(false);
             var box = await GetBoundingBoxOrThrowAsync(objectId, cts.Token).ConfigureAwait(false);
@@ -692,7 +702,7 @@ internal sealed class Locator : ILocator
         await RunWithHooksAsync("dblclick", async () =>
         {
             var objectId = await ActionabilityChecker.WaitForActionabilityAsync(
-                _page, ResolveObjectIdCoreAsync,
+                _page, Session, ResolveObjectIdCoreAsync,
                 ActionabilityFlags.Visible | ActionabilityFlags.Enabled | ActionabilityFlags.Stable | ActionabilityFlags.ReceivesEvents,
                 _selector, cts.Token).ConfigureAwait(false);
             var box = await GetBoundingBoxOrThrowAsync(objectId, cts.Token).ConfigureAwait(false);
@@ -706,7 +716,7 @@ internal sealed class Locator : ILocator
         await RunWithHooksAsync("fill", async () =>
         {
             var objectId = await ActionabilityChecker.WaitForActionabilityAsync(
-                _page, ResolveObjectIdCoreAsync,
+                _page, Session, ResolveObjectIdCoreAsync,
                 ActionabilityFlags.Visible | ActionabilityFlags.Enabled | ActionabilityFlags.Editable,
                 _selector, cts.Token).ConfigureAwait(false);
             await EvalOnElementVoidAsync(objectId,
@@ -729,7 +739,7 @@ internal sealed class Locator : ILocator
         await RunWithHooksAsync("clear", async () =>
         {
             var objectId = await ActionabilityChecker.WaitForActionabilityAsync(
-                _page, ResolveObjectIdCoreAsync,
+                _page, Session, ResolveObjectIdCoreAsync,
                 ActionabilityFlags.Visible | ActionabilityFlags.Enabled | ActionabilityFlags.Editable,
                 _selector, cts.Token).ConfigureAwait(false);
             await EvalOnElementVoidAsync(objectId,
@@ -750,7 +760,7 @@ internal sealed class Locator : ILocator
         await RunWithHooksAsync("type", async () =>
         {
             var objectId = await ActionabilityChecker.WaitForActionabilityAsync(
-                _page, ResolveObjectIdCoreAsync,
+                _page, Session, ResolveObjectIdCoreAsync,
                 ActionabilityFlags.Visible | ActionabilityFlags.Enabled | ActionabilityFlags.Editable,
                 _selector, cts.Token).ConfigureAwait(false);
             await EvalOnElementVoidAsync(objectId, "function() { this.focus(); }", null, cts.Token).ConfigureAwait(false);
@@ -764,7 +774,7 @@ internal sealed class Locator : ILocator
         await RunWithHooksAsync("press", async () =>
         {
             var objectId = await ActionabilityChecker.WaitForActionabilityAsync(
-                _page, ResolveObjectIdCoreAsync,
+                _page, Session, ResolveObjectIdCoreAsync,
                 ActionabilityFlags.Visible | ActionabilityFlags.Enabled | ActionabilityFlags.Editable,
                 _selector, cts.Token).ConfigureAwait(false);
             await EvalOnElementVoidAsync(objectId, "function() { this.focus(); }", null, cts.Token).ConfigureAwait(false);
@@ -778,7 +788,7 @@ internal sealed class Locator : ILocator
         await RunWithHooksAsync("check", async () =>
         {
             var objectId = await ActionabilityChecker.WaitForActionabilityAsync(
-                _page, ResolveObjectIdCoreAsync,
+                _page, Session, ResolveObjectIdCoreAsync,
                 ActionabilityFlags.Visible | ActionabilityFlags.Enabled,
                 _selector, cts.Token).ConfigureAwait(false);
             var isChecked = await EvalOnElementAsync<bool>(objectId, "function() { return this.checked; }", null, cts.Token).ConfigureAwait(false);
@@ -796,7 +806,7 @@ internal sealed class Locator : ILocator
         await RunWithHooksAsync("uncheck", async () =>
         {
             var objectId = await ActionabilityChecker.WaitForActionabilityAsync(
-                _page, ResolveObjectIdCoreAsync,
+                _page, Session, ResolveObjectIdCoreAsync,
                 ActionabilityFlags.Visible | ActionabilityFlags.Enabled,
                 _selector, cts.Token).ConfigureAwait(false);
             var isChecked = await EvalOnElementAsync<bool>(objectId, "function() { return this.checked; }", null, cts.Token).ConfigureAwait(false);
@@ -822,7 +832,7 @@ internal sealed class Locator : ILocator
         return await RunWithHooksAsync("selectOption", async () =>
         {
             var objectId = await ActionabilityChecker.WaitForActionabilityAsync(
-                _page, ResolveObjectIdCoreAsync,
+                _page, Session, ResolveObjectIdCoreAsync,
                 ActionabilityFlags.Visible | ActionabilityFlags.Enabled,
                 _selector, cts.Token).ConfigureAwait(false);
             return await EvalOnElementAsync<string[]>(objectId,
@@ -850,7 +860,7 @@ internal sealed class Locator : ILocator
         await RunWithHooksAsync("setInputFiles", async () =>
         {
             var objectId = await ActionabilityChecker.WaitForActionabilityAsync(
-                _page, ResolveObjectIdCoreAsync,
+                _page, Session, ResolveObjectIdCoreAsync,
                 ActionabilityFlags.Visible | ActionabilityFlags.Enabled,
                 _selector, cts.Token).ConfigureAwait(false);
             // The browser stores the paths and reads the bytes lazily, possibly long
@@ -887,7 +897,7 @@ internal sealed class Locator : ILocator
         await RunWithHooksAsync("hover", async () =>
         {
             var objectId = await ActionabilityChecker.WaitForActionabilityAsync(
-                _page, ResolveObjectIdCoreAsync,
+                _page, Session, ResolveObjectIdCoreAsync,
                 ActionabilityFlags.Visible | ActionabilityFlags.Stable | ActionabilityFlags.ReceivesEvents,
                 _selector, cts.Token).ConfigureAwait(false);
             var box = await GetBoundingBoxOrThrowAsync(objectId, cts.Token).ConfigureAwait(false);
@@ -899,7 +909,7 @@ internal sealed class Locator : ILocator
     {
         using var cts = BuildActionCts(timeout);
         var objectId = await ActionabilityChecker.WaitForActionabilityAsync(
-            _page, ResolveObjectIdCoreAsync,
+            _page, Session, ResolveObjectIdCoreAsync,
             ActionabilityFlags.None,
             _selector, cts.Token).ConfigureAwait(false);
         await EvalOnElementVoidAsync(objectId, "function() { this.focus(); }", null, cts.Token).ConfigureAwait(false);
@@ -911,7 +921,7 @@ internal sealed class Locator : ILocator
         await RunWithHooksAsync("tap", async () =>
         {
             var objectId = await ActionabilityChecker.WaitForActionabilityAsync(
-                _page, ResolveObjectIdCoreAsync,
+                _page, Session, ResolveObjectIdCoreAsync,
                 ActionabilityFlags.Visible | ActionabilityFlags.Enabled | ActionabilityFlags.Stable | ActionabilityFlags.ReceivesEvents,
                 _selector, cts.Token).ConfigureAwait(false);
             var box = await GetBoundingBoxOrThrowAsync(objectId, cts.Token).ConfigureAwait(false);
@@ -923,7 +933,7 @@ internal sealed class Locator : ILocator
     {
         using var cts = BuildActionCts(timeout);
         var objectId = await ActionabilityChecker.WaitForActionabilityAsync(
-            _page, ResolveObjectIdCoreAsync,
+            _page, Session, ResolveObjectIdCoreAsync,
             ActionabilityFlags.None,
             _selector, cts.Token).ConfigureAwait(false);
         await EvalOnElementVoidAsync(objectId,
@@ -935,7 +945,7 @@ internal sealed class Locator : ILocator
     {
         using var cts = BuildActionCts(null);
         var objectId = await ActionabilityChecker.WaitForActionabilityAsync(
-            _page, ResolveObjectIdCoreAsync,
+            _page, Session, ResolveObjectIdCoreAsync,
             ActionabilityFlags.Visible,
             _selector, cts.Token).ConfigureAwait(false);
         var box = await GetBoundingBoxOrThrowAsync(objectId, cts.Token).ConfigureAwait(false);
@@ -1047,6 +1057,17 @@ internal sealed class Locator : ILocator
     {
         using var cts = BuildActionCts(timeout);
         var objectId = await ResolveObjectIdCoreAsync(cts.Token).ConfigureAwait(false);
+
+        // Reported in the page's coordinate space, the same space input is dispatched in, so a box
+        // read here can be handed straight to the mouse. Measuring through the element instead
+        // would answer in the frame's own space and quietly disagree with where a click lands.
+        if (_frameRoot is not null)
+        {
+            var pageBox = await GetPageRelativeBoxAsync(objectId, cts.Token).ConfigureAwait(false);
+            if (pageBox is not null)
+                return pageBox;
+        }
+
         return await EvalOnElementAsync<BoundingBox?>(objectId,
             """
             function() {

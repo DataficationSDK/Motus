@@ -24,9 +24,10 @@ internal sealed class FakeCdpSocket : ICdpSocket
 
     public Task SendAsync(ReadOnlyMemory<byte> message, CancellationToken ct)
     {
-        _sent.Add(message.ToArray());
+        var bytes = message.ToArray();
+        _sent.Add(bytes);
         if (_autoResponses.TryDequeue(out var response))
-            Enqueue(response);
+            Enqueue(CdpFakeResponse.WithIdOf(bytes, response));
         return Task.CompletedTask;
     }
 

@@ -94,6 +94,12 @@ internal sealed class BrowserContext : IBrowserContext
 
     internal SelectorStrategyRegistry SelectorStrategies => _selectorStrategies;
 
+    /// <summary>
+    /// The session registry, so a page can open a session for a frame that renders in its own
+    /// process rather than only for the targets this context creates.
+    /// </summary>
+    internal IMotusSessionRegistry SessionRegistry => _registry;
+
     internal AccessibilityRuleCollection AccessibilityRules => _accessibilityRules;
 
     internal void RegisterWaitCondition(string name, Abstractions.IWaitCondition condition)

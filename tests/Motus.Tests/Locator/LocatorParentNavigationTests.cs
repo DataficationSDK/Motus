@@ -37,6 +37,7 @@ public class LocatorParentNavigationTests
         _socket.QueueResponse("""{"id": 6, "sessionId": "session-1", "result": {}}""");
         _socket.QueueResponse("""{"id": 7, "sessionId": "session-1", "result": {}}""");
         _socket.QueueResponse("""{"id": 8, "sessionId": "session-1", "result": {}}""");
+        _socket.QueueResponse("""{"id": 9, "sessionId": "session-1", "result": {}}""");
         return await _browser.NewPageAsync();
     }
 
@@ -121,7 +122,7 @@ public class LocatorParentNavigationTests
         Assert.AreEqual("parent text", text);
 
         // Sanity check: parent-walk call used our callFunctionOn with a parentElement loop
-        var walkCall = _socket.GetSentJson(10);
+        var walkCall = _socket.GetSentJson(11);
         StringAssert.Contains(walkCall, "parentElement", StringComparison.Ordinal);
         StringAssert.Contains(walkCall, "\"objectId\":\"child-1\"", StringComparison.Ordinal);
     }
@@ -146,7 +147,7 @@ public class LocatorParentNavigationTests
         Assert.AreEqual("grandparent", text);
 
         // The parent-walk call should carry steps=2 as the argument
-        var walkCall = _socket.GetSentJson(10);
+        var walkCall = _socket.GetSentJson(11);
         StringAssert.Contains(walkCall, "\"value\":2", StringComparison.Ordinal);
     }
 
@@ -169,7 +170,7 @@ public class LocatorParentNavigationTests
         var text = await locator.TextContentAsync();
         Assert.AreEqual("row A", text);
 
-        var walkCall = _socket.GetSentJson(10);
+        var walkCall = _socket.GetSentJson(11);
         StringAssert.Contains(walkCall, "\"objectId\":\"cell-A\"", StringComparison.Ordinal);
     }
 
@@ -197,7 +198,7 @@ public class LocatorParentNavigationTests
         var text = await locator.TextContentAsync();
         Assert.AreEqual("sibling", text);
 
-        var descendantCall = _socket.GetSentJson(11);
+        var descendantCall = _socket.GetSentJson(12);
         StringAssert.Contains(descendantCall, "querySelectorAll", StringComparison.Ordinal);
         StringAssert.Contains(descendantCall, "\"objectId\":\"parent-1\"", StringComparison.Ordinal);
     }
@@ -243,6 +244,7 @@ public class LocatorParentNavigationTests
         _socket.QueueResponse("""{"id": 6, "sessionId": "session-1", "result": {}}""");
         _socket.QueueResponse("""{"id": 7, "sessionId": "session-1", "result": {}}""");
         _socket.QueueResponse("""{"id": 8, "sessionId": "session-1", "result": {}}""");
+        _socket.QueueResponse("""{"id": 9, "sessionId": "session-1", "result": {}}""");
         return _browser.NewPageAsync().GetAwaiter().GetResult();
     }
 }

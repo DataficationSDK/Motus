@@ -114,6 +114,25 @@ public interface IPage : IAsyncDisposable
     /// </summary>
     event EventHandler<ResponseEventArgs>? Response;
 
+    /// <summary>
+    /// Raised when a frame is added to the page.
+    /// </summary>
+    /// <remarks>
+    /// Raised for every frame, including one that renders in its own process, which is announced
+    /// as it is discovered rather than as part of the embedding page's frame tree.
+    /// </remarks>
+    event EventHandler<IFrame>? FrameAttached;
+
+    /// <summary>
+    /// Raised when a frame in the page navigates.
+    /// </summary>
+    event EventHandler<IFrame>? FrameNavigated;
+
+    /// <summary>
+    /// Raised when a frame is removed from the page.
+    /// </summary>
+    event EventHandler<IFrame>? FrameDetached;
+
     // --- Navigation ---
 
     /// <summary>

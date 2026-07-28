@@ -57,14 +57,18 @@ internal sealed partial class Page
         => new Locator(this, $"[alt=\"{text}\"]");
 
     public Task<IElementHandle> AddScriptTagAsync(string? url = null, string? content = null)
-        => AddScriptTagAsync(url, content, contextId: null);
+        => AddScriptTagAsync(url, content, frame: null);
 
     /// <summary>
-    /// Appends a script tag to the document of the given execution context, or to the page's
-    /// default document when the context is null.
+    /// Appends a script tag to the given frame's document, or to the page's own when no frame is
+    /// given.
     /// </summary>
-    internal async Task<IElementHandle> AddScriptTagAsync(string? url, string? content, int? contextId)
+    internal async Task<IElementHandle> AddScriptTagAsync(string? url, string? content, IFrame? frame)
     {
+        await WhenFrameReadyAsync(frame).ConfigureAwait(false);
+        var session = SessionFor(frame);
+        var contextId = frame is null ? null : GetSelectorContextId(frame);
+
         string js;
         if (url is not null)
         {
@@ -77,7 +81,7 @@ internal sealed partial class Page
             js = "(() => { const s = document.createElement('script'); s.textContent = " + serializedContent + "; document.head.appendChild(s); return s; })()";
         }
 
-        var result = await _session.SendAsync(
+        var result = await session.SendAsync(
             "Runtime.evaluate",
             new RuntimeEvaluateParams(Expression: js, ReturnByValue: false, AwaitPromise: false,
                 ContextId: contextId),
@@ -88,18 +92,22 @@ internal sealed partial class Page
         if (result.Result.ObjectId is null)
             throw new InvalidOperationException("Failed to create script element.");
 
-        return new ElementHandle(_session, result.Result.ObjectId);
+        return new ElementHandle(session, result.Result.ObjectId);
     }
 
     public Task<IElementHandle> AddStyleTagAsync(string? url = null, string? content = null)
-        => AddStyleTagAsync(url, content, contextId: null);
+        => AddStyleTagAsync(url, content, frame: null);
 
     /// <summary>
-    /// Appends a style tag to the document of the given execution context, or to the page's
-    /// default document when the context is null.
+    /// Appends a style tag to the given frame's document, or to the page's own when no frame is
+    /// given.
     /// </summary>
-    internal async Task<IElementHandle> AddStyleTagAsync(string? url, string? content, int? contextId)
+    internal async Task<IElementHandle> AddStyleTagAsync(string? url, string? content, IFrame? frame)
     {
+        await WhenFrameReadyAsync(frame).ConfigureAwait(false);
+        var session = SessionFor(frame);
+        var contextId = frame is null ? null : GetSelectorContextId(frame);
+
         string js;
         if (url is not null)
         {
@@ -112,7 +120,7 @@ internal sealed partial class Page
             js = "(() => { const s = document.createElement('style'); s.textContent = " + serializedContent + "; document.head.appendChild(s); return s; })()";
         }
 
-        var result = await _session.SendAsync(
+        var result = await session.SendAsync(
             "Runtime.evaluate",
             new RuntimeEvaluateParams(Expression: js, ReturnByValue: false, AwaitPromise: false,
                 ContextId: contextId),
@@ -123,7 +131,7 @@ internal sealed partial class Page
         if (result.Result.ObjectId is null)
             throw new InvalidOperationException("Failed to create style element.");
 
-        return new ElementHandle(_session, result.Result.ObjectId);
+        return new ElementHandle(session, result.Result.ObjectId);
     }
 
     public Task ExposeBindingAsync(string name, Func<object?[], Task<object?>> callback)

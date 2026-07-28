@@ -158,6 +158,9 @@ public class PageSnapshotServiceTests
         public event EventHandler<RequestEventArgs>? RequestFailed;
         public event EventHandler<RequestEventArgs>? RequestFinished;
         public event EventHandler<ResponseEventArgs>? Response;
+        public event EventHandler<IFrame>? FrameAttached;
+        public event EventHandler<IFrame>? FrameNavigated;
+        public event EventHandler<IFrame>? FrameDetached;
 #pragma warning restore CS0067
 
         public IBrowserContext Context => throw new NotImplementedException();

@@ -35,6 +35,15 @@ public interface IFrame
     IReadOnlyList<IFrame> ChildFrames { get; }
 
     /// <summary>
+    /// Gets whether the frame has been removed from its page.
+    /// </summary>
+    /// <remarks>
+    /// A detached frame is a handle to something that no longer exists. Operations on it fail, and
+    /// this is how to tell that apart from a selector that simply did not match.
+    /// </remarks>
+    bool IsDetached { get; }
+
+    /// <summary>
     /// Creates a locator for the specified selector.
     /// </summary>
     /// <param name="selector">The selector to locate elements.</param>
@@ -139,6 +148,22 @@ public interface IFrame
     /// <param name="arg">Optional argument to pass to the expression.</param>
     /// <returns>The result of the evaluation.</returns>
     Task<T> EvaluateAsync<T>(string expression, object? arg = null);
+
+    /// <summary>
+    /// Evaluates a JavaScript expression in the frame, in the specified world.
+    /// </summary>
+    /// <typeparam name="T">The expected return type.</typeparam>
+    /// <param name="expression">The JavaScript expression to evaluate.</param>
+    /// <param name="arg">Optional argument to pass to the expression.</param>
+    /// <param name="options">Evaluation options, including which world to run in.</param>
+    /// <returns>The result of the evaluation.</returns>
+    /// <remarks>
+    /// An isolated world shares the frame's document but not its globals, so the DOM is fully
+    /// present while anything the application defined on <c>window</c> is not. Reading application
+    /// state needs <see cref="ExecutionWorld.Main"/>, which is what the overload without options
+    /// uses.
+    /// </remarks>
+    Task<T> EvaluateAsync<T>(string expression, object? arg, EvaluateOptions options);
 
     /// <summary>
     /// Waits for a function to return a truthy value.

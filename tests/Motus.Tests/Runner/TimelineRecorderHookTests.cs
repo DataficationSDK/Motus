@@ -80,6 +80,9 @@ public class TimelineRecorderHookTests
         public event EventHandler<RequestEventArgs>? RequestFailed;
         public event EventHandler<RequestEventArgs>? RequestFinished;
         public event EventHandler<ResponseEventArgs>? Response;
+        public event EventHandler<IFrame>? FrameAttached;
+        public event EventHandler<IFrame>? FrameNavigated;
+        public event EventHandler<IFrame>? FrameDetached;
         public event EventHandler<DialogEventArgs>? Dialog;
         public event EventHandler<IDownload>? Download;
         public event EventHandler<IFileChooser>? FileChooser;

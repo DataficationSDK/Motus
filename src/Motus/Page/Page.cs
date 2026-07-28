@@ -16,8 +16,23 @@ internal sealed partial class Page : IPage
     private readonly CancellationTokenSource _pageCts = new();
 
     private readonly ConcurrentDictionary<string, Frame> _frames = new();
-    private readonly ConcurrentDictionary<int, string> _executionContextToFrameId = new();
+
+    // Context ids are numbered per session, so two frames in different processes can both be
+    // context 1. The session has to be part of the key or the reverse lookup is ambiguous.
+    private readonly ConcurrentDictionary<(string? SessionId, int ContextId), string> _executionContextToFrameId = new();
     private readonly ConcurrentDictionary<string, int> _frameIdToExecutionContext = new();
+
+    // Frames that render in their own process are reached over a session of their own. A frame
+    // absent from this map is driven over the page session, which is every frame the page's own
+    // renderer hosts.
+    private readonly ConcurrentDictionary<string, IMotusSession> _frameIdToSession = new();
+
+    // Adopting a frame target is driven by an event, so a caller can reach a frame before its
+    // session is usable. Callers that need to talk to a frame await its entry here.
+    private readonly ConcurrentDictionary<string, Task> _frameTargetInit = new();
+
+    // Isolated world per frame, created on demand and dropped when the frame navigates.
+    private readonly ConcurrentDictionary<string, int> _frameIdToIsolatedWorld = new();
     private readonly ConcurrentDictionary<string, Download> _downloads = new();
     private readonly ConcurrentDictionary<string, Func<object?[], Task<object?>>> _bindings = new();
     private readonly List<string> _initScripts = [];
@@ -79,9 +94,14 @@ internal sealed partial class Page : IPage
     public event EventHandler<RequestEventArgs>? RequestFailed;
     public event EventHandler<RequestEventArgs>? RequestFinished;
     public event EventHandler<ResponseEventArgs>? Response;
+    public event EventHandler<IFrame>? FrameAttached;
+    public event EventHandler<IFrame>? FrameNavigated;
+    public event EventHandler<IFrame>? FrameDetached;
 
     // --- Internal events for extensions (e.g. Recorder) ---
-    internal event Action<string>? FrameNavigated;
+    // Raised only for the main frame, and only with its URL, which is all the Recorder wants. The
+    // per-frame events above carry everything else.
+    internal event Action<string>? MainFrameNavigated;
     internal event Action<string, bool, string?>? DialogHandled;
 
     internal IMotusSession Session => _session;
@@ -149,6 +169,11 @@ internal sealed partial class Page : IPage
         // Initialize network monitoring and interception
         await InitializeNetworkAsync(ct).ConfigureAwait(false);
 
+        // A frame that renders in its own process is reported only as an attached target, never
+        // through the frame tree of the page that embeds it, so without this it does not exist as
+        // far as the page is concerned.
+        await ArmAutoAttachAsync(_session, ct).ConfigureAwait(false);
+
         // In BiDi, domain enables are no-ops and don't fire frameNavigated events,
         // so _mainFrameId may still be null. The browsing context ID (targetId) serves
         // as the frame identifier in BiDi.
@@ -173,19 +198,26 @@ internal sealed partial class Page : IPage
             CdpJsonContext.Default.PageGetFrameTreeResult,
             ct).ConfigureAwait(false);
 
-        RecordFrameTreeNode(result.FrameTree);
+        RecordFrameTreeNode(result.FrameTree, _session);
         _mainFrameId ??= result.FrameTree.Frame.Id;
     }
 
-    private void RecordFrameTreeNode(PageFrameTreeNode node)
+    private void RecordFrameTreeNode(PageFrameTreeNode node, IMotusSession source)
     {
         var info = node.Frame;
         var frame = _frames.GetOrAdd(info.Id, id => new Frame(this, id, info.ParentId));
         frame.Url = info.Url;
         frame.Name = info.Name;
 
+        // A frame target and its parent can report the same frame in either order, and only one of
+        // the two necessarily knows the parent. Whichever learns it first fills it in.
+        if (info.ParentId is not null)
+            frame.EnsureParent(info.ParentId);
+
+        RecordFrameOwnership(info.Id, source, ReferenceEquals(source, _session));
+
         foreach (var child in node.ChildFrames ?? [])
-            RecordFrameTreeNode(child);
+            RecordFrameTreeNode(child, source);
     }
 
     /// <summary>
@@ -226,15 +258,18 @@ internal sealed partial class Page : IPage
     }
 
     /// <summary>
-    /// Returns the session that owns the given frame, or the page session when the frame is null.
+    /// Returns the session that owns the given frame, or the page session when the frame is null
+    /// or is hosted by the page's own renderer.
     /// </summary>
     /// <remarks>
-    /// Frames that render in the page's own process are all driven over the page session, so this
-    /// is currently a single answer for every frame. It exists as a lookup rather than a direct
-    /// field read because a frame hosted in its own process is reached over a session of its own,
-    /// and every caller that binds a handle or sends a command should already be asking.
+    /// A frame that renders in its own process has a session of its own, and a remote object id or
+    /// execution context id from that frame means nothing on any other session. Every caller that
+    /// binds a handle or sends a command about a frame asks here first.
     /// </remarks>
-    internal IMotusSession SessionFor(IFrame? frame) => _session;
+    internal IMotusSession SessionFor(IFrame? frame) =>
+        frame is Frame f && _frameIdToSession.TryGetValue(f.Id, out var session)
+            ? session
+            : _session;
 
     internal bool TryGetFrame(string frameId, out Frame? frame) =>
         _frames.TryGetValue(frameId, out frame);
@@ -245,11 +280,18 @@ internal sealed partial class Page : IPage
     internal int? GetExecutionContextId(string frameId) =>
         _frameIdToExecutionContext.TryGetValue(frameId, out var id) ? id : null;
 
-    internal async Task<T> EvaluateInFrameAsync<T>(string frameId, string expression, object? arg = null)
+    internal async Task<T> EvaluateInFrameAsync<T>(
+        string frameId, string expression, object? arg = null, ExecutionWorld world = ExecutionWorld.Main)
     {
-        var contextId = GetExecutionContextId(frameId);
+        await WhenFrameReadyAsync(frameId).ConfigureAwait(false);
 
-        var result = await _session.SendAsync(
+        _frames.TryGetValue(frameId, out var frame);
+
+        var contextId = world == ExecutionWorld.Isolated
+            ? await GetIsolatedWorldContextIdAsync(frameId).ConfigureAwait(false)
+            : GetExecutionContextId(frameId);
+
+        var result = await SessionFor(frame).SendAsync(
             "Runtime.evaluate",
             new RuntimeEvaluateParams(
                 Expression: WrapExpression(expression, arg),
@@ -342,6 +384,8 @@ internal sealed partial class Page : IPage
         {
             try { Directory.Delete(dir, recursive: true); } catch { /* best-effort */ }
         }
+
+        ReleaseFrameSessions();
 
         Close?.Invoke(this, EventArgs.Empty);
         _pageCts.Cancel();

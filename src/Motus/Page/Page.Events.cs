@@ -9,105 +9,125 @@ internal sealed partial class Page
     {
         var ct = _pageCts.Token;
 
-        // Frame navigation
-        _ = PumpEventsAsync(
-            "Page.frameNavigated",
-            CdpJsonContext.Default.PageFrameNavigatedEvent,
-            OnFrameNavigated, ct);
-
-        // Frame attached/detached
-        _ = PumpEventsAsync(
-            "Page.frameAttached",
-            CdpJsonContext.Default.PageFrameAttachedEvent,
-            OnFrameAttached, ct);
-
-        _ = PumpEventsAsync(
-            "Page.frameDetached",
-            CdpJsonContext.Default.PageFrameDetachedEvent,
-            OnFrameDetached, ct);
-
-        // Per-frame load completion, used to wait out a navigation of a single frame.
-        _ = PumpEventsAsync(
-            "Page.frameStoppedLoading",
-            CdpJsonContext.Default.PageFrameStoppedLoadingEvent,
-            evt => FrameStoppedLoading?.Invoke(evt.FrameId), ct);
+        // Everything a target reports about the frames it hosts. The page session hosts most
+        // frames, but not one that renders in its own process, so this same set is subscribed
+        // again for every frame target that is adopted.
+        StartFrameStructureEventPump(_session, ct);
 
         // Lifecycle events
-        _ = PumpEventsAsync(
+        _ = PumpEventsAsync(_session,
             "Page.loadEventFired",
             CdpJsonContext.Default.PageLoadEventFiredEvent,
             _ => LoadEventFired?.Invoke(), ct);
 
-        _ = PumpEventsAsync(
+        _ = PumpEventsAsync(_session,
             "Page.domContentEventFired",
             CdpJsonContext.Default.PageDomContentEventFiredEvent,
             _ => DomContentEventFired?.Invoke(), ct);
 
-        // Execution contexts
-        _ = PumpEventsAsync(
-            "Runtime.executionContextCreated",
-            CdpJsonContext.Default.RuntimeExecutionContextCreatedEvent,
-            OnExecutionContextCreated, ct);
-
-        // Console
-        _ = PumpEventsAsync(
-            "Runtime.consoleAPICalled",
-            CdpJsonContext.Default.RuntimeConsoleApiCalledEvent,
-            OnConsoleApiCalled, ct);
-
-        // Exceptions
-        _ = PumpEventsAsync(
-            "Runtime.exceptionThrown",
-            CdpJsonContext.Default.RuntimeExceptionThrownEvent,
-            OnExceptionThrown, ct);
-
         // Dialogs
-        _ = PumpEventsAsync(
+        _ = PumpEventsAsync(_session,
             "Page.javascriptDialogOpening",
             CdpJsonContext.Default.PageJavascriptDialogOpeningEvent,
             OnDialogOpening, ct);
 
         // Downloads
-        _ = PumpEventsAsync(
+        _ = PumpEventsAsync(_session,
             "Page.downloadWillBegin",
             CdpJsonContext.Default.PageDownloadWillBeginEvent,
             OnDownloadWillBegin, ct);
 
-        _ = PumpEventsAsync(
+        _ = PumpEventsAsync(_session,
             "Page.downloadProgress",
             CdpJsonContext.Default.PageDownloadProgressEvent,
             OnDownloadProgress, ct);
 
         // File chooser
-        _ = PumpEventsAsync(
+        _ = PumpEventsAsync(_session,
             "Page.fileChooserOpened",
             CdpJsonContext.Default.PageFileChooserOpenedEvent,
             OnFileChooserOpened, ct);
 
         // Bindings
-        _ = PumpEventsAsync(
+        _ = PumpEventsAsync(_session,
             "Runtime.bindingCalled",
             CdpJsonContext.Default.RuntimeBindingCalledEvent,
             OnBindingCalled, ct);
-
-        // Target attached (for workers)
-        _ = PumpEventsAsync(
-            "Target.attachedToTarget",
-            CdpJsonContext.Default.TargetAttachedToTargetEvent,
-            OnTargetAttached, ct);
 
         // Fetch auth required (HTTP credentials) — requires CDP Fetch domain
         if (_context.Options?.HttpCredentials is not null
             && (_session.Capabilities & MotusCapabilities.FetchInterception) != 0)
         {
-            _ = PumpEventsAsync(
+            _ = PumpEventsAsync(_session,
                 "Fetch.authRequired",
                 CdpJsonContext.Default.FetchAuthRequiredEvent,
                 OnFetchAuthRequired, ct);
         }
     }
 
+    /// <summary>
+    /// Subscribes, on one session, everything that session reports about the frames it hosts.
+    /// </summary>
+    /// <remarks>
+    /// Called once for the page session and once for every frame target adopted afterwards. A
+    /// frame in its own process reports its tree, its execution contexts, its console output and
+    /// its own nested targets nowhere else, so a session that is not pumped is a subtree Motus
+    /// cannot see. Console output and uncaught errors are raised on the owning page rather than
+    /// being scoped to the frame, so a caller watching the page sees everything in it.
+    /// </remarks>
+    internal void StartFrameStructureEventPump(IMotusSession session, CancellationToken ct)
+    {
+        var isPageSession = ReferenceEquals(session, _session);
+
+        _ = PumpEventsAsync(session,
+            "Page.frameNavigated",
+            CdpJsonContext.Default.PageFrameNavigatedEvent,
+            evt => OnFrameNavigated(evt, session, isPageSession), ct);
+
+        _ = PumpEventsAsync(session,
+            "Page.frameAttached",
+            CdpJsonContext.Default.PageFrameAttachedEvent,
+            evt => OnFrameAttached(evt, session), ct);
+
+        _ = PumpEventsAsync(session,
+            "Page.frameDetached",
+            CdpJsonContext.Default.PageFrameDetachedEvent,
+            OnFrameDetached, ct);
+
+        // Per-frame load completion, used to wait out a navigation of a single frame.
+        _ = PumpEventsAsync(session,
+            "Page.frameStoppedLoading",
+            CdpJsonContext.Default.PageFrameStoppedLoadingEvent,
+            evt => FrameStoppedLoading?.Invoke(evt.FrameId), ct);
+
+        _ = PumpEventsAsync(session,
+            "Runtime.executionContextCreated",
+            CdpJsonContext.Default.RuntimeExecutionContextCreatedEvent,
+            evt => OnExecutionContextCreated(evt, session), ct);
+
+        _ = PumpEventsAsync(session,
+            "Runtime.consoleAPICalled",
+            CdpJsonContext.Default.RuntimeConsoleApiCalledEvent,
+            OnConsoleApiCalled, ct);
+
+        _ = PumpEventsAsync(session,
+            "Runtime.exceptionThrown",
+            CdpJsonContext.Default.RuntimeExceptionThrownEvent,
+            OnExceptionThrown, ct);
+
+        _ = PumpEventsAsync(session,
+            "Target.attachedToTarget",
+            CdpJsonContext.Default.TargetAttachedToTargetEvent,
+            OnTargetAttached, ct);
+
+        _ = PumpEventsAsync(session,
+            "Target.detachedFromTarget",
+            CdpJsonContext.Default.TargetDetachedFromTargetEvent,
+            OnTargetDetached, ct);
+    }
+
     private async Task PumpEventsAsync<T>(
+        IMotusSession session,
         string eventName,
         System.Text.Json.Serialization.Metadata.JsonTypeInfo<T> typeInfo,
         Action<T> handler,
@@ -115,7 +135,7 @@ internal sealed partial class Page
     {
         try
         {
-            await foreach (var evt in _session.SubscribeAsync(eventName, typeInfo, ct).ConfigureAwait(false))
+            await foreach (var evt in session.SubscribeAsync(eventName, typeInfo, ct).ConfigureAwait(false))
             {
                 try
                 {
@@ -133,34 +153,71 @@ internal sealed partial class Page
         }
     }
 
-    private void OnFrameNavigated(PageFrameNavigatedEvent evt)
+    private void OnFrameNavigated(PageFrameNavigatedEvent evt, IMotusSession source, bool isPageSession)
     {
         var info = evt.Frame;
         var frame = _frames.GetOrAdd(info.Id, id => new Frame(this, id, info.ParentId));
 
         frame.Url = info.Url;
         frame.Name = info.Name;
+        RecordFrameOwnership(info.Id, source, isPageSession);
 
-        // First frame navigated is the main frame
-        _mainFrameId ??= info.Id;
+        // A navigating frame gets a fresh main world, so the isolated world made against the old
+        // one is gone with it and asking for one again has to create it.
+        _frameIdToIsolatedWorld.TryRemove(info.Id, out _);
+
+        // The first frame the page session reports is the main frame. A frame target reports its
+        // own root here too, and claiming that as the page's main frame would rewrite what the
+        // page is whenever a cross-origin frame happens to navigate first.
+        if (isPageSession)
+            _mainFrameId ??= info.Id;
+
+        FrameNavigated?.Invoke(this, frame);
 
         // Notify internal subscribers (e.g. Recorder)
-        if (info.ParentId is null)
-            FrameNavigated?.Invoke(info.Url);
+        if (isPageSession && info.ParentId is null)
+            MainFrameNavigated?.Invoke(info.Url);
     }
 
-    private void OnFrameAttached(PageFrameAttachedEvent evt)
+    private void OnFrameAttached(PageFrameAttachedEvent evt, IMotusSession source)
     {
-        _frames.GetOrAdd(evt.FrameId, id => new Frame(this, id, evt.ParentFrameId));
+        var frame = _frames.GetOrAdd(evt.FrameId, id => new Frame(this, id, evt.ParentFrameId));
+        RecordFrameOwnership(evt.FrameId, source, ReferenceEquals(source, _session));
+        FrameAttached?.Invoke(this, frame);
     }
 
     private void OnFrameDetached(PageFrameDetachedEvent evt)
     {
-        _frames.TryRemove(evt.FrameId, out _);
+        _frames.TryRemove(evt.FrameId, out var frame);
         _frameIdToExecutionContext.TryRemove(evt.FrameId, out _);
+        _frameIdToSession.TryRemove(evt.FrameId, out _);
+        _frameIdToIsolatedWorld.TryRemove(evt.FrameId, out _);
+        _frameTargetInit.TryRemove(evt.FrameId, out _);
+
+        if (frame is null)
+            return;
+
+        frame.MarkDetached();
+        FrameDetached?.Invoke(this, frame);
     }
 
-    private void OnExecutionContextCreated(RuntimeExecutionContextCreatedEvent evt)
+    /// <summary>
+    /// Notes which session a frame is reached over, when that is not the page's own.
+    /// </summary>
+    /// <remarks>
+    /// Frames the page session reports record nothing, so <see cref="SessionFor"/> falls through to
+    /// the page session for them and every page-level round trip stays exactly what it was. Frames
+    /// reported by any other session are recorded, which covers a frame in its own process and also
+    /// the ordinary same-process children inside it, whose contexts live on their host's session
+    /// rather than the page's.
+    /// </remarks>
+    private void RecordFrameOwnership(string frameId, IMotusSession source, bool isPageSession)
+    {
+        if (!isPageSession)
+            _frameIdToSession[frameId] = source;
+    }
+
+    private void OnExecutionContextCreated(RuntimeExecutionContextCreatedEvent evt, IMotusSession source)
     {
         var ctx = evt.Context;
 
@@ -175,7 +232,7 @@ internal sealed partial class Page
         if (frameId is not null)
         {
             _frameIdToExecutionContext[frameId] = ctx.Id;
-            _executionContextToFrameId[ctx.Id] = frameId;
+            _executionContextToFrameId[(source.SessionId, ctx.Id)] = frameId;
         }
     }
 
@@ -263,11 +320,6 @@ internal sealed partial class Page
                 }
             });
         }
-    }
-
-    private void OnTargetAttached(TargetAttachedToTargetEvent evt)
-    {
-        // Track workers internally; no public API yet
     }
 
     private void OnFetchAuthRequired(FetchAuthRequiredEvent evt)

@@ -19,8 +19,14 @@ internal static class ActionabilityChecker
     internal const int PollingIntervalMs = 100;
     internal const double DefaultTimeoutMs = 30_000;
 
+    /// <remarks>
+    /// The session matters: a remote object id is only meaningful on the session that produced it,
+    /// so an element inside a frame with a process of its own has to be checked over that frame's
+    /// session. The page is still needed, but only to name the page in a timeout message.
+    /// </remarks>
     internal static async Task<string> WaitForActionabilityAsync(
         Page page,
+        IMotusSession session,
         Func<CancellationToken, Task<string>> resolveObjectId,
         ActionabilityFlags flags,
         string selector,
@@ -56,7 +62,7 @@ internal static class ActionabilityChecker
 
                     lastCheckName = "visible";
                     lastCheckDetail = null;
-                    if (flags.HasFlag(ActionabilityFlags.Visible) && !await IsVisibleAsync(page, objectId, ct).ConfigureAwait(false))
+                    if (flags.HasFlag(ActionabilityFlags.Visible) && !await IsVisibleAsync(session, objectId, ct).ConfigureAwait(false))
                     {
                         lastCheckDetail = "element was found but is not visible (display:none, visibility:hidden, zero size, or opacity:0)";
                         await Task.Delay(PollingIntervalMs, ct).ConfigureAwait(false);
@@ -65,7 +71,7 @@ internal static class ActionabilityChecker
 
                     lastCheckName = "enabled";
                     lastCheckDetail = null;
-                    if (flags.HasFlag(ActionabilityFlags.Enabled) && !await IsEnabledAsync(page, objectId, ct).ConfigureAwait(false))
+                    if (flags.HasFlag(ActionabilityFlags.Enabled) && !await IsEnabledAsync(session, objectId, ct).ConfigureAwait(false))
                     {
                         lastCheckDetail = "element was found but is disabled";
                         await Task.Delay(PollingIntervalMs, ct).ConfigureAwait(false);
@@ -74,7 +80,7 @@ internal static class ActionabilityChecker
 
                     lastCheckName = "editable";
                     lastCheckDetail = null;
-                    if (flags.HasFlag(ActionabilityFlags.Editable) && !await IsEditableAsync(page, objectId, ct).ConfigureAwait(false))
+                    if (flags.HasFlag(ActionabilityFlags.Editable) && !await IsEditableAsync(session, objectId, ct).ConfigureAwait(false))
                     {
                         lastCheckDetail = "element was found but is not editable";
                         await Task.Delay(PollingIntervalMs, ct).ConfigureAwait(false);
@@ -85,7 +91,7 @@ internal static class ActionabilityChecker
                     lastCheckDetail = null;
                     if (flags.HasFlag(ActionabilityFlags.Stable))
                     {
-                        var stableResult = await MeasureStabilityAsync(page, objectId, ct).ConfigureAwait(false);
+                        var stableResult = await MeasureStabilityAsync(session, objectId, ct).ConfigureAwait(false);
                         if (!stableResult.IsStable)
                         {
                             lastCheckDetail = $"element was located but kept drifting (last measured drift: {stableResult.Drift:F1}px across x/y/width/height over 50ms)";
@@ -98,10 +104,10 @@ internal static class ActionabilityChecker
                     lastCheckDetail = null;
                     if (flags.HasFlag(ActionabilityFlags.ReceivesEvents))
                     {
-                        var hitsTarget = await ReceivesEventsAsync(page, objectId, ct).ConfigureAwait(false);
+                        var hitsTarget = await ReceivesEventsAsync(session, objectId, ct).ConfigureAwait(false);
                         if (!hitsTarget)
                         {
-                            var coveringTag = await GetCoveringElementInfoAsync(page, objectId, ct).ConfigureAwait(false);
+                            var coveringTag = await GetCoveringElementInfoAsync(session, objectId, ct).ConfigureAwait(false);
                             lastCheckDetail = $"element was found but is covered at its center point by <{coveringTag}> which intercepts pointer events";
                             await Task.Delay(PollingIntervalMs, ct).ConfigureAwait(false);
                             continue;
@@ -131,9 +137,9 @@ internal static class ActionabilityChecker
         }
     }
 
-    private static async Task<bool> IsVisibleAsync(Page page, string objectId, CancellationToken ct)
+    private static async Task<bool> IsVisibleAsync(IMotusSession session, string objectId, CancellationToken ct)
     {
-        return await EvalBoolAsync(page, objectId,
+        return await EvalBoolAsync(session, objectId,
             """
             function() {
                 var style = window.getComputedStyle(this);
@@ -146,16 +152,16 @@ internal static class ActionabilityChecker
             """, ct).ConfigureAwait(false);
     }
 
-    private static async Task<bool> IsEnabledAsync(Page page, string objectId, CancellationToken ct)
+    private static async Task<bool> IsEnabledAsync(IMotusSession session, string objectId, CancellationToken ct)
     {
-        return await EvalBoolAsync(page, objectId,
+        return await EvalBoolAsync(session, objectId,
             "function() { return !this.disabled && this.getAttribute('aria-disabled') !== 'true'; }",
             ct).ConfigureAwait(false);
     }
 
-    private static async Task<bool> IsEditableAsync(Page page, string objectId, CancellationToken ct)
+    private static async Task<bool> IsEditableAsync(IMotusSession session, string objectId, CancellationToken ct)
     {
-        return await EvalBoolAsync(page, objectId,
+        return await EvalBoolAsync(session, objectId,
             """
             function() {
                 if (this.contentEditable === 'true') return true;
@@ -170,13 +176,13 @@ internal static class ActionabilityChecker
 
     private readonly record struct StabilityResult(bool IsStable, double Drift);
 
-    private static async Task<StabilityResult> MeasureStabilityAsync(Page page, string objectId, CancellationToken ct)
+    private static async Task<StabilityResult> MeasureStabilityAsync(IMotusSession session, string objectId, CancellationToken ct)
     {
         // Use two measurements separated by a short delay instead of requestAnimationFrame.
         // In headless Chromium, requestAnimationFrame may stall on data: URIs or after DOM
         // mutations when the browser stops scheduling animation frames, causing a 30s hang.
         // Returns the total drift in px across x, y, width, and height.
-        var result = await page.Session.SendAsync(
+        var result = await session.SendAsync(
             "Runtime.callFunctionOn",
             new RuntimeCallFunctionOnParams(
                 FunctionDeclaration: """
@@ -211,7 +217,7 @@ internal static class ActionabilityChecker
         return new StabilityResult(drift < 2, drift);
     }
 
-    private static async Task<bool> ReceivesEventsAsync(Page page, string objectId, CancellationToken ct)
+    private static async Task<bool> ReceivesEventsAsync(IMotusSession session, string objectId, CancellationToken ct)
     {
         // Pure JS hit-test using document.elementFromPoint at the element's center.
         // Checks multiple conditions for whether the click will reach our target:
@@ -219,7 +225,7 @@ internal static class ActionabilityChecker
         // 2. The covering element has pointer-events:none (clicks pass through)
         // 3. The covering element is a descendant of our target's parent that would
         //    bubble the event up to a shared interactive ancestor
-        return await EvalBoolAsync(page, objectId,
+        return await EvalBoolAsync(session, objectId,
             """
             function() {
                 var r = this.getBoundingClientRect();
@@ -255,11 +261,11 @@ internal static class ActionabilityChecker
             """, ct).ConfigureAwait(false);
     }
 
-    private static async Task<string> GetCoveringElementInfoAsync(Page page, string objectId, CancellationToken ct)
+    private static async Task<string> GetCoveringElementInfoAsync(IMotusSession session, string objectId, CancellationToken ct)
     {
         try
         {
-            var result = await page.Session.SendAsync(
+            var result = await session.SendAsync(
                 "Runtime.callFunctionOn",
                 new RuntimeCallFunctionOnParams(
                     FunctionDeclaration: """
@@ -297,10 +303,10 @@ internal static class ActionabilityChecker
     }
 
     private static async Task<bool> EvalBoolAsync(
-        Page page, string objectId, string jsFunction, CancellationToken ct,
+        IMotusSession session, string objectId, string jsFunction, CancellationToken ct,
         bool awaitPromise = false)
     {
-        var result = await page.Session.SendAsync(
+        var result = await session.SendAsync(
             "Runtime.callFunctionOn",
             new RuntimeCallFunctionOnParams(
                 FunctionDeclaration: jsFunction,

@@ -18,11 +18,25 @@ internal sealed class Frame : IFrame
 
     internal string Id { get; }
 
-    internal string? ParentFrameId { get; }
+    internal string? ParentFrameId { get; private set; }
 
     internal bool IsMainFrame => ParentFrameId is null;
 
+    /// <summary>
+    /// Records the parent when it was not known at construction.
+    /// </summary>
+    /// <remarks>
+    /// A frame in its own process is reported both by the target it owns and by the page that
+    /// embeds it, in either order, and the two do not necessarily carry the same detail. Whichever
+    /// arrives with a parent supplies it; a parent already recorded is never overwritten.
+    /// </remarks>
+    internal void EnsureParent(string parentFrameId) => ParentFrameId ??= parentFrameId;
+
+    internal void MarkDetached() => IsDetached = true;
+
     public IPage Page => _page;
+
+    public bool IsDetached { get; private set; }
 
     public IFrame? ParentFrame =>
         ParentFrameId is not null && _page.TryGetFrame(ParentFrameId, out var parent)
@@ -38,6 +52,9 @@ internal sealed class Frame : IFrame
 
     public async Task<T> EvaluateAsync<T>(string expression, object? arg = null) =>
         await _page.EvaluateInFrameAsync<T>(Id, expression, arg).ConfigureAwait(false);
+
+    public async Task<T> EvaluateAsync<T>(string expression, object? arg, EvaluateOptions options) =>
+        await _page.EvaluateInFrameAsync<T>(Id, expression, arg, options.World).ConfigureAwait(false);
 
     public async Task<T> WaitForFunctionAsync<T>(string expression, object? arg = null, double? timeout = null) =>
         await _page.WaitForFunctionInFrameAsync<T>(Id, expression, arg, timeout).ConfigureAwait(false);
@@ -92,8 +109,8 @@ internal sealed class Frame : IFrame
         => new Locator(this, $"[alt=\"{text}\"]");
 
     public Task<IElementHandle> AddScriptTagAsync(string? url = null, string? content = null)
-        => _page.AddScriptTagAsync(url, content, _page.GetSelectorContextId(this));
+        => _page.AddScriptTagAsync(url, content, this);
 
     public Task<IElementHandle> AddStyleTagAsync(string? url = null, string? content = null)
-        => _page.AddStyleTagAsync(url, content, _page.GetSelectorContextId(this));
+        => _page.AddStyleTagAsync(url, content, this);
 }

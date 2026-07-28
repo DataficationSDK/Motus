@@ -235,6 +235,9 @@ internal sealed class FakeToolPage(AccessibilitySnapshot snapshot) : IPage
     public event EventHandler<RequestEventArgs>? RequestFailed;
     public event EventHandler<RequestEventArgs>? RequestFinished;
     public event EventHandler<ResponseEventArgs>? Response;
+    public event EventHandler<IFrame>? FrameAttached;
+    public event EventHandler<IFrame>? FrameNavigated;
+    public event EventHandler<IFrame>? FrameDetached;
     public event EventHandler? Load;
     public event EventHandler? DOMContentLoaded;
 #pragma warning restore CS0067
