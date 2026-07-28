@@ -86,6 +86,8 @@ internal sealed partial class Page : IPage
 
     internal IMotusSession Session => _session;
 
+    internal string TargetId => _targetId;
+
     internal CancellationToken PageLifetimeToken => _pageCts.Token;
 
     internal BrowserContext ContextInternal => _context;
@@ -152,6 +154,38 @@ internal sealed partial class Page : IPage
         // as the frame identifier in BiDi.
         if (_mainFrameId is null && _session is BiDiSession)
             _mainFrameId = _targetId;
+    }
+
+    /// <summary>
+    /// Reads the page's current frame tree and records it, for a page that was already open
+    /// before Motus reached it.
+    /// </summary>
+    /// <remarks>
+    /// Enabling the Page domain does not replay the navigation a page has already done, so a
+    /// page taken over mid-life would otherwise have no frames recorded at all: no main frame,
+    /// an empty URL, and nothing for a locator to resolve against. Reading the tree once fills
+    /// in what the missed events would have.
+    /// </remarks>
+    internal async Task SeedFrameTreeAsync(CancellationToken ct)
+    {
+        var result = await _session.SendAsync(
+            "Page.getFrameTree",
+            CdpJsonContext.Default.PageGetFrameTreeResult,
+            ct).ConfigureAwait(false);
+
+        RecordFrameTreeNode(result.FrameTree);
+        _mainFrameId ??= result.FrameTree.Frame.Id;
+    }
+
+    private void RecordFrameTreeNode(PageFrameTreeNode node)
+    {
+        var info = node.Frame;
+        var frame = _frames.GetOrAdd(info.Id, id => new Frame(this, id, info.ParentId));
+        frame.Url = info.Url;
+        frame.Name = info.Name;
+
+        foreach (var child in node.ChildFrames ?? [])
+            RecordFrameTreeNode(child);
     }
 
     /// <summary>

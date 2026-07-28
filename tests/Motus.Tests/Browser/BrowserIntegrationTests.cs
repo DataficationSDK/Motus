@@ -35,6 +35,20 @@ public class BrowserIntegrationTests
     }
 
     [TestMethod]
+    public async Task LaunchAsync_OwnsTheProcess()
+    {
+        if (!BrowserAvailable())
+        {
+            Assert.Inconclusive("No browser found on this machine.");
+            return;
+        }
+
+        await using var browser = await MotusLauncher.LaunchAsync(new LaunchOptions { Headless = true });
+
+        Assert.IsTrue(browser.OwnsProcess, "A browser Motus started must be owned, or nothing ends it.");
+    }
+
+    [TestMethod]
     public async Task CloseAsync_PerformsCleanShutdown()
     {
         if (!BrowserAvailable())

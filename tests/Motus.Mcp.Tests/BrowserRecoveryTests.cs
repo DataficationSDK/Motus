@@ -93,6 +93,7 @@ internal sealed class FakeBrowser : IBrowser
 
     public bool IsConnected { get; set; } = true;
     public bool IsHealthy { get; set; } = true;
+    public bool OwnsProcess => false;
     public bool DisposeCalled { get; private set; }
     public string Version => "FakeBrowser/1.0";
 
@@ -129,6 +130,8 @@ internal sealed class FakeBrowser : IBrowser
         IsHealthy = false;
         return Task.CompletedTask;
     }
+
+    public Task DisconnectAsync() => CloseAsync();
 
     public ValueTask DisposeAsync()
     {

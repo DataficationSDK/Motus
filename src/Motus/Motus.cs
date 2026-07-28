@@ -170,19 +170,81 @@ public static class MotusLauncher
     /// <summary>
     /// Connects to an existing browser instance via its CDP WebSocket endpoint.
     /// </summary>
-    public static async Task<IBrowser> ConnectAsync(string wsEndpoint, CancellationToken ct = default)
+    public static Task<IBrowser> ConnectAsync(string wsEndpoint, CancellationToken ct = default)
+        => ConnectAsync(wsEndpoint, options: null, ct);
+
+    /// <summary>
+    /// Connects to a browser that is already running. The endpoint may be a CDP WebSocket URL, or
+    /// the browser's HTTP debugging endpoint, from which the WebSocket URL is resolved.
+    /// </summary>
+    /// <remarks>
+    /// The returned browser is not owned: neither closing nor disposing it ends the browser
+    /// process. By default the contexts and pages already open are adopted, so they can be driven
+    /// straight away.
+    /// </remarks>
+    public static async Task<IBrowser> ConnectAsync(
+        string endpoint, ConnectOptions? options, CancellationToken ct = default)
     {
-        var socket = new CdpSocket();
-        var transport = new CdpTransport(socket);
-        await transport.ConnectAsync(new Uri(wsEndpoint), ct).ConfigureAwait(false);
+        options ??= new ConnectOptions();
 
-        var registry = new CdpSessionRegistry(transport);
-        var browser = new Browser(
-            transport, registry, process: null, tempUserDataDir: null,
-            handleSigint: false, handleSigterm: false);
+        var timeout = TimeSpan.FromMilliseconds(options.Timeout);
 
-        await browser.InitializeAsync(ct).ConfigureAwait(false);
-        return browser;
+        // Connecting is bounded end to end. Neither the WebSocket handshake nor target adoption
+        // carries a bound of its own, so an endpoint that accepts a connection and then answers
+        // nothing on it would otherwise hold the caller for good.
+        using var readyCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        readyCts.CancelAfter(timeout);
+
+        try
+        {
+            var wsEndpoint = await ResolveWebSocketEndpointAsync(endpoint, timeout, readyCts.Token)
+                .ConfigureAwait(false);
+
+            var slowMo = TimeSpan.FromMilliseconds(options.SlowMo);
+            var socket = new CdpSocket();
+            var transport = new CdpTransport(socket, slowMo);
+            await transport.ConnectAsync(wsEndpoint, readyCts.Token).ConfigureAwait(false);
+
+            var registry = new CdpSessionRegistry(transport);
+            var browser = new Browser(
+                transport, registry, process: null, tempUserDataDir: null,
+                handleSigint: false, handleSigterm: false,
+                adoptExistingTargets: options.AdoptExistingTargets);
+
+            await browser.InitializeAsync(readyCts.Token).ConfigureAwait(false);
+            return browser;
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            throw new MotusTimeoutException(
+                timeoutDuration: timeout,
+                message: $"Did not finish connecting to {endpoint} within {timeout.TotalSeconds}s.");
+        }
+    }
+
+    /// <summary>
+    /// Accepts either form of endpoint a caller is likely to have: the WebSocket URL itself, or
+    /// the HTTP debugging endpoint the browser was started with, which is the one a caller who
+    /// chose the port already knows.
+    /// </summary>
+    private static async Task<Uri> ResolveWebSocketEndpointAsync(
+        string endpoint, TimeSpan timeout, CancellationToken ct)
+    {
+        if (!Uri.TryCreate(endpoint, UriKind.Absolute, out var uri))
+            throw new ArgumentException(
+                $"'{endpoint}' is not a valid browser endpoint. Expected a CDP WebSocket URL "
+                + "or an HTTP debugging endpoint such as http://127.0.0.1:9222.",
+                nameof(endpoint));
+
+        if (uri.Scheme is "ws" or "wss")
+            return uri;
+
+        if (uri.Scheme is "http" or "https")
+            return await CdpEndpointPoller.WaitForEndpointAsync(uri, timeout, ct).ConfigureAwait(false);
+
+        throw new ArgumentException(
+            $"Browser endpoint scheme '{uri.Scheme}' is not supported. Expected ws, wss, http, or https.",
+            nameof(endpoint));
     }
 
     internal static bool IsFirefoxChannel(BrowserChannel? channel, string? executablePath)

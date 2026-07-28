@@ -23,8 +23,12 @@ namespace Motus;
 [JsonSerializable(typeof(TargetCloseTargetResult))]
 [JsonSerializable(typeof(TargetSetAutoAttachParams))]
 [JsonSerializable(typeof(TargetSetAutoAttachResult))]
+[JsonSerializable(typeof(TargetSetDiscoverTargetsParams))]
+[JsonSerializable(typeof(TargetSetDiscoverTargetsResult))]
+[JsonSerializable(typeof(TargetGetTargetsResult))]
 [JsonSerializable(typeof(TargetAttachedToTargetEvent))]
 [JsonSerializable(typeof(TargetDetachedFromTargetEvent))]
+[JsonSerializable(typeof(TargetTargetCreatedEvent))]
 [JsonSerializable(typeof(TargetTargetDestroyedEvent))]
 // --- Page domain ---
 [JsonSerializable(typeof(PageEnableResult))]
@@ -44,6 +48,7 @@ namespace Motus;
 [JsonSerializable(typeof(PageSetInterceptFileChooserDialogResult))]
 [JsonSerializable(typeof(PageAddScriptToEvaluateOnNewDocumentParams))]
 [JsonSerializable(typeof(PageAddScriptToEvaluateOnNewDocumentResult))]
+[JsonSerializable(typeof(PageGetFrameTreeResult))]
 [JsonSerializable(typeof(PageLoadEventFiredEvent))]
 [JsonSerializable(typeof(PageDomContentEventFiredEvent))]
 [JsonSerializable(typeof(PageFrameNavigatedEvent))]
@@ -316,6 +321,12 @@ internal sealed record TargetSetAutoAttachParams(
 
 internal sealed record TargetSetAutoAttachResult();
 
+internal sealed record TargetSetDiscoverTargetsParams(bool Discover);
+
+internal sealed record TargetSetDiscoverTargetsResult();
+
+internal sealed record TargetGetTargetsResult(TargetInfo[] TargetInfos);
+
 internal sealed record TargetInfo(
     string TargetId,
     string Type,
@@ -333,6 +344,8 @@ internal sealed record TargetAttachedToTargetEvent(
 internal sealed record TargetDetachedFromTargetEvent(
     string SessionId,
     string? TargetId = null);
+
+internal sealed record TargetTargetCreatedEvent(TargetInfo TargetInfo);
 
 internal sealed record TargetTargetDestroyedEvent(string TargetId);
 
@@ -396,6 +409,12 @@ internal sealed record PageFrameInfo(
     string Url,
     string? SecurityOrigin = null,
     string? MimeType = null);
+
+internal sealed record PageFrameTreeNode(
+    PageFrameInfo Frame,
+    PageFrameTreeNode[]? ChildFrames = null);
+
+internal sealed record PageGetFrameTreeResult(PageFrameTreeNode FrameTree);
 
 internal sealed record PageLoadEventFiredEvent(double Timestamp);
 

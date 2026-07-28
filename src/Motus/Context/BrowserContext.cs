@@ -29,18 +29,25 @@ internal sealed class BrowserContext : IBrowserContext
     private readonly object _contextRouteLock = new();
     private readonly Dictionary<string, string> _extraHeaders = new();
     private readonly ContextOptions? _options;
+    private readonly bool _adopted;
     private volatile bool _offline;
     private int _closed;
     private int _storageStateRestored;
 
     private readonly Tracing _tracing;
 
-    internal BrowserContext(Browser browser, IMotusSessionRegistry registry, string browserContextId, ContextOptions? options = null)
+    internal BrowserContext(
+        Browser browser,
+        IMotusSessionRegistry registry,
+        string browserContextId,
+        ContextOptions? options = null,
+        bool adopted = false)
     {
         _browser = browser;
         _registry = registry;
         _browserContextId = browserContextId;
         _options = options;
+        _adopted = adopted;
         _tracing = new Tracing(registry.BrowserSession);
 
         if (_options?.ExtraHttpHeaders is not null)
@@ -69,6 +76,13 @@ internal sealed class BrowserContext : IBrowserContext
     public ITracing Tracing => _tracing;
 
     internal string BrowserContextId => _browserContextId;
+
+    /// <summary>
+    /// Whether this context was already open in the browser and was taken over, rather than
+    /// created by Motus. An adopted context is never disposed in the browser: it belongs to
+    /// whoever is using that browser, and Motus only stops watching it.
+    /// </summary>
+    internal bool IsAdopted => _adopted;
 
     internal ContextOptions? Options => _options;
 
@@ -281,6 +295,67 @@ internal sealed class BrowserContext : IBrowserContext
         }
     }
 
+    /// <summary>
+    /// Takes a page that was already open in the browser into this context, announcing it the
+    /// same way a page this context created is announced.
+    /// </summary>
+    /// <remarks>
+    /// No context options are applied. The viewport, locale, timezone and user agent of a tab
+    /// that was already open belong to whoever opened it, and overriding them would change a
+    /// browser Motus does not own.
+    /// </remarks>
+    internal async Task AdoptPageAsync(Page page)
+    {
+        lock (_pages)
+            _pages.Add(page);
+
+        await _lifecycleHooks.FireOnPageCreatedAsync(page).ConfigureAwait(false);
+        Page?.Invoke(this, page);
+        GlobalPageCreated?.Invoke(page);
+    }
+
+    /// <summary>
+    /// Whether this context already holds a page for the given target.
+    /// </summary>
+    internal bool HasPageForTarget(string targetId)
+    {
+        lock (_pages)
+            return _pages.Any(p => p.TargetId == targetId);
+    }
+
+    /// <summary>
+    /// Drops the page for a target that has gone away, so its handle reports closed rather than
+    /// failing obscurely on the next call. Returns whether this context held that page.
+    /// </summary>
+    internal async Task<bool> RetirePageAsync(string targetId)
+    {
+        Page? page;
+        lock (_pages)
+        {
+            page = _pages.FirstOrDefault(p => p.TargetId == targetId);
+            if (page is not null)
+                _pages.Remove(page);
+        }
+
+        if (page is null)
+            return false;
+
+        await _lifecycleHooks.FireOnPageClosedAsync(page).ConfigureAwait(false);
+
+        var sessionId = page.Session.SessionId;
+
+        // Local teardown only. The target is already gone, so there is nothing to close.
+        await page.DisposeAsync().ConfigureAwait(false);
+
+        if (sessionId is not null)
+        {
+            _registry.RemoveSession(sessionId);
+            page.Session.CleanupChannels();
+        }
+
+        return true;
+    }
+
     private static ViewportSize DeriveVideoSize(ViewportSize? viewport)
     {
         if (viewport is null)
@@ -362,19 +437,25 @@ internal sealed class BrowserContext : IBrowserContext
 
         _browser.RemoveContext(this);
 
-        // Dispose the browser context
-        try
+        // Dispose the browser context. An adopted one is left alone: it was open before Motus
+        // arrived, disposing it would close windows belonging to whoever is using the browser,
+        // and the default context has no id to dispose in any case. Everything above this point
+        // is local bookkeeping and applies either way.
+        if (!_adopted)
         {
-            await _registry.BrowserSession.SendAsync(
-                "Target.disposeBrowserContext",
-                new TargetDisposeBrowserContextParams(_browserContextId),
-                CdpJsonContext.Default.TargetDisposeBrowserContextParams,
-                CdpJsonContext.Default.TargetDisposeBrowserContextResult,
-                CancellationToken.None).ConfigureAwait(false);
-        }
-        catch (Exception ex) when (ex is CdpDisconnectedException or MotusTargetClosedException)
-        {
-            // Browser already closed
+            try
+            {
+                await _registry.BrowserSession.SendAsync(
+                    "Target.disposeBrowserContext",
+                    new TargetDisposeBrowserContextParams(_browserContextId),
+                    CdpJsonContext.Default.TargetDisposeBrowserContextParams,
+                    CdpJsonContext.Default.TargetDisposeBrowserContextResult,
+                    CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is CdpDisconnectedException or MotusTargetClosedException)
+            {
+                // Browser already closed
+            }
         }
 
         Close?.Invoke(this, EventArgs.Empty);

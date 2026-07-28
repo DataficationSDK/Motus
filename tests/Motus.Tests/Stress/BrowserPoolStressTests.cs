@@ -180,6 +180,7 @@ public class BrowserPoolStressTests
     private sealed class FakeBrowser : IBrowser
     {
         public bool IsConnected { get; set; } = true;
+        public bool OwnsProcess => false;
         public IReadOnlyList<IBrowserContext> Contexts => [];
         public string Version => "Fake/1.0";
         public event EventHandler? Disconnected;
@@ -191,6 +192,8 @@ public class BrowserPoolStressTests
             => throw new NotSupportedException();
 
         public Task CloseAsync() => Task.CompletedTask;
+
+        public Task DisconnectAsync() => Task.CompletedTask;
 
         public ValueTask DisposeAsync()
         {
