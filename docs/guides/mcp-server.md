@@ -120,6 +120,19 @@ The server groups its tools by capability. Each tool returns structured content 
 
 Elements are addressed by the `ref` values returned in a snapshot rather than by CSS or XPath. Take a `snapshot`, then pass a node's `ref` to `click`, `type`, or another interaction tool. References are relative to the most recent snapshot, so take a fresh snapshot after the page changes.
 
+### Reading a value with `evaluate`
+
+`evaluate` returns whatever the expression produced under a `result` key:
+
+```
+evaluate("document.querySelectorAll('article').length")
+  -> {"result": 12}
+```
+
+Structured content has to be a JSON object, so an expression returning a bare number, string, or array could not be sent back as-is. Wrapping every value in the same shape means an expression may return anything: reading a single count off the page works exactly as readily as returning a record. A value that cannot be serialized, such as `undefined`, a function, or a DOM node, comes back as `{"result": null}`.
+
+Read the value at `result`. Wrapping the expression by hand, as `({ count: ... })`, is no longer necessary, though it remains harmless and simply nests one level deeper.
+
 ### Frames
 
 A page snapshot describes each `iframe` element but not what is inside it, and for a frame the browser renders in its own process the contents are not in the page's tree at all. Frames are addressed by selection, the same way tabs and contexts are:

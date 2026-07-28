@@ -83,6 +83,38 @@ public class HomePageTests : MotusTestBase
 }
 ```
 
+### Retrying a lost browser
+
+A browser that dies mid-test takes the verdict with it. Nothing was established about the page, and what the run reports is a connection closing rather than anything the test set out to check. Browsers do occasionally die, more often on shared build hardware than on a desk, and a red build that a second run turns green is how a team learns to stop reading red builds.
+
+Use `[MotusTestClass]` in place of `[TestClass]` to run each test in the class again when the browser goes away underneath it:
+
+```csharp
+[MotusTestClass]
+public class CheckoutTests : MotusTestBase
+{
+    [TestMethod]
+    public async Task CartTotalUpdatesAsync()
+    {
+        // Retried only if the browser disconnects.
+    }
+}
+```
+
+**Only a lost browser is retried.** A failed assertion is a result, and repeating it until it agrees would hide the very thing the suite exists to find. Browser loss is detected by a `MotusTargetClosedException` anywhere in the exception chain, not by a heuristic on the message.
+
+The attempt that follows gets a browser of its own. The fixture starts replacing the dead one the moment it sees the disconnect, and `MotusTestBase` waits for that to finish while building the next context. A retry is announced on standard error in the same shape the Motus runner uses, so a test that passes only on a second attempt is visible in the log rather than silently green.
+
+`Retries` defaults to 1 and can be raised on the class:
+
+```csharp
+[MotusTestClass(Retries = 2)]
+```
+
+`[MotusTestMethod]` applies the same behavior to a single method, with its own `Retries`. A method that carries it keeps its own setting even inside a `[MotusTestClass]`. It also has a constructor that wraps another `TestMethodAttribute`, so a custom test-method attribute keeps its behavior and only gains the retry.
+
+This covers the narrow case of the browser vanishing. For retry policies, flake detection, and quarantine across a whole suite, use the `motus run` CLI and see [Flaky Tests and Quarantine](flaky-tests-and-quarantine.md).
+
 ---
 
 ## NUnit
@@ -332,3 +364,5 @@ Key behaviors:
 
 - [Configuration Reference](./configuration.md) -- full `motus.config.json` schema including the `failure` section
 - [Network Interception](./network-interception.md) -- route matching, request mocking, and response modification
+- [Flaky Tests and Quarantine](./flaky-tests-and-quarantine.md) -- retry policies, flake detection, and quarantining a known-bad test
+- [Sharding](./sharding.md) -- splitting a suite across CI agents and merging the results

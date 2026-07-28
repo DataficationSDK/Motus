@@ -25,7 +25,8 @@ When Motus initializes, it walks up from `Environment.CurrentDirectory`, checkin
     "headless": true,
     "channel": "Chrome",
     "slowMo": 0,
-    "timeout": 30000
+    "timeout": 30000,
+    "executablePath": null
   },
   "context": {
     "locale": "en-US",
@@ -77,6 +78,29 @@ When Motus initializes, it walks up from `Environment.CurrentDirectory`, checkin
     "inp": null,
     "jsHeapSize": null,
     "domNodeCount": null
+  },
+  "coverage": {
+    "enable": false,
+    "includeJavaScript": true,
+    "includeCss": true,
+    "js": {
+      "lines": null,
+      "functions": null
+    },
+    "css": {
+      "rules": null
+    }
+  },
+  "flaky": {
+    "retryPolicy": "transient",
+    "retries": 0,
+    "failOnFlaky": false,
+    "historyPath": null,
+    "quarantinePath": null
+  },
+  "shard": {
+    "index": null,
+    "total": null
   }
 }
 ```
@@ -91,6 +115,22 @@ Controls how the browser process is started.
 | `channel` | `string` | `null` | Browser channel to use. Accepted values: `Chrome`, `Edge`, `Chromium`, `Firefox`. Case-insensitive. |
 | `slowMo` | `int` (ms) | `0` | Add a fixed delay after every browser operation. Useful for visual debugging. |
 | `timeout` | `int` (ms) | `30000` | Maximum time to wait for the browser process to start. |
+| `executablePath` | `string` | `null` | Path to an exact browser binary, used instead of the resolved or bundled one. A path set in code takes precedence over this. |
+
+#### Pinning a browser
+
+`channel` selects a browser family and takes whatever version is installed, which is what you want on a desk and not what you want in CI: the stable channel moves underneath the suite, and a run that passed last week can fail this week for reasons no commit explains. Pinning fixes the binary instead.
+
+Install an exact Chromium revision, then point at it:
+
+```bash
+motus install --revision 1421000
+motus run bin/Release/net8.0/MyTests.dll
+```
+
+`motus install` reports the path it installed to. Supply that path as `launch.executablePath`, or as `MOTUS_EXECUTABLE_PATH` in the environment, which is usually easier in CI because the install step can export it directly. When a revision is given the download URL is constructed for that revision rather than resolved through the stable listing, so the same revision is fetched every time.
+
+On Windows, a browser unzipped into a user directory is granted the file-system permissions its sandbox needs as part of installing or repairing an install. A failure to do so is reported but does not abort the install, since the browser may still run in configurations that do not need those permissions.
 
 ### `context` Section
 
@@ -181,6 +221,81 @@ Controls the built-in performance metrics collector and budget thresholds. When 
 | `jsHeapSize` | `number` | `null` | Maximum JavaScript heap size in bytes. |
 | `domNodeCount` | `number` | `null` | Maximum DOM node count. |
 
+### `coverage` Section
+
+Controls the built-in JavaScript and CSS coverage collector, and the thresholds that turn a coverage number into a build failure.
+
+| Property | Type | Default | Description |
+|---|---|---|---|
+| `enable` | `bool` | `false` | Enable the coverage collector. |
+| `includeJavaScript` | `bool` | `true` | Collect JavaScript line coverage through the CDP Profiler domain. |
+| `includeCss` | `bool` | `true` | Collect CSS rule usage through the CDP CSS domain. |
+| `js` | `object` | `null` | JavaScript thresholds. See below. |
+| `css` | `object` | `null` | CSS thresholds. See below. |
+
+| `js` property | Type | Default | Description |
+|---|---|---|---|
+| `lines` | `number` | `null` | Minimum acceptable line coverage percentage, 0 to 100. The run fails when aggregate line coverage falls below it. |
+| `functions` | `number` | `null` | Reserved. The value is accepted and carried through, but the aggregator reports line-level statistics only, so nothing is currently evaluated against it. Setting it has no effect on whether a run passes. |
+
+| `css` property | Type | Default | Description |
+|---|---|---|---|
+| `rules` | `number` | `null` | Minimum acceptable rule usage percentage, 0 to 100. The run fails when aggregate CSS rule usage falls below it. |
+
+A threshold that is `null` is not evaluated at all, so coverage can be collected and reported without gating anything. When a threshold is set and missed, `motus run` prints the metric, the actual value and the limit, and exits non-zero.
+
+#### Turning it on, and where thresholds come from
+
+The two halves are configured in different places, which is easy to trip over:
+
+- **Collection and output formats** come from the CLI. `motus run --coverage console` enables the collector for that run and selects the format. Repeat the flag for more than one, for example `--coverage console --coverage html:./coverage`.
+- **Thresholds** come only from `motus.config.json` or the environment. There is no command-line option for them, so a run that should fail below 80% lines needs `coverage.js.lines` in the file.
+
+```json
+{
+  "coverage": {
+    "js": { "lines": 80 },
+    "css": { "rules": 50 }
+  }
+}
+```
+
+```bash
+motus run bin/Release/net8.0/MyTests.dll --coverage console
+```
+
+Setting `enable` in the file turns the collector on without the flag, which is useful when every run should collect. The flag is still what selects an output format, so a config-only setup collects and enforces thresholds while printing no per-file table.
+
+#### What produces no data
+
+Two cases return an empty result rather than an error, and both look identical to a run with nothing to measure:
+
+- **A transport without CDP.** Coverage uses the Profiler and CSS domains, so a Firefox session driven over WebDriver BiDi cannot supply it. The collector reports a diagnostic saying so and yields an empty set instead of failing.
+- **A page that is never closed.** Coverage is taken when a page closes, so a test that leaves its browser to be torn down by process exit produces nothing. Tests built on the supplied fixtures close their context per test and are unaffected; a test that launches its own browser should close the context, not just dispose it.
+
+### `flaky` Section
+
+Controls retries, flake detection, and quarantine for `motus run`. See [Flaky Tests and Quarantine](flaky-tests-and-quarantine.md) for how these interact.
+
+| Property | Type | Default | Description |
+|---|---|---|---|
+| `retryPolicy` | `string` | `transient` | Which failures `retries` re-runs. `transient` re-runs only a lost browser; `flake` re-runs any failure and labels a test that then passes as flaky. |
+| `retries` | `int` | `0` | Extra attempts for a failing test. Flake detection needs at least 1. |
+| `failOnFlaky` | `bool` | `false` | Exit non-zero when any test is flaky. By default a flaky test passes the run with a warning. |
+| `historyPath` | `string` | `null` | Path to a JSON file accumulating per-test run, failure, and flaky-pass counts across runs. |
+| `quarantinePath` | `string` | `null` | Path to a quarantine list file, one fully qualified test name per line. |
+
+### `shard` Section
+
+Splits the suite across independent runs. Both values must be set for sharding to take effect. See [Sharding](sharding.md).
+
+| Property | Type | Default | Description |
+|---|---|---|---|
+| `index` | `int` | `null` | 1-based index of this shard. |
+| `total` | `int` | `null` | Total number of shards. |
+
+The `--shard <index>/<total>` command-line option takes precedence over both.
+
 ---
 
 ## Environment Variables
@@ -214,8 +329,21 @@ Boolean variables accept `true`, `false`, `1`, or `0` (case-insensitive). Intege
 | `MOTUS_PERFORMANCE_INP` | `performance.inp` | `double` | Maximum INP in milliseconds. |
 | `MOTUS_PERFORMANCE_JS_HEAP_SIZE` | `performance.jsHeapSize` | `long` | Maximum JS heap size in bytes. |
 | `MOTUS_PERFORMANCE_DOM_NODE_COUNT` | `performance.domNodeCount` | `int` | Maximum DOM node count. |
+| `MOTUS_EXECUTABLE_PATH` | `launch.executablePath` | `string` | Path to an exact browser binary. |
+| `MOTUS_COVERAGE_ENABLE` | `coverage.enable` | `bool` | Enable code coverage collection. |
+| `MOTUS_COVERAGE_INCLUDE_JS` | `coverage.includeJavaScript` | `bool` | Include JavaScript coverage. |
+| `MOTUS_COVERAGE_INCLUDE_CSS` | `coverage.includeCss` | `bool` | Include CSS coverage. |
+| `MOTUS_FLAKY_RETRY_POLICY` | `flaky.retryPolicy` | `string` | Which failures are retried (`transient`, `flake`). |
+| `MOTUS_FLAKY_RETRIES` | `flaky.retries` | `int` | Extra attempts for a failing test. |
+| `MOTUS_FLAKY_FAIL` | `flaky.failOnFlaky` | `bool` | Exit non-zero when any test is flaky. |
+| `MOTUS_FLAKY_HISTORY` | `flaky.historyPath` | `string` | Path to the flake history file. |
+| `MOTUS_FLAKY_QUARANTINE` | `flaky.quarantinePath` | `string` | Path to the quarantine list file. |
+| `MOTUS_SHARD_INDEX` | `shard.index` | `int` | 1-based index of this shard. |
+| `MOTUS_SHARD_TOTAL` | `shard.total` | `int` | Total number of shards. |
 
 > Not all config file sections have environment variable coverage. `reporter`, `recorder`, the locator `selectorPriority` arrays, and `performance.collectAfterNavigation` are file-only settings. Use the config file for those.
+
+> For `flaky` and `shard`, command-line options on `motus run` are a further layer above environment variables: `--retries`, `--retry-policy`, `--fail-on-flaky`, `--quarantine`, `--flaky-history`, and `--shard` each win over the file and the environment.
 
 ---
 
@@ -390,3 +518,5 @@ Commit this file or add it to `.gitignore` depending on whether the whole team u
 - [Accessibility Testing](./accessibility-testing.md)
 - [Performance Testing](./performance-testing.md)
 - [Testing Frameworks](./testing-frameworks.md)
+- [Sharding](./sharding.md)
+- [Flaky Tests and Quarantine](./flaky-tests-and-quarantine.md)

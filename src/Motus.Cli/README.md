@@ -1,6 +1,6 @@
 # Motus.Cli
 
-Command-line tool for the [Motus](https://github.com/DataficationSDK/Motus) browser automation framework. Run tests, record interactions, manage browser installations, and inspect traces from your terminal.
+Command-line tool for the [Motus](https://github.com/DataficationSDK/Motus) browser automation framework. Run tests, record interactions, generate page objects, manage browser installations, inspect traces, and serve the MCP server from your terminal.
 
 ## Installation
 
@@ -15,219 +15,69 @@ dotnet tool install Motus.Cli
 dotnet tool update -g Motus.Cli
 ```
 
-Requires .NET 8.0 SDK or later.
+Requires .NET 8.0 SDK or later. Run `motus install` once so a browser is available.
 
 ## Commands
 
-### `motus run`
+| Command | Purpose |
+|---|---|
+| `motus run` | Discover and execute tests from compiled assemblies |
+| `motus record` | Record browser interactions and emit test code |
+| `motus codegen` | Generate Page Object Model classes from live pages |
+| `motus install` | Download and install a browser |
+| `motus screenshot` | Capture a screenshot of a page |
+| `motus pdf` | Render a page to PDF |
+| `motus trace show` | Open a recorded trace in the viewer |
+| `motus trx show` | Open a TRX result file in the viewer |
+| `motus shard merge` | Merge per-shard result files into one report |
+| `motus check-selectors` | Validate recorded selectors against live pages |
+| `motus mcp` | Run the MCP server for agent clients |
+| `motus update-protocol` | Refresh the bundled CDP protocol definitions |
 
-Discovers and runs tests from compiled assemblies.
+Run `motus <command> --help` for the options of any one of them.
 
-```bash
-# Run all tests
-motus run MyTests.dll
-
-# Filter and parallelize
-motus run MyTests.dll --filter "Category=Smoke" --workers 4
-
-# Output JUnit XML for CI
-motus run MyTests.dll --reporter junit --output results.xml
-
-# Collect JS/CSS coverage; repeat the flag for multiple formats
-motus run MyTests.dll --coverage console --coverage html:./coverage
-
-# Retry tests up to twice when the failure is a transient CDP disconnect
-motus run MyTests.dll --retries 2
-```
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `[assemblies]` | none | One or more test assembly paths |
-| `--filter` | none | Test filter expression |
-| `--reporter` | console | Reporter: `console`, `junit`, `html`, `trx` |
-| `--output` | none | Output file path for the reporter |
-| `--workers` | auto | Number of parallel workers (auto = processor count) |
-| `--visual` | false | Launch the visual runner on port 5100 |
-| `--verbose` | false | Show detailed ASP.NET Core log output (visual runner) |
-| `--a11y` | none | Enable accessibility audits: `warn` (report only) or `enforce` (fail on violations) |
-| `--perf-budget` | false | Enable performance budget enforcement from config |
-| `--coverage` | none | Enable code coverage. Format: `console`, `html:<dir>`, or `cobertura:<path>`. Repeat for multiple formats. |
-| `--retries` | 0 | Re-run a failing test up to N additional times when the failure is a transient CDP disconnect. Non-transient failures are not retried. |
-
-### `motus record`
-
-Launches a headed browser, records interactions, and emits C# test code.
+## Common tasks
 
 ```bash
-# Record a session
+# Install a browser, pinned to an exact revision for reproducible CI
+motus install
+motus install --channel chrome --revision 1421000
+
+# Run a suite, filtered, with four workers
+motus run bin/Release/net8.0/MyTests.dll --filter Checkout --workers 4
+
+# Console output plus a JUnit file for CI. The path is part of the value.
+motus run bin/Release/net8.0/MyTests.dll --reporter console --reporter junit:results.xml
+
+# Split across four agents, then merge. --expect catches a shard that never ran.
+motus run bin/Release/net8.0/MyTests.dll --shard 1/4 --reporter junit:results.shard-1.xml
+motus shard merge results.shard-*.xml --output junit:results.xml --expect 4
+
+# Retry a test that lost its browser, and label anything that only passes on a retry
+motus run bin/Release/net8.0/MyTests.dll --retries 2 --retry-policy flake --fail-on-flaky
+
+# Collect JS and CSS coverage; repeat the flag for multiple formats
+motus run bin/Release/net8.0/MyTests.dll --coverage console --coverage html:./coverage
+
+# Record a session into a test, or generate page objects from a live page
 motus record --url https://example.com --output LoginTest.cs
-
-# Connect to an existing browser
-motus record --connect ws://localhost:9222 --framework xunit
-```
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--url` | none | Starting URL to navigate to |
-| `--output` | none | Output file path for generated code |
-| `--framework` | mstest | Target test framework: `mstest`, `xunit`, `nunit` |
-| `--connect` | none | WebSocket endpoint of an existing browser |
-| `--class-name` | RecordedTest | Generated test class name |
-| `--method-name` | Test | Generated test method name |
-| `--namespace` | RecordedTests | Generated namespace |
-| `--preserve-timing` | false | Include delays between actions |
-
-### `motus install`
-
-Downloads and installs a browser binary.
-
-```bash
-# Install Chromium
-motus install chromium
-
-# Install a specific revision
-motus install chrome --revision 1234567
-
-# Install to a custom path
-motus install firefox --path ./browsers
-```
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--channel` | chromium | Browser: `chromium`, `chrome`, `edge`, `firefox` |
-| `--revision` | latest | Specific browser revision to install |
-| `--path` | default | Custom installation directory |
-
-### `motus trace show`
-
-Opens a recorded trace in the visual runner. The trace viewer displays a timeline of browser events with timestamps, durations, screenshots, and network requests extracted from the trace ZIP.
-
-```bash
-motus trace show trace.zip --port 5200
-```
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `[file]` | none | Path to a trace ZIP file |
-| `--port` | 5200 | Port for the trace viewer |
-
-### `motus screenshot`
-
-Captures a screenshot from a URL.
-
-```bash
-# Basic capture
-motus screenshot https://example.com --output page.png
-
-# Full page capture at a specific viewport size
-motus screenshot https://example.com --output page.png --full-page --width 1920 --height 1080
-
-# Wait for JS-heavy sites and remove cookie banners
-motus screenshot https://example.com --output page.png --delay 5 --hide-banners
-```
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `[url]` | none | URL to capture |
-| `--output` | screenshot.png | Output file path |
-| `--full-page` | false | Capture the full scrollable page |
-| `--width` | 1280 | Viewport width in pixels |
-| `--height` | 720 | Viewport height in pixels |
-| `--timeout` | 60 | Navigation timeout in seconds |
-| `--wait-until` | Load | Wait condition: `Load`, `DOMContentLoaded`, `NetworkIdle` |
-| `--delay` | 0 | Seconds to wait after navigation before capture |
-| `--hide-banners` | false | Remove cookie consent and privacy banners before capture |
-
-### `motus pdf`
-
-Generates a PDF from a URL.
-
-```bash
-# Basic PDF
-motus pdf https://example.com --output page.pdf
-
-# Wait for client-side rendering and remove banners
-motus pdf https://example.com --output page.pdf --delay 5 --hide-banners --width 1440
-```
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `[url]` | none | URL to render as PDF |
-| `--output` | output.pdf | Output file path |
-| `--timeout` | 60 | Navigation timeout in seconds |
-| `--wait-until` | Load | Wait condition: `Load`, `DOMContentLoaded`, `NetworkIdle` |
-| `--width` | 1440 | Viewport width in pixels |
-| `--delay` | 0 | Seconds to wait after navigation before capture |
-| `--hide-banners` | false | Remove cookie consent and privacy banners before capture |
-
-### `motus codegen`
-
-Generates Page Object Model classes from live web pages by crawling the DOM and inferring selectors.
-
-```bash
-# Generate from a URL (headless)
 motus codegen https://example.com/login --output ./Pages --namespace MyApp.Pages
 
-# Open a browser, navigate yourself, then press Enter to analyze
-motus codegen --headed --output ./Pages
+# Capture a page
+motus screenshot https://example.com --output page.png --full-page
+motus pdf https://example.com --output page.pdf --delay 5 --hide-banners
 
-# Navigate to a URL in a visible browser, interact, then press Enter
-motus codegen https://example.com/login --headed --output ./Pages
-
-# Connect to an already-running browser's active tab
-motus codegen --connect ws://localhost:9222 --output ./Pages
-
-# Only analyze elements inside a modal or specific container
-motus codegen --headed --scope ".modal-dialog" --output ./Pages
-motus codegen https://example.com/login --scope "#login-form" --output ./Pages
-```
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `[url]` | none | One or more URLs (optional with `--headed` or `--connect`) |
-| `--output` | . | Output directory for generated files |
-| `--namespace` | Motus.Generated | Namespace for generated classes |
-| `--headed` | false | Launch a visible browser for interactive navigation before analysis |
-| `--connect` | none | WebSocket endpoint to attach to a running browser |
-| `--scope` | none | CSS selector to limit discovery to a container (e.g. `".modal"`, `"#form"`) |
-| `--selector-priority` | none | Comma-separated strategy priority (e.g. `testid,role,text,css`) |
-| `--timeout` | 30000 | Navigation timeout in milliseconds |
-| `--detect-listeners` | false | Detect elements with JS event listeners |
-
-### `motus update-protocol`
-
-Updates the bundled CDP protocol JSON files to the latest version.
-
-### `motus mcp`
-
-Runs the [Model Context Protocol](https://modelcontextprotocol.io) server so AI agents can drive a browser through Motus. Tools cover navigation, accessibility snapshots, ref-based and coordinate-based interaction (including drag and drop on canvas surfaces), viewport control, network interception, accessibility and performance audits, trace, HAR, and video recording, and Page Object Model generation. Serves over stdio by default, or Streamable HTTP for concurrent remote clients.
-
-```bash
-# Register with Claude Code against the installed tool
+# Register the MCP server with an agent, or point it at a browser already running
 claude mcp add motus -- motus mcp
-
-# Drive a specific browser, or show a visible window for debugging
-motus mcp --channel chrome
-motus mcp --headless false
-
-# Larger viewport, and a video of every page
-motus mcp --viewport 1920x1080 --record-video ./videos
-
-# Serve over Streamable HTTP (a non-loopback bind requires a token)
-motus mcp --http --host 0.0.0.0 --port 8931 --token "$MOTUS_MCP_TOKEN"
+motus mcp --connect http://127.0.0.1:9222
 ```
 
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--headless` | true | Run the browser without a visible window |
-| `--channel` | chromium | Browser to drive: `chromium`, `chrome`, `edge`, `firefox` |
-| `--viewport` | 1280x800 | Viewport size for every page, as `WIDTHxHEIGHT` |
-| `--record-video` | none | Record a video of every page into this directory (MJPEG AVI, one file per page) |
-| `--show-cursor` | false | Draw an on-screen pseudo-cursor in screenshots and recordings; enables natural mouse motion unless `--natural-mouse` is set |
-| `--natural-mouse` | --show-cursor | Move the mouse along curved, eased paths; pass `--natural-mouse false` to keep the cursor without it |
-| `--http` | false | Serve over Streamable HTTP instead of stdio |
-| `--host` | 127.0.0.1 | Interface to bind when `--http` is set |
-| `--port` | 8931 | Port to listen on when `--http` is set |
-| `--token` | none | Bearer token required on every HTTP request (or set `MOTUS_MCP_TOKEN`). Required for a non-loopback bind. |
+## Full reference
 
-Run `motus install` first so a browser is available. See the [MCP Server guide](https://github.com/DataficationSDK/Motus/blob/main/docs/guides/mcp-server.md) for the full registration story and tool catalog.
+Every command, option, default and exit code is documented at
+**[motustesting.com/docs/reference/cli.html](https://motustesting.com/docs/reference/cli.html)**.
+
+See also the [MCP Server guide](https://motustesting.com/docs/guides/mcp-server.html) for the tool catalog,
+[Sharding](https://motustesting.com/docs/guides/sharding.html),
+[Flaky Tests and Quarantine](https://motustesting.com/docs/guides/flaky-tests-and-quarantine.html),
+and [Configuration](https://motustesting.com/docs/guides/configuration.html) for the settings behind many of these options.

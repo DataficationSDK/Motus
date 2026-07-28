@@ -110,6 +110,14 @@ For an attached browser, a dropped connection says nothing about whether the bro
 
 When the Motus install system downloads a browser, it sets `BrowserFinder.InstalledBinariesPath`. This path is prepended to every channel's candidate list, ahead of system-installed locations.
 
+### Pinning a specific binary
+
+Steps 2 and 3 above resolve to whichever build is installed, which is why a CI run can change behavior without a commit: the channel moved. Step 1 is the escape from that. `motus install --revision <n>` downloads an exact Chromium revision, constructing the download URL for that revision rather than resolving through the stable listing, and `launch.executablePath` or `MOTUS_EXECUTABLE_PATH` then points `options.ExecutablePath` at it. A path set in code still wins over both, so the precedence above is unchanged.
+
+On Windows, a browser unzipped into a user directory does not necessarily carry the file-system permissions its sandbox requires. The installer grants them during install and when repairing an existing install. A failure there is reported rather than fatal, since the browser can still run where those permissions are not needed.
+
+See [Configuration](../guides/configuration.md) for the settings, and [Sharding](../guides/sharding.md) for why reproducibility matters more once a suite is spread across agents.
+
 ### Platform candidate paths
 
 | Channel | macOS | Linux | Windows |

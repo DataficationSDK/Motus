@@ -86,6 +86,27 @@ public static class RunCommand
             var coverageSpecs = parseResult.GetValue(coverageOpt);
             var coverageRequested = parseResult.GetResult(coverageOpt) is not null;
 
+            // These options turn on collectors that read their settings from the environment, and
+            // the configuration behind them is materialized once on first access and cached for the
+            // process. So they have to be exported before anything below reads configuration,
+            // otherwise the collector is built from a snapshot taken before the flag was applied
+            // and the flag does nothing at all.
+            if (a11yMode is not null)
+            {
+                Environment.SetEnvironmentVariable("MOTUS_ACCESSIBILITY_ENABLE", "true");
+                Environment.SetEnvironmentVariable("MOTUS_ACCESSIBILITY_MODE", a11yMode);
+            }
+
+            if (perfBudget)
+            {
+                Environment.SetEnvironmentVariable("MOTUS_PERFORMANCE_ENABLE", "true");
+            }
+
+            if (coverageRequested)
+            {
+                Environment.SetEnvironmentVariable("MOTUS_COVERAGE_ENABLE", "true");
+            }
+
             // Flaky settings resolve CLI > env/file config > built-in default.
             var flakyConfig = Motus.MotusConfigLoader.Config.Flaky;
 
@@ -132,22 +153,6 @@ public static class RunCommand
                     shardIndex = cfgIndex;
                     shardTotal = cfgTotal;
                 }
-            }
-
-            if (a11yMode is not null)
-            {
-                Environment.SetEnvironmentVariable("MOTUS_ACCESSIBILITY_ENABLE", "true");
-                Environment.SetEnvironmentVariable("MOTUS_ACCESSIBILITY_MODE", a11yMode);
-            }
-
-            if (perfBudget)
-            {
-                Environment.SetEnvironmentVariable("MOTUS_PERFORMANCE_ENABLE", "true");
-            }
-
-            if (coverageRequested)
-            {
-                Environment.SetEnvironmentVariable("MOTUS_COVERAGE_ENABLE", "true");
             }
 
             if (visual)
