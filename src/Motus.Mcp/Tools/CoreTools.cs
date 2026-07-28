@@ -41,8 +41,9 @@ public sealed class CoreTools
     }
 
     [McpServerTool(Name = "snapshot", Title = "Accessibility snapshot", Destructive = false, ReadOnly = true)]
-    [Description("Returns an indented accessibility tree of the active page. Each addressable element is "
-        + "tagged with a ref (e1, e2, ...) that click and type use to address it.")]
+    [Description("Returns an indented accessibility tree of the active page, or of the scoped frame when one is "
+        + "selected. Each addressable element is tagged with a ref (e1, e2, ...) that click and type use to "
+        + "address it. A page tree describes each iframe element but not its contents; frame_select looks inside.")]
     public static async Task<CallToolResult> SnapshotAsync(
         [Description("Root the snapshot at the subtree of this ref from the previous snapshot.")] string? root_ref,
         [Description("Limit how many levels deep the tree is rendered; 0 renders only the root.")] int? max_depth,
@@ -52,9 +53,17 @@ public sealed class CoreTools
         try
         {
             var page = await pageService.GetOrCreateActivePageAsync(cancellationToken).ConfigureAwait(false);
+            var frame = pageService.GetActiveFrame();
             var text = await pageService.GetSnapshotService(page)
-                .TakeSnapshotAsync(root_ref, max_depth, cancellationToken)
+                .TakeSnapshotAsync(frame, root_ref, max_depth, cancellationToken)
                 .ConfigureAwait(false);
+
+            // Said on every scoped snapshot rather than only on the frame_select that set the
+            // scope, because the two are often several calls apart and a tree that silently
+            // describes a different document than the agent expects is hard to notice.
+            if (frame is not null)
+                text = $"Scoped to frame {frame.Url}\n\n{text}";
+
             return ToolResultHelper.Text(text);
         }
         catch (SnapshotNotTakenException)

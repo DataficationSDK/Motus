@@ -110,6 +110,8 @@ The server groups its tools by capability. Each tool returns structured content 
 | Interaction | `click`, `type`, `press`, `press_key`, `hover`, `focus`, `clear`, `select_option`, `set_checked`, `scroll_into_view`, `upload_files`, `wait_for_element` |
 | Coordinate interaction | `click_xy`, `hover_xy`, `move_xy`, `scroll_xy`, `drag`, `resize` |
 | Tabs and contexts | `tab_list`, `tab_open`, `tab_select`, `tab_close`, `context_list`, `context_create`, `context_select`, `context_close` |
+| Frames | `frame_list`, `frame_select` |
+| Browser | `browser_attach`, `browser_status` |
 | Scripting | `evaluate` |
 | Dialogs | `handle_dialog` |
 | Network | `route_fulfill`, `route_abort`, `route_continue`, `unroute`, `route_list`, `network_requests` |
@@ -117,6 +119,39 @@ The server groups its tools by capability. Each tool returns structured content 
 | Recording and codegen | `generate_pom`, `trace_start`, `trace_stop`, `har_start`, `har_stop`, `video_start`, `video_stop` |
 
 Elements are addressed by the `ref` values returned in a snapshot rather than by CSS or XPath. Take a `snapshot`, then pass a node's `ref` to `click`, `type`, or another interaction tool. References are relative to the most recent snapshot, so take a fresh snapshot after the page changes.
+
+### Frames
+
+A page snapshot describes each `iframe` element but not what is inside it, and for a frame the browser renders in its own process the contents are not in the page's tree at all. Frames are addressed by selection, the same way tabs and contexts are:
+
+1. `frame_list` lists the frames in document order with their nesting depth. Index 0 is the page itself.
+2. `frame_select <index>` scopes the session to one of them. `frame_select 0` returns to the page.
+3. `snapshot` then describes that frame, and its refs address elements inside it.
+
+Scope covers `snapshot`, `evaluate`, and the `wait_for` text conditions. Every interaction tool is already covered through refs: a ref from a scoped snapshot keeps addressing the frame it came from, even after the scope moves on. Selection resets on navigation and on switching tab or context, since the frame it named is gone by then.
+
+The coordinate tools stay in page coordinates whatever is selected. Their input is dispatched at the page level and the browser decides which frame is under the point.
+
+A page snapshot says how many frames its tree does not describe, so an agent that finds an `iframe` with nothing under it is pointed at `frame_list` rather than left to conclude the content is missing. See [Frames and iframes](frames-and-iframes.md).
+
+### Driving a browser that is already running
+
+By default the server starts a browser and ends it on shutdown. Pointed at a browser somebody else started, it drives what is already open in that browser and leaves it running afterwards. This is how a signed-in profile, a warm browser reused between runs, or a Chromium-based desktop application becomes drivable.
+
+```bash
+motus mcp --connect http://127.0.0.1:9222
+```
+
+An agent can also attach at any point with `browser_attach`, which is what to reach for when the endpoint is not known at the time the MCP client is configured. `browser_status` reports which browser is being driven and whether the server started it. Attaching closes the browser the server started, if any, and drops snapshot refs, route rules, and captured console output, so take a fresh snapshot afterwards.
+
+Two consequences are worth knowing:
+
+- **Options that describe starting a browser have nothing to act on.** `--headless`, `--channel`, `--viewport`, `--record-video` and `--show-cursor` bind either at launch or at context creation, and an attached session does neither: it adopts the context the browser is already using. The server says so on startup rather than ignoring them silently. The `resize` tool still changes a page's viewport at runtime.
+- **`--http` with `--connect` means clients share one browser.** The HTTP transport otherwise gives each connected client its own isolated browser. Pointed at one endpoint, every session drives the same browser, and so shares its tabs and cookies.
+
+`tab_close` and `context_close` mean more against an attached browser: they discard somebody's working state rather than scratch state. An adopted context is never disposed by the server, so its windows survive even when the session lets go of it.
+
+A debugging port grants complete control of the browser and every session inside it. [Attaching to a Running Browser](attaching-to-a-running-browser.md) covers that in full, along with how to start a browser with the port open.
 
 ### Coordinate interaction
 
@@ -148,6 +183,7 @@ To record everything without per-page tool calls, launch the server with `--reco
 
 | Option | Default | Description |
 |---|---|---|
+| `--connect` | _(none)_ | Drive a browser that is already running instead of starting one. Takes the debugging endpoint it was started with (`http://127.0.0.1:9222`) or its CDP WebSocket URL. The browser is never closed by the server, and the options that describe starting one no longer apply. |
 | `--headless` | `true` | Run the browser without a visible window. Pass `--headless false` to watch the agent drive a real window. |
 | `--channel` | `chromium` | Browser to drive: `chromium`, `chrome`, `edge`, or `firefox`. |
 | `--viewport` | `1280x800` | Viewport size for every page, as `WIDTHxHEIGHT`. The `resize` tool changes it per page at runtime. |
@@ -193,3 +229,5 @@ stdio inherits the trust of the local user that launched it and needs no token. 
 - [Accessibility Testing](accessibility-testing.md) -- the `audit_accessibility` tool runs the same WCAG rules
 - [Performance Testing](performance-testing.md) -- the `get_performance` tool collects the same Core Web Vitals
 - [Network Interception](network-interception.md) -- the route tools expose the same interception engine
+- [Attaching to a Running Browser](attaching-to-a-running-browser.md) -- `--connect` and `browser_attach` in full, including the security note
+- [Frames and iframes](frames-and-iframes.md) -- what `frame_select` scopes, and the two traps worth knowing

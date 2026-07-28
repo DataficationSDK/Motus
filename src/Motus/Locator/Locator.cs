@@ -227,7 +227,7 @@ internal sealed class Locator : ILocator
 
     // Produces a targeted ElementNotFoundException for scoped chains. For an unscoped locator the
     // default message is preserved. For a scoped chain we distinguish "parent matched nothing" from
-    // "parent matched but descendants were empty under every parent" — the latter is the portaled-
+    // "parent matched but descendants were empty under every parent". The latter is the portaled-
     // DOM failure mode that users hit with component libraries like Infragistics or MudBlazor.
     private ElementNotFoundException BuildNotFound(int baseMatchCount, int postScopeCount)
     {

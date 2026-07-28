@@ -27,6 +27,9 @@
     <InternalsVisibleTo Include="Motus.Runner" />
     <InternalsVisibleTo Include="Motus.Cli" />
     <InternalsVisibleTo Include="Motus.Cli.Tests" />
+    <!-- For the browser-process fixture the attach tests need: locating an executable and waiting
+         for its debugging endpoint to answer. -->
+    <InternalsVisibleTo Include="Motus.Mcp.Tests" />
   </ItemGroup>
 
   <ItemGroup>

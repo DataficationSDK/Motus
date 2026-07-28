@@ -152,12 +152,13 @@ public sealed class InteractionTools
     }
 
     [McpServerTool(Name = "wait_for", Title = "Wait for a page condition", Destructive = false, ReadOnly = true)]
-    [Description("Waits for a page condition: a fixed time, text to appear, or text to disappear. "
-        + "Provide exactly one of time, text, or text_gone.")]
+    [Description("Waits for a page condition: a fixed time, text to appear, or text to disappear. The text waits "
+        + "look at the scoped frame when one is selected, and at the page otherwise. Provide exactly one of "
+        + "time, text, or text_gone.")]
     public static async Task<CallToolResult> WaitForAsync(
         [Description("Time to wait in milliseconds.")] int? time,
-        [Description("Wait until this text appears anywhere on the page.")] string? text,
-        [Description("Wait until this text is gone from the page.")] string? text_gone,
+        [Description("Wait until this text appears anywhere on the page or the scoped frame.")] string? text,
+        [Description("Wait until this text is gone from the page or the scoped frame.")] string? text_gone,
         ActivePageService pageService,
         CancellationToken cancellationToken)
     {
@@ -171,17 +172,29 @@ public sealed class InteractionTools
                 return ToolResultHelper.Text($"Waited {ms} ms");
             }
 
+            // A frame's text is not in its parent's document, so a page-level wait for text that
+            // only ever appears inside a frame would run to its timeout every time.
+            var scope = pageService.GetActiveFrame();
+
             if (text is not null)
             {
-                await page.WaitForFunctionAsync<bool>(
-                    "(t) => !!document.body && document.body.innerText.includes(t)", text).ConfigureAwait(false);
+                const string appeared = "(t) => !!document.body && document.body.innerText.includes(t)";
+                if (scope is null)
+                    await page.WaitForFunctionAsync<bool>(appeared, text).ConfigureAwait(false);
+                else
+                    await scope.WaitForFunctionAsync<bool>(appeared, text).ConfigureAwait(false);
+
                 return ToolResultHelper.Text($"Text appeared: {text}");
             }
 
             if (text_gone is not null)
             {
-                await page.WaitForFunctionAsync<bool>(
-                    "(t) => !document.body || !document.body.innerText.includes(t)", text_gone).ConfigureAwait(false);
+                const string gone = "(t) => !document.body || !document.body.innerText.includes(t)";
+                if (scope is null)
+                    await page.WaitForFunctionAsync<bool>(gone, text_gone).ConfigureAwait(false);
+                else
+                    await scope.WaitForFunctionAsync<bool>(gone, text_gone).ConfigureAwait(false);
+
                 return ToolResultHelper.Text($"Text gone: {text_gone}");
             }
 

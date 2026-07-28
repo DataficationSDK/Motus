@@ -82,8 +82,14 @@ internal sealed class Frame : IFrame
 
     // --- Locator methods ---
 
+    public Task<AccessibilitySnapshot> AccessibilitySnapshotAsync(CancellationToken ct = default)
+        => _page.AccessibilitySnapshotAsync(this, ct);
+
     public ILocator Locator(string selector, LocatorOptions? options = null)
         => new Locator(this, selector, options);
+
+    public ILocator LocatorByBackendNodeId(long backendNodeId)
+        => new Locator(this, $"{BackendNodeIdSelectorStrategy.Prefix}={backendNodeId}");
 
     public ILocator GetByRole(string role, string? name = null)
         => name is not null

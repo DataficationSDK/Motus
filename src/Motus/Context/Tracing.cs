@@ -111,7 +111,7 @@ internal sealed class Tracing : ITracing
         catch
         {
             // CDP rejected start (e.g. browser-level trace already active outside our control).
-            // Roll back state so a retry — or another Tracing instance — can proceed.
+            // Roll back state so a retry, or another Tracing instance, can proceed.
             _started = 0;
             _pumpCts?.Cancel();
             _completeTcs?.TrySetCanceled();

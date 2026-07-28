@@ -243,8 +243,32 @@ internal sealed class FakeToolPage(AccessibilitySnapshot snapshot) : IPage
 #pragma warning restore CS0067
 
     public IBrowserContext Context => throw new NotImplementedException();
-    public IFrame MainFrame => throw new NotImplementedException();
-    public IReadOnlyList<IFrame> Frames => throw new NotImplementedException();
+
+    /// <summary>
+    /// The page's frame tree. Left unset, the page has a bare main frame and no children, which is
+    /// what every test that predates frame scoping assumes.
+    /// </summary>
+    public FakeToolFrame? FrameTree { get; set; }
+
+    public IFrame MainFrame => FrameTree ??= new FakeToolFrame(this, PageUrl);
+
+    public IReadOnlyList<IFrame> Frames
+    {
+        get
+        {
+            var flat = new List<IFrame>();
+            Collect(MainFrame, flat);
+            return flat;
+
+            static void Collect(IFrame frame, List<IFrame> into)
+            {
+                into.Add(frame);
+                foreach (var child in frame.ChildFrames)
+                    Collect(child, into);
+            }
+        }
+    }
+
     public string Url => PageUrl;
     public IKeyboard Keyboard => FakeKeyboard;
     public IMouse Mouse => FakeMouse;
@@ -840,4 +864,83 @@ internal sealed class FakeSessionPageService : ActivePageService
         _pages.Add(page);
         return page;
     }
+}
+
+/// <summary>
+/// A frame in a <see cref="FakeToolPage"/>'s tree, carrying its own accessibility snapshot and
+/// recording what was asked of it. Enough to drive frame scoping without a browser; the members
+/// scoping does not reach throw.
+/// </summary>
+internal sealed class FakeToolFrame(FakeToolPage page, string url, FakeToolFrame? parent = null) : IFrame
+{
+    private readonly List<IFrame> _children = [];
+
+    /// <summary>The tree this frame reports when asked for its accessibility snapshot.</summary>
+    public AccessibilitySnapshot Snapshot { get; set; } = new([], 0, null);
+
+    /// <summary>The last backend node id addressed through this frame.</summary>
+    public long? ResolvedBackendNodeId { get; private set; }
+
+    /// <summary>The expressions evaluated in this frame.</summary>
+    public List<string> Evaluated { get; } = [];
+
+    /// <summary>The function expressions waited on in this frame.</summary>
+    public List<string> WaitedFunctions { get; } = [];
+
+    public IPage Page => page;
+    public IFrame? ParentFrame => parent;
+    public string Name { get; set; } = string.Empty;
+    public string Url { get; set; } = url;
+    public IReadOnlyList<IFrame> ChildFrames => _children;
+    public bool IsDetached { get; set; }
+
+    /// <summary>Adds a child frame and returns it, for building a tree in a test.</summary>
+    public FakeToolFrame AddChild(string childUrl)
+    {
+        var child = new FakeToolFrame(page, childUrl, this);
+        _children.Add(child);
+        return child;
+    }
+
+    public Task<AccessibilitySnapshot> AccessibilitySnapshotAsync(CancellationToken ct = default)
+        => Task.FromResult(Snapshot);
+
+    public ILocator LocatorByBackendNodeId(long backendNodeId)
+    {
+        ResolvedBackendNodeId = backendNodeId;
+        return page.RecordingLocator;
+    }
+
+    public Task<T> EvaluateAsync<T>(string expression, object? arg = null)
+    {
+        Evaluated.Add(expression);
+        return Task.FromResult(default(T)!);
+    }
+
+    public Task<T> EvaluateAsync<T>(string expression, object? arg, EvaluateOptions options)
+        => EvaluateAsync<T>(expression, arg);
+
+    public Task<T> WaitForFunctionAsync<T>(string expression, object? arg = null, double? timeout = null)
+    {
+        WaitedFunctions.Add(expression);
+        return Task.FromResult(default(T)!);
+    }
+
+    public ILocator Locator(string selector, LocatorOptions? options = null) => page.RecordingLocator;
+    public ILocator GetByRole(string role, string? name = null) => page.RecordingLocator;
+    public ILocator GetByText(string text, bool? exact = null) => page.RecordingLocator;
+    public ILocator GetByLabel(string text, bool? exact = null) => page.RecordingLocator;
+    public ILocator GetByPlaceholder(string text, bool? exact = null) => page.RecordingLocator;
+    public ILocator GetByTestId(string testId) => page.RecordingLocator;
+    public ILocator GetByTitle(string text, bool? exact = null) => page.RecordingLocator;
+    public ILocator GetByAltText(string text, bool? exact = null) => page.RecordingLocator;
+
+    public Task<IResponse?> GotoAsync(string url, NavigationOptions? options = null) => throw new NotImplementedException();
+    public Task<string> ContentAsync() => throw new NotImplementedException();
+    public Task SetContentAsync(string html, NavigationOptions? options = null) => throw new NotImplementedException();
+    public Task<string> TitleAsync() => throw new NotImplementedException();
+    public Task WaitForLoadStateAsync(LoadState? state = null, double? timeout = null) => throw new NotImplementedException();
+    public Task WaitForURLAsync(string urlPattern, NavigationOptions? options = null) => throw new NotImplementedException();
+    public Task<IElementHandle> AddScriptTagAsync(string? url = null, string? content = null) => throw new NotImplementedException();
+    public Task<IElementHandle> AddStyleTagAsync(string? url = null, string? content = null) => throw new NotImplementedException();
 }

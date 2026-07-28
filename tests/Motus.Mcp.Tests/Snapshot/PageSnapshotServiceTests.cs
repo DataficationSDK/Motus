@@ -165,7 +165,13 @@ public class PageSnapshotServiceTests
 
         public IBrowserContext Context => throw new NotImplementedException();
         public IFrame MainFrame => throw new NotImplementedException();
-        public IReadOnlyList<IFrame> Frames => throw new NotImplementedException();
+
+        /// <summary>
+        /// A page with no frames of its own. These tests are about how a tree is rendered and how
+        /// its refs resolve, and a page-level snapshot reads this to decide whether to say that
+        /// content is sitting in a frame it did not describe.
+        /// </summary>
+        public IReadOnlyList<IFrame> Frames => [];
         public string Url => throw new NotImplementedException();
         public IKeyboard Keyboard => throw new NotImplementedException();
         public IMouse Mouse => throw new NotImplementedException();

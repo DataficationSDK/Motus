@@ -44,21 +44,55 @@ The launch sequence runs in the following order:
 
 ## Connecting to an existing browser
 
-`MotusLauncher.ConnectAsync` attaches to a browser that is already running and listening for CDP connections.
+`MotusLauncher.ConnectAsync` attaches to a browser that is already running and listening for CDP connections. For the task-focused version of this, including how to start such a browser and what attaching is good for, see [Attaching to a Running Browser](../guides/attaching-to-a-running-browser.md).
 
 ```csharp
+IBrowser browser = await MotusLauncher.ConnectAsync("http://127.0.0.1:9222");
 IBrowser browser = await MotusLauncher.ConnectAsync("ws://localhost:9222/devtools/browser/...");
 ```
 
+Either endpoint form is accepted. `ResolveWebSocketEndpointAsync` passes a `ws`/`wss` URI straight through, and for an `http`/`https` endpoint fetches `/json/version` and reads `webSocketDebuggerUrl` from it. Both forms exist because the HTTP endpoint is the one a caller who chose the port already knows.
+
 The sequence is simpler than a launch:
 
-1. A `CdpSocket` and `CdpTransport` are created without a `SlowMo` delay.
-2. The transport connects directly to the supplied WebSocket URI.
+1. A `CdpSocket` and `CdpTransport` are created, with the `SlowMo` delay from `ConnectOptions` if one was set.
+2. The transport connects to the resolved WebSocket URI.
 3. A `CdpSessionRegistry` wraps the transport.
 4. A `Browser` is constructed with `process: null` and `tempUserDataDir: null`. Signal handlers are not registered (`handleSigint: false`, `handleSigterm: false`) because Motus does not own the process.
-5. `InitializeAsync` runs identically to the launch path.
+5. `InitializeAsync` runs identically to the launch path, and additionally adopts existing targets when `ConnectOptions.AdoptExistingTargets` is true, which is the default.
 
-Because no process or temp directory is owned, `DisposeAsync` on a connected browser only closes the WebSocket transport.
+The whole connect is bounded by `ConnectOptions.Timeout` (default 30 seconds). Neither the WebSocket handshake nor target adoption carries a bound of its own, so an endpoint that accepts a connection and then answers nothing would otherwise hold the caller for good.
+
+### Target adoption
+
+Adoption is what makes `browser.Contexts` and `context.Pages` reflect the browser as it actually is, with no further call. `Target.getTargets` is read on the browser-level session, and for each page target:
+
+- The browser context it belongs to is created as an adopted `BrowserContext`, or reused if already seen. A context with no `browserContextId` is the browser's default context.
+- `Target.attachToTarget` with `flatten: true` opens a session for the page, and a `Page` is built around it and initialized exactly as a created page is, including `Page.setInterceptFileChooserDialog`.
+
+That last point has a consequence worth knowing: while Motus is attached, a file picker opened by the person using the browser is intercepted and does not appear.
+
+Targets appearing and disappearing after connect are tracked through `Target.attachedToTarget` and `Target.detachedFromTarget`, so a long-lived session stays accurate rather than describing a snapshot taken at connect time.
+
+### Ownership
+
+`IBrowser.OwnsProcess` reports whether Motus started the browser. It is the flag every teardown path keys off.
+
+| Call | `OwnsProcess: true` | `OwnsProcess: false` |
+|---|---|---|
+| `CloseAsync` | Closes contexts, sends `Browser.close`, waits for the process, kills it if it overstays | Closes contexts Motus created, then drops the transport. `Browser.close` is never sent |
+| `DisconnectAsync` | Drops the transport and leaves the process running | Drops the transport |
+| `DisposeAsync` | Kills the process without the grace period, deletes an owned temp profile | Drops the transport |
+
+An adopted `BrowserContext` carries the same distinction one level down. Closing one releases its pages from Motus and unloads its plugins, but `Target.disposeBrowserContext` is not sent, so windows belonging to whoever is using the browser survive. Page disposal is likewise local: `Page.DisposeAsync` tears down Motus's own state and does not send `Target.closeTarget`.
+
+`DisconnectAsync` exists so intent is visible at the call site. For an attached browser it does what `CloseAsync` does; for a launched one it is the only way to walk away from a browser without ending it.
+
+### When the connection drops
+
+`IBrowser.IsConnected` goes false and the `Disconnected` event fires, exactly as for a launched browser. Handles taken before that point are not silently wrong: operations on them fail with a disconnection error rather than appearing to succeed.
+
+For an attached browser, a dropped connection says nothing about whether the browser is still running, so reconnecting to the same endpoint is the correct recovery and fails cleanly if the browser really is gone. This is what the MCP server's session manager does; see [Health detection](#health-detection) below.
 
 ---
 
@@ -227,7 +261,7 @@ Both handlers are guarded by an `Interlocked.CompareExchange` on `_disconnectedF
 
 **`IBrowser.IsHealthy`.** The `IsHealthy` property (defined as a default interface member on `IBrowser`) returns `true` when the browser is connected. The `Browser` implementation overrides this with a process-aware check: `_isConnected && (_process is null || !_process.HasExited)`. For browsers obtained via `ConnectAsync` (no process ownership), `IsHealthy` is equivalent to `IsConnected`.
 
-**Recovery built on health detection.** `IsHealthy` and the `Disconnected` event are the primitives consumers use to survive a dead browser rather than fail for good. The browser pool relaunches replacements proactively (see [Browser pooling](#browser-pooling) below). A single-browser holder, such as the MCP server's session manager, instead checks `IsHealthy` lazily on the next use: finding the cached browser unhealthy, it disposes it and launches a fresh one in its place, so a crash costs one failed operation rather than the whole session.
+**Recovery built on health detection.** `IsHealthy` and the `Disconnected` event are the primitives consumers use to survive a dead browser rather than fail for good. The browser pool relaunches replacements proactively (see [Browser pooling](#browser-pooling) below). A single-browser holder, such as the MCP server's session manager, instead checks `IsHealthy` lazily on the next use: finding the cached browser unhealthy, it disposes it and acquires another in its place, so a crash costs one failed operation rather than the whole session. Where that replacement comes from follows ownership. A browser the holder started is started again; one it connected to is connected to again at the same endpoint, since a browser it did not start is not one it can start.
 
 ### Signal handlers
 
@@ -305,5 +339,7 @@ The returned `IBrowserLease` holds the browser and a return callback. Disposing 
 - `src/Motus.Abstractions/IBrowser.cs`, `IBrowserContext.cs`, `IPage.cs` - public contracts
 - `src/Motus.Abstractions/IBrowserPool.cs` - pool and lease contracts
 - `src/Motus.Abstractions/Options/LaunchOptions.cs` - launch configuration reference
+- `src/Motus.Abstractions/Options/ConnectOptions.cs` - attach configuration reference
 - `src/Motus.Abstractions/Options/BrowserPoolOptions.cs` - pool configuration reference
 - `docs/architecture/overview.md` - high-level architecture overview
+- [Attaching to a Running Browser](../guides/attaching-to-a-running-browser.md) - the task-focused guide to connecting

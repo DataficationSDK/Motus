@@ -4,6 +4,12 @@ using Motus.Abstractions;
 namespace Motus.Mcp;
 
 /// <summary>
+/// One frame of the active page, and how deeply it is nested inside it. Depth is carried because
+/// the flat list is the addressing scheme and the nesting is otherwise invisible in it.
+/// </summary>
+public sealed record FrameEntry(IFrame Frame, int Depth);
+
+/// <summary>
 /// Resolves the page that unscoped tool calls act on and keeps the per-page
 /// snapshot service alive between calls. Tool invocations arrive as individually
 /// stateless messages, so the ref map a <c>snapshot</c> produced has to survive
@@ -26,6 +32,7 @@ public class ActivePageService
     private readonly ConditionalWeakTable<IPage, PageSnapshotService> _snapshots = new();
 
     private IPage? _activePage;
+    private IFrame? _activeFrame;
     private int _activePageGeneration;
     private int _disposed;
 
@@ -112,10 +119,17 @@ public class ActivePageService
     /// resolve. Called after a navigation, which invalidates those refs; a
     /// subsequent ref-addressed call then reports that a fresh snapshot is needed.
     /// </summary>
+    /// <remarks>
+    /// The frame selection is dropped here too. Every tool that navigates or switches tabs already
+    /// calls this and none of them leave the selected frame meaningful, while <c>snapshot</c> does
+    /// not call it, which is exactly the split that would be tedious to maintain by hand at each
+    /// call site.
+    /// </remarks>
     public void InvalidateSnapshot(IPage page)
     {
         ArgumentNullException.ThrowIfNull(page);
         _snapshots.Remove(page);
+        _activeFrame = null;
     }
 
     /// <summary>
@@ -130,6 +144,7 @@ public class ActivePageService
         // protocol delivers one at a time, so there is no concurrent reader of the
         // active page to race against here.
         _activePage = page;
+        _activeFrame = null;
         _activePageGeneration = _sessions.Generation;
         SubscribeObservers(page);
     }
@@ -151,7 +166,73 @@ public class ActivePageService
     /// Used after closing a tab or switching context, where the previously active
     /// page may no longer belong to the active context.
     /// </summary>
-    public void ResetActivePage() => _activePage = null;
+    public void ResetActivePage()
+    {
+        _activePage = null;
+        _activeFrame = null;
+    }
+
+    /// <summary>
+    /// Lists the frames of the active page in document order, the main frame first, each with how
+    /// deeply it is nested. The index of each entry is what <see cref="SelectFrameAsync"/> takes.
+    /// </summary>
+    /// <remarks>
+    /// The tree is walked from the main frame rather than read from <see cref="IPage.Frames"/>, so
+    /// the order is the order of the documents rather than the order they happened to be
+    /// discovered in. A frame that arrives late, which is the ordinary case for one the browser
+    /// puts in its own process, would otherwise land in an arbitrary place in the list.
+    /// </remarks>
+    public virtual async Task<IReadOnlyList<FrameEntry>> ListFramesAsync(CancellationToken cancellationToken = default)
+    {
+        var page = await GetOrCreateActivePageAsync(cancellationToken).ConfigureAwait(false);
+        var entries = new List<FrameEntry>();
+        Collect(page.MainFrame, depth: 0, entries);
+        return entries;
+
+        static void Collect(IFrame frame, int depth, List<FrameEntry> into)
+        {
+            into.Add(new FrameEntry(frame, depth));
+            foreach (var child in frame.ChildFrames)
+                Collect(child, depth + 1, into);
+        }
+    }
+
+    /// <summary>
+    /// Makes the frame at the given index the one that perception and evaluation act on. Index 0 is
+    /// the main frame and returns the session to page scope.
+    /// </summary>
+    /// <exception cref="IndexOutOfRangeException">The index is outside the frame range.</exception>
+    public async Task<IFrame> SelectFrameAsync(int index, CancellationToken cancellationToken = default)
+    {
+        var frames = await ListFramesAsync(cancellationToken).ConfigureAwait(false);
+        if (index < 0 || index >= frames.Count)
+            throw new IndexOutOfRangeException(
+                $"Frame index {index} is out of range; the page has {frames.Count} frame(s). "
+                + "Use frame_list to see them.");
+
+        var frame = frames[index].Frame;
+
+        // The main frame is page scope, so selecting it clears the scope rather than recording it.
+        // Nothing downstream then has to treat "the main frame" as a special case of a frame.
+        _activeFrame = index == 0 ? null : frame;
+        return frame;
+    }
+
+    /// <summary>
+    /// Returns the frame the session is scoped to, or null when it is scoped to the page.
+    /// </summary>
+    /// <remarks>
+    /// A frame that has since been removed from its page is dropped here rather than handed back.
+    /// Otherwise the failure surfaces as an unrelated protocol error on whatever call happened to
+    /// use it next.
+    /// </remarks>
+    public IFrame? GetActiveFrame()
+    {
+        if (_activeFrame is { IsDetached: true })
+            _activeFrame = null;
+
+        return _activeFrame;
+    }
 
     /// <summary>The names of the currently open contexts.</summary>
     public virtual IReadOnlyCollection<string> GetContextNames() => _sessions.ContextNames;
@@ -282,6 +363,26 @@ public class ActivePageService
         await _sessions.CloseContextAsync(name, cancellationToken).ConfigureAwait(false);
         ResetActivePage();
     }
+
+    /// <summary>
+    /// Points the session at a browser that is already running and forgets the active page, so the
+    /// next request resolves one from what that browser already has open. Touches the browser, so
+    /// tests override it.
+    /// </summary>
+    public virtual async Task AttachAsync(string endpoint, CancellationToken cancellationToken = default)
+    {
+        await _sessions.AttachAsync(endpoint, cancellationToken).ConfigureAwait(false);
+        ResetActivePage();
+    }
+
+    /// <summary>Whether the live browser is one this session connected to rather than started.</summary>
+    public virtual bool IsAttached => _sessions.IsAttached;
+
+    /// <summary>The endpoint this session attaches to, or null when it starts its own browser.</summary>
+    public virtual string? Endpoint => _sessions.Endpoint;
+
+    /// <summary>Whether a browser has been acquired yet.</summary>
+    public virtual bool IsBrowserLaunched => _sessions.IsBrowserLaunched;
 
     /// <summary>
     /// Releases this service's own resources. Pages and contexts are owned by

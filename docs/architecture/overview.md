@@ -42,7 +42,7 @@ The stack has four layers. Test code at the top calls high-level abstractions; t
 ├────────────────────────────────────────────────────────┤
 │               Transport Layer                          │
 │   CdpTransport (Chromium)  |  BiDiTransport (Firefox)  │
-│   CdpSocket — raw WebSocket, no Node.js, no driver     │
+│   CdpSocket: raw WebSocket, no Node.js, no driver      │
 ├────────────────────────────────────────────────────────┤
 │               Browser Process                          │
 │   Chrome / Edge / Firefox (launched or connected)      │

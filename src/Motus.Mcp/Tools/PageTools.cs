@@ -112,11 +112,13 @@ public sealed class PageTools
     [McpServerTool(Name = "evaluate", Title = "Evaluate JavaScript", Destructive = true)]
     [Description("Evaluates a JavaScript expression and returns its result as structured JSON under a \"result\" "
         + "key, so an expression may return a value of any shape: a number, a string, an array, or an object. "
-        + "With no ref it runs in the page; with a ref it runs against that element, passed as the function's "
-        + "argument. Results that cannot be serialized (undefined, functions, DOM nodes) come back as null.")]
+        + "With no ref it runs in the page, or in the scoped frame when one is selected; with a ref it runs "
+        + "against that element, passed as the function's argument. Results that cannot be serialized "
+        + "(undefined, functions, DOM nodes) come back as null.")]
     public static async Task<CallToolResult> EvaluateAsync(
         [Description("The JavaScript expression to evaluate.")] string expression,
-        [Description("An element ref from the latest snapshot to evaluate against. Omit to evaluate in the page.")] string? @ref,
+        [Description("An element ref from the latest snapshot to evaluate against. Omit to evaluate in the page "
+            + "or the scoped frame.")] string? @ref,
         ActivePageService pageService,
         CancellationToken cancellationToken)
     {
@@ -126,7 +128,13 @@ public sealed class PageTools
 
             if (string.IsNullOrEmpty(@ref))
             {
-                var pageResult = await page.EvaluateAsync<JsonElement>(expression).ConfigureAwait(false);
+                // The frame's main world, not an isolated one: an agent evaluating here is reading
+                // what the application defined, and an isolated world is precisely where that is
+                // not visible.
+                var scope = pageService.GetActiveFrame();
+                var pageResult = scope is null
+                    ? await page.EvaluateAsync<JsonElement>(expression).ConfigureAwait(false)
+                    : await scope.EvaluateAsync<JsonElement>(expression).ConfigureAwait(false);
                 return EvaluationResult(pageResult);
             }
 

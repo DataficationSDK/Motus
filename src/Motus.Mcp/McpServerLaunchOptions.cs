@@ -9,6 +9,19 @@ namespace Motus.Mcp;
 /// </summary>
 public sealed record McpServerLaunchOptions
 {
+    /// <summary>
+    /// The debugging endpoint of a browser that is already running. When set, the session connects
+    /// to that browser instead of starting one, and drives whatever is already open in it.
+    /// </summary>
+    /// <remarks>
+    /// Either form of endpoint is accepted: the CDP WebSocket URL, or the HTTP debugging endpoint
+    /// the browser was started with, such as <c>http://127.0.0.1:9222</c>.
+    ///
+    /// A browser reached this way is not owned. The options below that describe how to start a
+    /// browser, and the ones that bind when a context is created, have nothing to apply to.
+    /// </remarks>
+    public string? Endpoint { get; init; }
+
     /// <summary>Whether the browser runs without a visible window. Defaults to true.</summary>
     public bool Headless { get; init; } = true;
 
@@ -67,6 +80,14 @@ public sealed record McpServerLaunchOptions
         // injected at page creation and metrics are gathered after each navigation,
         // so get_performance has data to return. The overhead is negligible.
         Performance = new PerformanceOptions { Enable = true },
+    };
+
+    /// <summary>Maps these options onto the options for connecting to a running browser.</summary>
+    internal ConnectOptions ToConnectOptions() => new()
+    {
+        // The point of attaching is to drive what is already open, so the contexts and pages the
+        // browser already has are adopted rather than ignored.
+        AdoptExistingTargets = true,
     };
 
     /// <summary>Maps these options onto the context options for new contexts.</summary>

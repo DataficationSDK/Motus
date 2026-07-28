@@ -20,6 +20,12 @@ public static class McpCommand
             Description = "Browser channel to drive (chromium, chrome, edge, firefox)",
             DefaultValueFactory = _ => "chromium",
         };
+        var connectOpt = new Option<string?>("--connect")
+        {
+            Description = "Drive a browser that is already running instead of starting one. Takes the "
+                + "debugging endpoint it was started with (http://127.0.0.1:9222) or its CDP WebSocket "
+                + "URL. The browser is never closed by the server",
+        };
         var httpOpt = new Option<bool>("--http")
         {
             Description = "Serve over Streamable HTTP for concurrent remote clients instead of stdio",
@@ -66,6 +72,7 @@ public static class McpCommand
         {
             headlessOpt,
             channelOpt,
+            connectOpt,
             httpOpt,
             hostOpt,
             portOpt,
@@ -95,18 +102,37 @@ public static class McpCommand
                 }
             }
 
-            // Prefer a browser installed via `motus install`; if none is found,
+            var endpoint = parseResult.GetValue(connectOpt);
+            var attaching = !string.IsNullOrEmpty(endpoint);
+
+            // Resolving a browser to start is pointless when one is already running and waiting to
+            // be connected to. Prefer a browser installed via `motus install`; if none is found,
             // leave the path unset so the framework auto-detects a system browser.
-            var executablePath = BrowserPathHelper.Resolve(channelText);
+            var executablePath = attaching ? null : BrowserPathHelper.Resolve(channelText);
 
             // Natural motion defaults to the cursor flag so a single --show-cursor gives a
             // legible, human-looking capture; --natural-mouse overrides either way.
             var showCursor = parseResult.GetValue(showCursorOpt);
             var naturalMouse = parseResult.GetValue(naturalMouseOpt) ?? showCursor;
 
+            if (attaching)
+            {
+                await ReportOptionsThatDoNotApplyAsync(
+                    parseResult,
+                    [headlessOpt, channelOpt, viewportOpt, recordVideoOpt, showCursorOpt, naturalMouseOpt]);
+
+                if (useHttp)
+                {
+                    await Console.Error.WriteLineAsync(
+                        "Warning: --http gives each client its own isolated browser, but --connect points "
+                        + "every session at the same one. Clients will share tabs and cookies.");
+                }
+            }
+
             var defaults = new McpServerLaunchOptions();
             var launchOptions = new McpServerLaunchOptions
             {
+                Endpoint = attaching ? endpoint : null,
                 Headless = headless,
                 ExecutablePath = executablePath,
                 Viewport = viewport ?? defaults.Viewport,
@@ -147,6 +173,31 @@ public static class McpCommand
         });
 
         return cmd;
+    }
+
+    /// <summary>
+    /// Says which of the given options were passed but have nothing to act on, because the browser
+    /// was started by somebody else and its context is adopted rather than created.
+    /// </summary>
+    /// <remarks>
+    /// Only options the user actually typed are named. Silently ignoring them would leave someone
+    /// wondering for a while why <c>--viewport</c> changed nothing.
+    /// </remarks>
+    private static async Task ReportOptionsThatDoNotApplyAsync(
+        System.CommandLine.ParseResult parseResult, IReadOnlyList<Option> candidates)
+    {
+        var given = candidates
+            .Where(option => parseResult.GetResult(option) is { Implicit: false })
+            .Select(option => option.Name)
+            .ToArray();
+
+        if (given.Length == 0)
+            return;
+
+        await Console.Error.WriteLineAsync(
+            $"Note: {string.Join(", ", given)} {(given.Length == 1 ? "has" : "have")} no effect with "
+            + "--connect. The browser is already running, and its context is adopted rather than created. "
+            + "Use the resize tool to change the viewport of a page.");
     }
 
     private static Motus.Abstractions.ViewportSize? ParseViewport(string text)

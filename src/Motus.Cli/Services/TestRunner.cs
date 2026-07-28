@@ -87,7 +87,7 @@ public sealed class TestRunner(int maxWorkers)
 
         var tasks = tests.Select(async test =>
         {
-            // Skip ignored tests entirely — don't fire reporter events
+            // Skip ignored tests entirely, without firing reporter events
             if (test.IsIgnored)
                 return;
 

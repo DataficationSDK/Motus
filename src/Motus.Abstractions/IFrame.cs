@@ -190,6 +190,33 @@ public interface IFrame
     Task WaitForURLAsync(string urlPattern, NavigationOptions? options = null);
 
     /// <summary>
+    /// Returns the accessibility tree of this frame's document.
+    /// </summary>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The frame's accessibility tree, with each node carrying the backend DOM node
+    /// identifier that <see cref="LocatorByBackendNodeId"/> can target.</returns>
+    /// <remarks>
+    /// The tree stops at this frame's document. A child frame appears as the element that hosts it
+    /// and nothing more, so reading inside a child means asking that frame in turn. This is the
+    /// only way to see into a frame the browser renders in its own process, whose contents the
+    /// page's own tree does not contain at all.
+    /// </remarks>
+    Task<AccessibilitySnapshot> AccessibilitySnapshotAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Creates a locator for the element with the given backend DOM node identifier, as reported by
+    /// <see cref="AccessibilitySnapshotAsync"/>.
+    /// </summary>
+    /// <param name="backendNodeId">The backend DOM node identifier.</param>
+    /// <returns>A locator for that element, resolved through this frame.</returns>
+    /// <remarks>
+    /// Backend node identifiers last only as long as the snapshot that reported them, and are
+    /// resolved against the session that owns this frame, so a node read from one frame's tree must
+    /// be addressed through that same frame.
+    /// </remarks>
+    ILocator LocatorByBackendNodeId(long backendNodeId);
+
+    /// <summary>
     /// Adds a script tag to the frame.
     /// </summary>
     /// <param name="url">URL of the script to add.</param>

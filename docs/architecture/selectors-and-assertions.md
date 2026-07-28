@@ -29,6 +29,18 @@ Five strategies are registered at startup. The prefix is the string that appears
 | CSS | `css` | 10 | `querySelectorAll` with optional recursive shadow DOM traversal |
 | XPath | `xpath` | 10 | `document.evaluate` with `ORDERED_NODE_SNAPSHOT_TYPE`; no shadow piercing |
 
+### Resolution scope: the page, or one frame
+
+Every strategy resolves against a frame, and which frame that is comes from where the locator was built. A locator from `IPage` is rooted at the main frame; one from `IFrame` is rooted at that frame and resolves in that frame's document only. A selector that would match in two frames matches just the one the locator came from.
+
+The frame root decides two things at once: the execution context the strategy queries in, and the protocol session the query is sent on. For a frame the browser renders in its own process, the session is the frame's own rather than the page's, and every element handle the strategy returns is bound to that session. Neither is visible to the caller, and code written for a same-process frame works unchanged when the browser isolates it.
+
+One consequence is worth stating because it is easy to assume otherwise. A backend node identifier, and the `_node` selector built from it, is only meaningful on the session that reported it. A node read from one frame's accessibility tree has to be addressed through that same frame.
+
+Measurement follows the same root. `ILocator.BoundingBoxAsync` reports page coordinates for a frame-rooted locator, so a box can be handed to `page.Mouse` directly, which is where input is dispatched.
+
+See [Frames and iframes](../guides/frames-and-iframes.md) for the caller-facing view.
+
 ### TestId Strategy
 
 `TestIdSelectorStrategy` accepts a configurable attribute name in its constructor (default `"data-testid"`). The `StrategyName` property returns the configured attribute name, so registering the strategy with a different attribute (for example, `"data-cy"`) also changes the prefix used in selector strings.
@@ -208,3 +220,5 @@ Custom conditions are registered with the plugin system alongside custom selecto
 - `Motus.Abstractions/Plugins/IWaitCondition.cs` - full interface contract for custom wait conditions
 - `docs/architecture/overview.md` - plugin registration and extensibility model
 - `docs/architecture/browser-lifecycle.md` - frame and page lifecycle relevant to selector resolution scope
+- `docs/guides/frames-and-iframes.md` - frame-rooted locators from the caller's side
+- `docs/architecture/transport-and-protocol.md` - how a frame reaches the session that owns it

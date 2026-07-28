@@ -56,6 +56,38 @@ Event subscriptions are surfaced as `IAsyncEnumerable<TEvent>` via `SubscribeAsy
 
 Properties are serialized and deserialized using `[property: JsonPropertyName("...")]` on all generated record parameters. The `CdpCommandEnvelope` sent over the wire always carries `id`, `method`, `params`, and an optional `sessionId` field.
 
+### Flattened sessions, and a session per target
+
+Every session runs over the one WebSocket. `Target.attachToTarget` and `Target.setAutoAttach` are always sent with `flatten: true`, so the browser reports a new target's messages on the same connection tagged with a `sessionId`, rather than requiring a nested `Target.sendMessageToTarget` wrapper. The session is a routing key, not a second socket.
+
+`CdpSessionRegistry` holds one `CdpSession` per session ID, plus the browser-level session whose ID is null. Sessions are created when a target is attached and removed when it detaches, at which point `RemoveChannelsForSession` completes and drops that session's event channels.
+
+Three kinds of target get a session of their own:
+
+- **A page.** Created explicitly by `Target.createTarget` plus `Target.attachToTarget`, or found during adoption when connecting to a running browser.
+- **A frame the browser renders in its own process.** Reported through `Target.attachedToTarget` with a target type of `iframe`. For such a frame the target ID **is** the frame ID, which is what lets the child entry the parent already reported and the separately attached target be recognized as one frame rather than two.
+- **Anything else the browser auto-attaches**, such as workers. Nothing tracks these today.
+
+**Auto-attach is armed per session, not once.** `Target.setAutoAttach` covers one level, so it is sent on the page's session and again on every frame session adopted through it. Without the re-arm, a frame inside an out-of-process frame is never reported at all, and two levels is an ordinary page rather than an exotic one.
+
+**Each session needs its own event pump.** Event channels are keyed by `"Domain.eventName|sessionId"`, so a subscription on the page session never sees a frame target's events. Adopting a frame target therefore starts a second pump on the new session for frame lifecycle, execution contexts, console output, uncaught exceptions, and nested attach and detach. Console output and page errors from those frames are forwarded to the owning page, which is why an out-of-process frame's `console.log` still reaches `IPage.Console`.
+
+**Execution context IDs are numbered per session.** Two renderers will both hand out context 1, so the map from context to frame is keyed by session and context together. A frame's context ID is only meaningful on the session that owns that frame, and every call site pairs the two.
+
+### Routing a frame to its session
+
+`Page.SessionFor(IFrame?)` is the single lookup. A frame that owns a session is routed to it; every other frame, including a same-process child of an out-of-process frame, falls through to the page's own session. That fallback is what keeps every existing round trip byte-identical.
+
+Because adoption is driven by an event, a caller can hold a frame before its session has finished initializing. The initialization task is recorded while it runs and awaited by anything that reaches the frame, so a locator against a frame that has just appeared waits rather than failing for being early.
+
+One measurement does not follow this pattern automatically. A renderer reports box-model quads against its own local root, so for a frame in its own process the coordinates are frame-local and know nothing about where the frame was embedded. `DOM.getFrameOwner` on the parent's session gives the hosting element, whose content-box origin is the offset, accumulated across every process boundary up to the page. Input needs none of this: `Input.dispatchMouseEvent` stays on the page session in page coordinates and the browser routes hit-testing itself.
+
+**`Target.detachedFromTarget` is not the same as a frame being removed.** A cross-origin frame that navigates back to its parent's origin gives up its target and keeps existing. Detach drops the session routing, the cached isolated world, and the execution-context entries, and leaves the frame in place. `Page.frameDetached` from the parent stays the only signal that a frame has actually gone away.
+
+### Isolated worlds
+
+`Page.createIsolatedWorld` creates a world that shares a frame's document but not its globals, on the session that owns the frame. The resulting execution context is cached per frame and dropped when the frame navigates, since the world belongs to that document. Callers select one through `EvaluateOptions.World`; the main world is the default.
+
 ---
 
 ## BiDi Transport
@@ -176,3 +208,4 @@ This design has two consequences:
 - [Plugin Interfaces](../extensions/plugin-interfaces.md) - extensibility hooks and registration
 - [Architecture Overview](overview.md) - project structure and data flow
 - [Browser Lifecycle](browser-lifecycle.md) - launch, connection, and disposal
+- [Frames and iframes](../guides/frames-and-iframes.md) - the frame model this session routing sits under

@@ -26,7 +26,7 @@ internal sealed class CdpTransport : IMotusTransport
     // while the transport is still owned by callers that haven't disposed it yet.
     // Without this flag, SendRawAsync would happily enqueue new commands after the
     // receive loop has exited, then wait the full CommandTimeout (60s) per command
-    // for responses that can never arrive — turning post-disconnect cleanup paths
+    // for responses that can never arrive, turning post-disconnect cleanup paths
     // (e.g. coverage teardown firing many getScriptSource calls) into multi-minute
     // hangs.
     private volatile bool _disconnected;

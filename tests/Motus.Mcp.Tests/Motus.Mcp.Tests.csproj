@@ -26,4 +26,15 @@
     <ProjectReference Include="..\..\src\Motus.Abstractions\Motus.Abstractions.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!--
+      The two-origin fixture that produces a frame the browser renders in its own process. Linked
+      rather than copied so there is one definition of what "cross-origin" means in the test suite:
+      it encodes which loopback hosts count as different sites and which browser flags force the
+      isolation, and a second copy would drift from the engine tests that rely on the same facts.
+    -->
+    <Compile Include="..\Motus.Tests\Page\CrossOriginFixtureServer.cs"
+             Link="Tools\CrossOriginFixtureServer.cs" />
+  </ItemGroup>
+
 </Project>

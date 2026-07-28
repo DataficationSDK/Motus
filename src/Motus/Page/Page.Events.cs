@@ -54,7 +54,7 @@ internal sealed partial class Page
             CdpJsonContext.Default.RuntimeBindingCalledEvent,
             OnBindingCalled, ct);
 
-        // Fetch auth required (HTTP credentials) — requires CDP Fetch domain
+        // Fetch auth required (HTTP credentials), requires CDP Fetch domain
         if (_context.Options?.HttpCredentials is not null
             && (_session.Capabilities & MotusCapabilities.FetchInterception) != 0)
         {

@@ -93,9 +93,34 @@ internal sealed class FakeBrowser : IBrowser
 
     public bool IsConnected { get; set; } = true;
     public bool IsHealthy { get; set; } = true;
-    public bool OwnsProcess => false;
+
+    /// <summary>
+    /// Whether this browser models one Motus started. False by default, which is what the recovery
+    /// tests want and what a browser reached by connecting reports.
+    /// </summary>
+    public bool OwnsProcess { get; set; }
+
     public bool DisposeCalled { get; private set; }
+
+    /// <summary>Whether <see cref="CloseAsync"/> was called, which for an owned browser ends it.</summary>
+    public bool CloseCalled { get; private set; }
+
+    /// <summary>Whether <see cref="DisconnectAsync"/> was called, which never ends the browser.</summary>
+    public bool DisconnectCalled { get; private set; }
+
     public string Version => "FakeBrowser/1.0";
+
+    /// <summary>
+    /// Adds a context without going through <see cref="NewContextAsync"/>, modelling one that was
+    /// already open in a browser before this session connected to it.
+    /// </summary>
+    public RecoverableFakeContext SeedExistingContext()
+    {
+        var context = new RecoverableFakeContext(this);
+        lock (_contexts)
+            _contexts.Add(context);
+        return context;
+    }
 
     public IReadOnlyList<IBrowserContext> Contexts
     {
@@ -126,12 +151,19 @@ internal sealed class FakeBrowser : IBrowser
 
     public Task CloseAsync()
     {
+        CloseCalled = true;
         IsConnected = false;
         IsHealthy = false;
         return Task.CompletedTask;
     }
 
-    public Task DisconnectAsync() => CloseAsync();
+    public Task DisconnectAsync()
+    {
+        DisconnectCalled = true;
+        IsConnected = false;
+        IsHealthy = false;
+        return Task.CompletedTask;
+    }
 
     public ValueTask DisposeAsync()
     {
@@ -149,6 +181,9 @@ internal sealed class FakeBrowser : IBrowser
 internal sealed class RecoverableFakeContext(FakeBrowser browser) : IBrowserContext
 {
     private readonly List<IPage> _pages = [];
+
+    /// <summary>Whether this context was closed, which for an adopted one must never happen.</summary>
+    public bool CloseCalled { get; private set; }
 
     public IBrowser Browser => browser;
 
@@ -170,7 +205,12 @@ internal sealed class RecoverableFakeContext(FakeBrowser browser) : IBrowserCont
     }
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
-    public Task CloseAsync() => Task.CompletedTask;
+
+    public Task CloseAsync()
+    {
+        CloseCalled = true;
+        return Task.CompletedTask;
+    }
 
 #pragma warning disable CS0067 // events are part of the interface but unused in this fake
     public event EventHandler<IPage>? Page;

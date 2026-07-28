@@ -20,7 +20,14 @@ internal sealed class AccessibilityTreeQuery
     /// Ignored nodes are excluded from the returned tree but their count is tracked.
     /// For non-CDP transports, returns an empty tree with a diagnostic message.
     /// </summary>
-    internal async Task<AccessibilityTreeResult> GetTreeAsync(CancellationToken ct)
+    /// <param name="ct">Cancellation token.</param>
+    /// <param name="frameId">
+    /// The frame whose document to read. Omitted, the session's own root document is read, which
+    /// for a page session includes every frame it hosts. Naming a frame is what narrows the tree to
+    /// that frame alone, and it is required rather than optional for a frame in its own process,
+    /// whose nodes are not in the page's tree at all.
+    /// </param>
+    internal async Task<AccessibilityTreeResult> GetTreeAsync(CancellationToken ct, string? frameId = null)
     {
         if ((_session.Capabilities & MotusCapabilities.AccessibilityTree) == 0)
         {
@@ -40,7 +47,7 @@ internal sealed class AccessibilityTreeQuery
 
         var result = await _session.SendAsync(
             "Accessibility.getFullAXTree",
-            new AccessibilityGetFullAXTreeParams(),
+            new AccessibilityGetFullAXTreeParams(FrameId: frameId),
             CdpJsonContext.Default.AccessibilityGetFullAXTreeParams,
             CdpJsonContext.Default.AccessibilityGetFullAXTreeResult,
             ct).ConfigureAwait(false);

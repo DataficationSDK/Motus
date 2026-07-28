@@ -12,6 +12,7 @@ public sealed class PageSnapshotService
     private readonly IPage _page;
     private IReadOnlyDictionary<string, long>? _refToBackendNodeId;
     private IReadOnlyDictionary<long, string>? _backendNodeIdToRef;
+    private IFrame? _refFrame;
 
     public PageSnapshotService(IPage page)
     {
@@ -42,7 +43,20 @@ public sealed class PageSnapshotService
     /// <exception cref="StaleRefException">
     /// <paramref name="rootRef"/> is not in the previous snapshot, or its element is no longer present.
     /// </exception>
-    public async Task<string> TakeSnapshotAsync(string? rootRef, int? maxDepth, CancellationToken ct = default)
+    public Task<string> TakeSnapshotAsync(string? rootRef, int? maxDepth, CancellationToken ct = default)
+        => TakeSnapshotAsync(scope: null, rootRef, maxDepth, ct);
+
+    /// <summary>
+    /// Fetches a fresh snapshot of one frame, or of the whole page when <paramref name="scope"/> is
+    /// null, and renders it as above.
+    /// </summary>
+    /// <remarks>
+    /// The frame is remembered alongside the ref map, because a ref only means anything to the
+    /// session that produced it. Resolving against whatever frame happens to be selected later
+    /// would silently address a different document, or nothing at all.
+    /// </remarks>
+    public async Task<string> TakeSnapshotAsync(
+        IFrame? scope, string? rootRef, int? maxDepth, CancellationToken ct = default)
     {
         long? rootBackendNodeId = null;
         if (rootRef is not null)
@@ -56,7 +70,9 @@ public sealed class PageSnapshotService
             rootBackendNodeId = backendNodeId;
         }
 
-        var snapshot = await _page.AccessibilitySnapshotAsync(ct).ConfigureAwait(false);
+        var snapshot = scope is null
+            ? await _page.AccessibilitySnapshotAsync(ct).ConfigureAwait(false)
+            : await scope.AccessibilitySnapshotAsync(ct).ConfigureAwait(false);
 
         SerializedSnapshot serialized;
         if (rootBackendNodeId is { } id)
@@ -72,6 +88,7 @@ public sealed class PageSnapshotService
 
         _refToBackendNodeId = serialized.RefToBackendNodeId;
         _backendNodeIdToRef = BuildReverseMap(serialized.RefToBackendNodeId);
+        _refFrame = scope;
 
         var text = serialized.Text;
 
@@ -86,6 +103,17 @@ public sealed class PageSnapshotService
                 + "custom surface that the accessibility tree cannot describe. Take a screenshot to "
                 + "identify controls visually, then act on their positions with click_xy, drag, or "
                 + "scroll_xy.\n";
+        }
+
+        // A page snapshot stops at each iframe: its element is described, its contents are not, and
+        // for a frame the browser renders in its own process they are not in this tree at all. Say
+        // so, or the agent reads an empty-looking iframe and concludes the content is missing.
+        if (scope is null && rootRef is null && _page.Frames.Count > 1)
+        {
+            var others = _page.Frames.Count - 1;
+            text = text.TrimEnd('\n')
+                + $"\n\nNote: this page has {others} frame{(others == 1 ? "" : "s")} whose contents are not "
+                + "in this tree. Use frame_list to see them and frame_select to look inside one.\n";
         }
 
         LastSnapshot = text;
@@ -107,6 +135,10 @@ public sealed class PageSnapshotService
     /// resolved lazily when an action runs on the returned locator; if it has since
     /// detached from the document, that action fails.
     /// </summary>
+    /// <remarks>
+    /// The locator is built against whatever the snapshot covered, not against whatever is selected
+    /// now, so a ref keeps addressing the element it named even if the scope has moved on.
+    /// </remarks>
     /// <exception cref="SnapshotNotTakenException">No snapshot has been taken yet.</exception>
     /// <exception cref="StaleRefException">The ref is not in the current snapshot.</exception>
     public ILocator ResolveRef(string refId)
@@ -117,7 +149,9 @@ public sealed class PageSnapshotService
         if (!_refToBackendNodeId.TryGetValue(refId, out var backendNodeId))
             throw new StaleRefException(refId);
 
-        return _page.LocatorByBackendNodeId(backendNodeId);
+        return _refFrame is { } frame
+            ? frame.LocatorByBackendNodeId(backendNodeId)
+            : _page.LocatorByBackendNodeId(backendNodeId);
     }
 
     /// <summary>

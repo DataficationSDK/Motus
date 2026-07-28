@@ -6,7 +6,7 @@ namespace Motus.Cli.Services;
 // On .NET 8, Motus ships an internal JsonStringEnumConverter<T> polyfill that is
 // visible to this assembly via InternalsVisibleTo and collides with the generic
 // BCL type introduced in .NET 9. Fall back to the non-generic BCL converter and
-// accept the AOT warning — Motus.Cli is not AOT-published.
+// accept the AOT warning, since Motus.Cli is not AOT-published.
 #pragma warning disable SYSLIB1034
 [JsonConverter(typeof(JsonStringEnumConverter))]
 #pragma warning restore SYSLIB1034

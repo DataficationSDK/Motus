@@ -55,6 +55,17 @@ Motus serializes all CDP/BiDi messages using `System.Text.Json` source generatio
 | `playwright.Chromium.LaunchAsync(options)` | `MotusLauncher.LaunchAsync(options)` |
 | `playwright.Firefox.LaunchAsync(options)` | `MotusLauncher.LaunchAsync(new LaunchOptions { Channel = BrowserChannel.Firefox })` |
 | `playwright.Chromium.ConnectAsync(wsEndpoint)` | `MotusLauncher.ConnectAsync(wsEndpoint)` |
+| `playwright.Chromium.ConnectOverCDPAsync(endpoint)` | `MotusLauncher.ConnectAsync(endpoint)` |
+| `ConnectOverCDPAsync(endpoint, new() { Timeout = ms })` | `MotusLauncher.ConnectAsync(endpoint, new ConnectOptions { Timeout = ms })` |
+
+Motus has one connect method rather than two. `ConnectAsync` accepts either the CDP WebSocket URL or the HTTP debugging endpoint (`http://127.0.0.1:9222`) and resolves the latter to the former, so the distinction Playwright draws between `ConnectAsync` and `ConnectOverCDPAsync` does not exist here.
+
+Two differences in behavior are worth knowing when porting:
+
+- **Existing contexts and pages are adopted by default.** After `ConnectAsync` returns, `browser.Contexts` and `context.Pages` already reflect what is open in the browser. Pass `new ConnectOptions { AdoptExistingTargets = false }` for a bare connection.
+- **`CloseAsync` never ends a browser Motus did not start.** It closes the contexts Motus created and then disconnects. `browser.OwnsProcess` reports which case you are in, and `DisconnectAsync` states the intent explicitly.
+
+See [Attaching to a Running Browser](../guides/attaching-to-a-running-browser.md).
 
 ### Browser
 
@@ -112,6 +123,22 @@ Motus serializes all CDP/BiDi messages using `System.Text.Json` source generatio
 | `page.GetByTestId(testId)` | `page.GetByTestId(testId)` |
 | `page.GetByTitle(text, new() { Exact = exact })` | `page.GetByTitle(text, exact)` |
 | `page.GetByAltText(text, new() { Exact = exact })` | `page.GetByAltText(text, exact)` |
+
+### Page - frames
+
+| Playwright for .NET | Motus |
+|---|---|
+| `page.FrameLocator(selector).Locator(inner)` | `frame.Locator(inner)`, where `frame` came from `page.Frames` |
+| `page.Frame(name)` | `page.Frames.First(f => f.Name == name)` |
+| `page.FrameByUrl(pattern)` | `page.Frames.First(f => f.Url.Contains(pattern))` |
+| `page.MainFrame` | `page.MainFrame` |
+| `page.Frames` | `page.Frames` |
+| `frame.IsDetached` | `frame.IsDetached` |
+| `frame.EvaluateAsync<T>(expression, arg)` | `frame.EvaluateAsync<T>(expression, arg)` |
+
+There is no `FrameLocator` type in Motus. Playwright's `FrameLocator` exists to defer resolving the `<iframe>` element itself; Motus works from `IFrame` handles instead, which the page already tracks and keeps current as frames attach, navigate, and detach. Every locator factory on `IPage` exists on `IFrame` and scopes to that frame.
+
+A frame the browser renders in its own process is an ordinary `IFrame`, discovered and traversed like any other, with no separate API. `IFrame.EvaluateAsync` also takes an `EvaluateOptions` overload for choosing between the frame's main world and an isolated one, which Playwright does not expose. See [Frames and iframes](../guides/frames-and-iframes.md).
 
 ### Page - evaluation and content
 
@@ -469,3 +496,5 @@ Build and run your test suite. The most common remaining failures after the step
 - [Plugin Extensibility](../extensions/getting-started.md) -- building and registering plugins
 - [Configuration Reference](../guides/configuration.md) -- full `motus.config.json` schema
 - [Accessibility Testing](../guides/accessibility-testing.md) -- WCAG rules and assertions
+- [Attaching to a Running Browser](../guides/attaching-to-a-running-browser.md) -- where `connectOverCDP` lands
+- [Frames and iframes](../guides/frames-and-iframes.md) -- where `frameLocator` lands

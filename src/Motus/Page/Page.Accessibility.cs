@@ -13,10 +13,25 @@ internal sealed partial class Page
     /// <summary>
     /// Fetches the page's accessibility tree and returns it as a snapshot.
     /// </summary>
-    public async Task<AccessibilitySnapshot> AccessibilitySnapshotAsync(CancellationToken ct = default)
+    public Task<AccessibilitySnapshot> AccessibilitySnapshotAsync(CancellationToken ct = default)
+        => AccessibilitySnapshotAsync(frame: null, ct);
+
+    /// <summary>
+    /// Fetches the accessibility tree of one frame's document, or of the whole page when no frame
+    /// is given.
+    /// </summary>
+    /// <remarks>
+    /// Both halves matter. The tree is read on the session that owns the frame, because a frame in
+    /// its own process is not described by the page's session at all; and the frame is named in the
+    /// request, because a session asked for its root document answers with everything it hosts,
+    /// which for a same-process frame would be the whole page.
+    /// </remarks>
+    internal async Task<AccessibilitySnapshot> AccessibilitySnapshotAsync(IFrame? frame, CancellationToken ct)
     {
-        var query = new AccessibilityTreeQuery(_session);
-        var treeResult = await query.GetTreeAsync(ct).ConfigureAwait(false);
+        await WhenFrameReadyAsync(frame).ConfigureAwait(false);
+
+        var query = new AccessibilityTreeQuery(SessionFor(frame));
+        var treeResult = await query.GetTreeAsync(ct, (frame as Frame)?.Id).ConfigureAwait(false);
 
         return new AccessibilitySnapshot(
             Roots: treeResult.Roots,
