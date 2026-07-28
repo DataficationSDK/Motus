@@ -16,7 +16,6 @@ internal sealed class XPathSelectorStrategy : ISelectorStrategy
     public async Task<IReadOnlyList<IElementHandle>> ResolveAsync(
         string selector, IFrame frame, bool pierceShadow = true, CancellationToken ct = default)
     {
-        var page = SelectorStrategyHelpers.GetPage(frame);
         var xpathExpr = selector.StartsWith("xpath=", StringComparison.Ordinal) ? selector[6..] : selector;
         var escaped = JsonEncodedText.Encode(xpathExpr).ToString();
         var js = $$"""
@@ -27,7 +26,7 @@ internal sealed class XPathSelectorStrategy : ISelectorStrategy
                 return a;
             })()
             """;
-        return await SelectorStrategyHelpers.EvalToHandlesAsync(page, js, ct).ConfigureAwait(false);
+        return await SelectorStrategyHelpers.EvalToHandlesAsync(frame, js, ct).ConfigureAwait(false);
     }
 
     public async Task<string?> GenerateSelector(IElementHandle element, CancellationToken ct = default)

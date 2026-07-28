@@ -9,6 +9,10 @@ internal sealed partial class Page
     internal event Action? LoadEventFired;
     internal event Action? DomContentEventFired;
 
+    // Raised with the id of a frame that has finished loading. The only lifecycle signal a
+    // subframe produces, so it is what frame navigation waits on.
+    internal event Action<string>? FrameStoppedLoading;
+
     public async Task<IResponse?> GotoAsync(string url, NavigationOptions? options = null)
     {
         if (_context.BaseURL is not null && !Uri.IsWellFormedUriString(url, UriKind.Absolute))
@@ -208,6 +212,78 @@ internal sealed partial class Page
 
             LoadEventFired += Handler;
         }
+
+        return tcs.Task;
+    }
+
+    /// <summary>
+    /// Navigates a single frame, leaving the rest of the page where it is.
+    /// </summary>
+    /// <remarks>
+    /// A subframe has no lifecycle events of its own beyond <c>Page.frameStoppedLoading</c>, so
+    /// <see cref="WaitUntil.DOMContentLoaded"/> and <see cref="WaitUntil.Load"/> both resolve on
+    /// that one signal. <see cref="WaitUntil.NetworkIdle"/> remains page-wide, because request
+    /// tracking is not partitioned by frame.
+    /// </remarks>
+    internal async Task<IResponse?> GotoInFrameAsync(
+        string frameId, string url, NavigationOptions? options = null)
+    {
+        if (_context.BaseURL is not null && !Uri.IsWellFormedUriString(url, UriKind.Absolute))
+            url = new Uri(new Uri(_context.BaseURL), url).ToString();
+
+        await _context.LifecycleHooks.FireBeforeNavigationAsync(this, url).ConfigureAwait(false);
+
+        var waitUntil = options?.WaitUntil ?? WaitUntil.Load;
+        var timeout = TimeSpan.FromMilliseconds(options?.Timeout ?? 30_000);
+
+        var waiter = CreateFrameLifecycleWaiter(frameId, waitUntil, timeout);
+
+        var result = await _session.SendAsync(
+            "Page.navigate",
+            new PageNavigateParams(url, Referrer: options?.Referer, FrameId: frameId),
+            CdpJsonContext.Default.PageNavigateParams,
+            CdpJsonContext.Default.PageNavigateResult,
+            _pageCts.Token).ConfigureAwait(false);
+
+        if (result.ErrorText is not null)
+            throw new MotusNavigationException(url, errorCode: result.ErrorText, pageUrl: Url);
+
+        await waiter.ConfigureAwait(false);
+
+        IResponse? response = _networkManager?.GetLastNavigationResponse();
+        await _context.LifecycleHooks.FireAfterNavigationAsync(this, response).ConfigureAwait(false);
+        return response;
+    }
+
+    private Task CreateFrameLifecycleWaiter(string frameId, WaitUntil waitUntil, TimeSpan timeout)
+    {
+        if (waitUntil == WaitUntil.NetworkIdle)
+        {
+            if (_networkManager is null)
+                throw new InvalidOperationException("NetworkManager is not initialized.");
+            return _networkManager.WaitForNetworkIdleAsync(
+                TimeSpan.FromMilliseconds(500), timeout);
+        }
+
+        var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var cts = new CancellationTokenSource(timeout);
+
+        cts.Token.Register(() => tcs.TrySetException(
+            new NavigationTimeoutException(
+                url: string.Empty, timeoutDuration: timeout, lastNetworkEvents: null,
+                message: $"Frame navigation timed out after {timeout.TotalMilliseconds}ms.")));
+
+        void Handler(string stoppedFrameId)
+        {
+            if (!string.Equals(stoppedFrameId, frameId, StringComparison.Ordinal))
+                return;
+
+            FrameStoppedLoading -= Handler;
+            cts.Dispose();
+            tcs.TrySetResult();
+        }
+
+        FrameStoppedLoading += Handler;
 
         return tcs.Task;
     }

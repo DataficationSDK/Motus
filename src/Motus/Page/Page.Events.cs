@@ -26,6 +26,12 @@ internal sealed partial class Page
             CdpJsonContext.Default.PageFrameDetachedEvent,
             OnFrameDetached, ct);
 
+        // Per-frame load completion, used to wait out a navigation of a single frame.
+        _ = PumpEventsAsync(
+            "Page.frameStoppedLoading",
+            CdpJsonContext.Default.PageFrameStoppedLoadingEvent,
+            evt => FrameStoppedLoading?.Invoke(evt.FrameId), ct);
+
         // Lifecycle events
         _ = PumpEventsAsync(
             "Page.loadEventFired",

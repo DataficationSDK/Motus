@@ -21,7 +21,8 @@ internal sealed class FileChooser : IFileChooser
         get
         {
             var page = (Page)Page;
-            var handle = SelectorStrategyHelpers.ResolveNodeToHandleAsync(page, BackendNodeId, CancellationToken.None)
+            var handle = SelectorStrategyHelpers
+                .ResolveNodeToHandleAsync(page.GetFrameForSelectors(), BackendNodeId, CancellationToken.None)
                 .GetAwaiter().GetResult();
 
             // Build a unique selector by asking the browser for the element's CSS path

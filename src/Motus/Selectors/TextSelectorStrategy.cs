@@ -16,7 +16,6 @@ internal sealed class TextSelectorStrategy : ISelectorStrategy
     public async Task<IReadOnlyList<IElementHandle>> ResolveAsync(
         string selector, IFrame frame, bool pierceShadow = true, CancellationToken ct = default)
     {
-        var page = SelectorStrategyHelpers.GetPage(frame);
 
         var rawSelector = selector.StartsWith("text=", StringComparison.Ordinal) ? selector[5..] : selector;
         var isExact = rawSelector.Length >= 2 && rawSelector[0] == '"' && rawSelector[^1] == '"';
@@ -55,7 +54,7 @@ internal sealed class TextSelectorStrategy : ISelectorStrategy
                 })()
                 """;
 
-        return await SelectorStrategyHelpers.EvalToHandlesAsync(page, js, ct).ConfigureAwait(false);
+        return await SelectorStrategyHelpers.EvalToHandlesAsync(frame, js, ct).ConfigureAwait(false);
     }
 
     public async Task<string?> GenerateSelector(IElementHandle element, CancellationToken ct = default)

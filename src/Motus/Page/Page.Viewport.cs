@@ -56,7 +56,14 @@ internal sealed partial class Page
     public ILocator GetByAltText(string text, bool? exact = null)
         => new Locator(this, $"[alt=\"{text}\"]");
 
-    public async Task<IElementHandle> AddScriptTagAsync(string? url = null, string? content = null)
+    public Task<IElementHandle> AddScriptTagAsync(string? url = null, string? content = null)
+        => AddScriptTagAsync(url, content, contextId: null);
+
+    /// <summary>
+    /// Appends a script tag to the document of the given execution context, or to the page's
+    /// default document when the context is null.
+    /// </summary>
+    internal async Task<IElementHandle> AddScriptTagAsync(string? url, string? content, int? contextId)
     {
         string js;
         if (url is not null)
@@ -72,7 +79,8 @@ internal sealed partial class Page
 
         var result = await _session.SendAsync(
             "Runtime.evaluate",
-            new RuntimeEvaluateParams(Expression: js, ReturnByValue: false, AwaitPromise: false),
+            new RuntimeEvaluateParams(Expression: js, ReturnByValue: false, AwaitPromise: false,
+                ContextId: contextId),
             CdpJsonContext.Default.RuntimeEvaluateParams,
             CdpJsonContext.Default.RuntimeEvaluateResult,
             _pageCts.Token).ConfigureAwait(false);
@@ -83,7 +91,14 @@ internal sealed partial class Page
         return new ElementHandle(_session, result.Result.ObjectId);
     }
 
-    public async Task<IElementHandle> AddStyleTagAsync(string? url = null, string? content = null)
+    public Task<IElementHandle> AddStyleTagAsync(string? url = null, string? content = null)
+        => AddStyleTagAsync(url, content, contextId: null);
+
+    /// <summary>
+    /// Appends a style tag to the document of the given execution context, or to the page's
+    /// default document when the context is null.
+    /// </summary>
+    internal async Task<IElementHandle> AddStyleTagAsync(string? url, string? content, int? contextId)
     {
         string js;
         if (url is not null)
@@ -99,7 +114,8 @@ internal sealed partial class Page
 
         var result = await _session.SendAsync(
             "Runtime.evaluate",
-            new RuntimeEvaluateParams(Expression: js, ReturnByValue: false, AwaitPromise: false),
+            new RuntimeEvaluateParams(Expression: js, ReturnByValue: false, AwaitPromise: false,
+                ContextId: contextId),
             CdpJsonContext.Default.RuntimeEvaluateParams,
             CdpJsonContext.Default.RuntimeEvaluateResult,
             _pageCts.Token).ConfigureAwait(false);

@@ -133,7 +133,7 @@ internal sealed class SelectorInferenceEngine
             ct);
 
         var handle = await SelectorStrategyHelpers.ResolveNodeToHandleAsync(
-            _page, nodeResult.BackendNodeId, ct);
+            _page.GetFrameForSelectors(), nodeResult.BackendNodeId, ct);
 
         return new CoordinateResolution(handle, nodeResult.BackendNodeId);
     }

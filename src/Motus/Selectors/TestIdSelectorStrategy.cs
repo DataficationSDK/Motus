@@ -22,7 +22,6 @@ internal sealed class TestIdSelectorStrategy : ISelectorStrategy
     public async Task<IReadOnlyList<IElementHandle>> ResolveAsync(
         string selector, IFrame frame, bool pierceShadow = true, CancellationToken ct = default)
     {
-        var page = SelectorStrategyHelpers.GetPage(frame);
         var escapedAttr = JsonEncodedText.Encode(_attributeName).ToString();
         var prefix = _attributeName + "=";
         var selectorValue = selector.StartsWith(prefix, StringComparison.Ordinal) ? selector[prefix.Length..] : selector;
@@ -46,7 +45,7 @@ internal sealed class TestIdSelectorStrategy : ISelectorStrategy
                 """
             : $"""Array.from(document.querySelectorAll('{cssSelector}'))""";
 
-        return await SelectorStrategyHelpers.EvalToHandlesAsync(page, js, ct).ConfigureAwait(false);
+        return await SelectorStrategyHelpers.EvalToHandlesAsync(frame, js, ct).ConfigureAwait(false);
     }
 
     public async Task<string?> GenerateSelector(IElementHandle element, CancellationToken ct = default)

@@ -54,6 +54,7 @@ namespace Motus;
 [JsonSerializable(typeof(PageFrameNavigatedEvent))]
 [JsonSerializable(typeof(PageFrameAttachedEvent))]
 [JsonSerializable(typeof(PageFrameDetachedEvent))]
+[JsonSerializable(typeof(PageFrameStoppedLoadingEvent))]
 [JsonSerializable(typeof(PageJavascriptDialogOpeningEvent))]
 [JsonSerializable(typeof(PageDownloadWillBeginEvent))]
 [JsonSerializable(typeof(PageDownloadProgressEvent))]
@@ -425,6 +426,8 @@ internal sealed record PageFrameNavigatedEvent(PageFrameInfo Frame);
 internal sealed record PageFrameAttachedEvent(string FrameId, string ParentFrameId);
 
 internal sealed record PageFrameDetachedEvent(string FrameId, string? Reason = null);
+
+internal sealed record PageFrameStoppedLoadingEvent(string FrameId);
 
 internal sealed record PageJavascriptDialogOpeningEvent(
     string Url,

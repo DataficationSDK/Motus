@@ -21,7 +21,7 @@ public sealed class LocatorAssertions
         string name, string expected, AssertionOptions? options) =>
         AssertionRetryHelper.RetryUntilAsync(
             condition, _negate, name, expected,
-            _locator.Selector, _locator.PageUrl,
+            _locator.Selector, _locator.ContextUrl,
             AssertionRetryHelper.ResolveTimeout(options?.Timeout),
             options?.Message, CancellationToken.None);
 

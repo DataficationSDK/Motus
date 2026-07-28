@@ -115,7 +115,7 @@ public sealed class PageAnalysisEngine
         CancellationToken ct)
     {
         var internalPage = (Page)page;
-        var handles = await SelectorStrategyHelpers.EvalToHandlesAsync(internalPage, handleJs, ct);
+        var handles = await SelectorStrategyHelpers.EvalToHandlesAsync(internalPage.GetFrameForSelectors(), handleJs, ct);
 
         if (handles.Count == 0)
             return (null, null);
@@ -294,7 +294,7 @@ public sealed class PageAnalysisEngine
         for (var i = 0; i < candidates.Count; i++)
         {
             var handleJs = $"[window.__mtusCandidates[{i}]]";
-            var handles = await SelectorStrategyHelpers.EvalToHandlesAsync(internalPage, handleJs, ct);
+            var handles = await SelectorStrategyHelpers.EvalToHandlesAsync(internalPage.GetFrameForSelectors(), handleJs, ct);
 
             if (handles.Count == 0)
                 continue;

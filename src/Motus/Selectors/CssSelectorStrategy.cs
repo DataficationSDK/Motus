@@ -15,7 +15,6 @@ internal sealed class CssSelectorStrategy : ISelectorStrategy
     public async Task<IReadOnlyList<IElementHandle>> ResolveAsync(
         string selector, IFrame frame, bool pierceShadow = true, CancellationToken ct = default)
     {
-        var page = SelectorStrategyHelpers.GetPage(frame);
         var cssSelector = selector.StartsWith("css=", StringComparison.Ordinal) ? selector[4..] : selector;
         var escaped = JsonEncodedText.Encode(cssSelector).ToString();
 
@@ -36,7 +35,7 @@ internal sealed class CssSelectorStrategy : ISelectorStrategy
                 """
             : $"""Array.from(document.querySelectorAll("{escaped}"))""";
 
-        return await SelectorStrategyHelpers.EvalToHandlesAsync(page, js, ct).ConfigureAwait(false);
+        return await SelectorStrategyHelpers.EvalToHandlesAsync(frame, js, ct).ConfigureAwait(false);
     }
 
     public async Task<string?> GenerateSelector(IElementHandle element, CancellationToken ct = default)

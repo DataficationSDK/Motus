@@ -24,17 +24,19 @@ internal sealed class BackendNodeIdSelectorStrategy : ISelectorStrategy
     public async Task<IReadOnlyList<IElementHandle>> ResolveAsync(
         string selector, IFrame frame, bool pierceShadow = true, CancellationToken ct = default)
     {
-        var page = SelectorStrategyHelpers.GetPage(frame);
-        CapabilityGuard.Require(page.Session.Capabilities, MotusCapabilities.AccessibilityTree,
-            "Backend node ID selector (DOM.resolveNode)", CapabilityGuard.GetTransportDescription(page.Session));
+        var session = SelectorStrategyHelpers.GetPage(frame).SessionFor(frame);
+        CapabilityGuard.Require(session.Capabilities, MotusCapabilities.AccessibilityTree,
+            "Backend node ID selector (DOM.resolveNode)", CapabilityGuard.GetTransportDescription(session));
 
         var expression = StripPrefix(selector);
         if (!long.TryParse(expression, NumberStyles.Integer, CultureInfo.InvariantCulture, out var backendNodeId))
             throw new InvalidOperationException(
                 $"The '{Prefix}' selector requires a numeric backend node ID; received '{expression}'.");
 
+        // A backend node ID addresses a node in any document the session can see, so this
+        // resolves the same element whichever frame the selector was rooted at.
         var handle = await SelectorStrategyHelpers.ResolveNodeToHandleAsync(
-            page, backendNodeId, ct).ConfigureAwait(false);
+            frame, backendNodeId, ct).ConfigureAwait(false);
 
         return [handle];
     }

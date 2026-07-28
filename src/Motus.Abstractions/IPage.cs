@@ -265,6 +265,11 @@ public interface IPage : IAsyncDisposable
     /// <param name="role">The ARIA role to match.</param>
     /// <param name="name">Optional accessible name to filter by.</param>
     /// <returns>A locator for the matching elements.</returns>
+    /// <remarks>
+    /// Role matching runs over the accessibility tree, which spans the page's frames. This is the
+    /// one page-level locator that can match an element inside a frame; the others are confined to
+    /// the main document. Use <see cref="IFrame.GetByRole"/> to confine a role match to one frame.
+    /// </remarks>
     ILocator GetByRole(string role, string? name = null);
 
     /// <summary>

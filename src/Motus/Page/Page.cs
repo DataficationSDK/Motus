@@ -189,6 +189,12 @@ internal sealed partial class Page : IPage
     }
 
     /// <summary>
+    /// The id given to the synthetic frame handed to selector strategies when no main frame has
+    /// been recorded yet. It is never a real frame, so it never maps to an execution context.
+    /// </summary>
+    internal const string SyntheticSelectorFrameId = "__selector__";
+
+    /// <summary>
     /// Returns the main frame if available, or a lightweight synthetic frame
     /// for selector strategy dispatch. The synthetic frame is not stored in
     /// the page's frame collection so it doesn't affect frame enumeration.
@@ -196,7 +202,39 @@ internal sealed partial class Page : IPage
     internal IFrame GetFrameForSelectors() =>
         _mainFrameId is not null && _frames.TryGetValue(_mainFrameId, out var frame)
             ? frame
-            : new Frame(this, "__selector__", parentFrameId: null);
+            : new Frame(this, SyntheticSelectorFrameId, parentFrameId: null);
+
+    /// <summary>
+    /// Returns the execution context to resolve selectors in for the given frame, or null to use
+    /// the session default.
+    /// </summary>
+    /// <remarks>
+    /// The main frame maps to the default context, which is what every page-level locator has
+    /// always used, so page-level resolution keeps sending exactly what it sent before. Passing an
+    /// explicit id for the main frame would also be fragile: a context id can go stale across a
+    /// navigation, where null always resolves to whatever the current default is.
+    /// </remarks>
+    internal int? GetSelectorContextId(IFrame frame)
+    {
+        if (frame is not Frame f)
+            return null;
+
+        if (f.Id == _mainFrameId || f.Id == SyntheticSelectorFrameId)
+            return null;
+
+        return GetExecutionContextId(f.Id);
+    }
+
+    /// <summary>
+    /// Returns the session that owns the given frame, or the page session when the frame is null.
+    /// </summary>
+    /// <remarks>
+    /// Frames that render in the page's own process are all driven over the page session, so this
+    /// is currently a single answer for every frame. It exists as a lookup rather than a direct
+    /// field read because a frame hosted in its own process is reached over a session of its own,
+    /// and every caller that binds a handle or sends a command should already be asking.
+    /// </remarks>
+    internal IMotusSession SessionFor(IFrame? frame) => _session;
 
     internal bool TryGetFrame(string frameId, out Frame? frame) =>
         _frames.TryGetValue(frameId, out frame);

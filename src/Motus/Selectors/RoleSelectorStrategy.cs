@@ -16,29 +16,38 @@ internal sealed class RoleSelectorStrategy : ISelectorStrategy
 
     public int Priority => 30;
 
-    // CDP Accessibility.queryAXTree already traverses shadow boundaries natively
+    // CDP Accessibility.queryAXTree already traverses shadow boundaries natively.
+    //
+    // This strategy scopes by node rather than by execution context, because queryAXTree takes no
+    // context. For a frame root it is scoped to that frame's document element. For the page
+    // default it stays unscoped, which means it is the one strategy that reaches into child
+    // frames: an accessibility tree spans them, where document.querySelectorAll never does.
     public async Task<IReadOnlyList<IElementHandle>> ResolveAsync(
         string selector, IFrame frame, bool pierceShadow = true, CancellationToken ct = default)
     {
         var page = SelectorStrategyHelpers.GetPage(frame);
-        CapabilityGuard.Require(page.Session.Capabilities, MotusCapabilities.AccessibilityTree,
-            "Role selector (Accessibility.queryAXTree)", CapabilityGuard.GetTransportDescription(page.Session));
+        var session = page.SessionFor(frame);
+        CapabilityGuard.Require(session.Capabilities, MotusCapabilities.AccessibilityTree,
+            "Role selector (Accessibility.queryAXTree)", CapabilityGuard.GetTransportDescription(session));
 
         var (role, name) = ParseRoleSelector(selector);
 
         if (!_accessibilityEnabled)
         {
-            await page.Session.SendAsync(
+            await session.SendAsync(
                 "Accessibility.enable",
                 CdpJsonContext.Default.AccessibilityEnableResult,
                 ct).ConfigureAwait(false);
             _accessibilityEnabled = true;
         }
 
-        var queryResult = await page.Session.SendAsync(
+        var rootObjectId = await SelectorStrategyHelpers
+            .ResolveFrameDocumentObjectIdAsync(frame, ct).ConfigureAwait(false);
+
+        var queryResult = await session.SendAsync(
             "Accessibility.queryAXTree",
             new AccessibilityQueryAXTreeParams(
-                ObjectId: null,
+                ObjectId: rootObjectId,
                 AccessibleName: name,
                 Role: role),
             CdpJsonContext.Default.AccessibilityQueryAXTreeParams,
@@ -52,7 +61,7 @@ internal sealed class RoleSelectorStrategy : ISelectorStrategy
                 continue;
 
             var handle = await SelectorStrategyHelpers.ResolveNodeToHandleAsync(
-                page, node.BackendDOMNodeId.Value, ct).ConfigureAwait(false);
+                frame, node.BackendDOMNodeId.Value, ct).ConfigureAwait(false);
             handles.Add(handle);
         }
 

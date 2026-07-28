@@ -20,6 +20,8 @@ internal sealed class Frame : IFrame
 
     internal string? ParentFrameId { get; }
 
+    internal bool IsMainFrame => ParentFrameId is null;
+
     public IPage Page => _page;
 
     public IFrame? ParentFrame =>
@@ -51,7 +53,9 @@ internal sealed class Frame : IFrame
         await EvaluateAsync<string>("document.title").ConfigureAwait(false);
 
     public Task<IResponse?> GotoAsync(string url, NavigationOptions? options = null) =>
-        _page.GotoAsync(url, options);
+        IsMainFrame
+            ? _page.GotoAsync(url, options)
+            : _page.GotoInFrameAsync(Id, url, options);
 
     public Task WaitForLoadStateAsync(LoadState? state = null, double? timeout = null) =>
         _page.WaitForLoadStateAsync(state, timeout);
@@ -62,34 +66,34 @@ internal sealed class Frame : IFrame
     // --- Locator methods ---
 
     public ILocator Locator(string selector, LocatorOptions? options = null)
-        => new Locator(_page, selector, options);
+        => new Locator(this, selector, options);
 
     public ILocator GetByRole(string role, string? name = null)
         => name is not null
-            ? new Locator(_page, $"[role=\"{role}\"][aria-label=\"{name}\"]")
-            : new Locator(_page, $"[role=\"{role}\"]");
+            ? new Locator(this, $"[role=\"{role}\"][aria-label=\"{name}\"]")
+            : new Locator(this, $"[role=\"{role}\"]");
 
     public ILocator GetByText(string text, bool? exact = null)
-        => new Locator(_page, "*", new LocatorOptions { HasText = text });
+        => new Locator(this, "*", new LocatorOptions { HasText = text });
 
     public ILocator GetByLabel(string text, bool? exact = null)
-        => new Locator(_page, $"[aria-label=\"{text}\"]");
+        => new Locator(this, $"[aria-label=\"{text}\"]");
 
     public ILocator GetByPlaceholder(string text, bool? exact = null)
-        => new Locator(_page, $"[placeholder=\"{text}\"]");
+        => new Locator(this, $"[placeholder=\"{text}\"]");
 
     public ILocator GetByTestId(string testId)
-        => new Locator(_page, $"[data-testid=\"{testId}\"]");
+        => new Locator(this, $"[data-testid=\"{testId}\"]");
 
     public ILocator GetByTitle(string text, bool? exact = null)
-        => new Locator(_page, $"[title=\"{text}\"]");
+        => new Locator(this, $"[title=\"{text}\"]");
 
     public ILocator GetByAltText(string text, bool? exact = null)
-        => new Locator(_page, $"[alt=\"{text}\"]");
+        => new Locator(this, $"[alt=\"{text}\"]");
 
     public Task<IElementHandle> AddScriptTagAsync(string? url = null, string? content = null)
-        => _page.AddScriptTagAsync(url, content);
+        => _page.AddScriptTagAsync(url, content, _page.GetSelectorContextId(this));
 
     public Task<IElementHandle> AddStyleTagAsync(string? url = null, string? content = null)
-        => _page.AddStyleTagAsync(url, content);
+        => _page.AddStyleTagAsync(url, content, _page.GetSelectorContextId(this));
 }

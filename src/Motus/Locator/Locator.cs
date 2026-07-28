@@ -16,6 +16,11 @@ internal sealed class Locator : ILocator
     private readonly int _parentSteps;         // Number of ".." hops to walk from each base match.
     private readonly string? _childSelector;   // CSS applied as a scoped descendant query after the parent walk.
 
+    // The frame this locator resolves inside. Null means the page default, which is the main
+    // frame's context in practice but is left unresolved so page-level locators keep sending no
+    // explicit context id, exactly as they always have.
+    private readonly Frame? _frameRoot;
+
     internal Locator(Page page, string selector, LocatorOptions? options = null)
     {
         _page = page;
@@ -27,11 +32,18 @@ internal sealed class Locator : ILocator
         _pierceShadow = options?.PierceShadow ?? true;
     }
 
-    private Locator(Page page, string selector, int? nthIndex, string? hasText,
+    internal Locator(Frame frame, string selector, LocatorOptions? options = null)
+        : this((Page)frame.Page, selector, options)
+    {
+        _frameRoot = frame;
+    }
+
+    private Locator(Page page, Frame? frameRoot, string selector, int? nthIndex, string? hasText,
         ILocator? has, ILocator? hasNot, double? defaultTimeout = null, bool pierceShadow = true,
         int parentSteps = 0, string? childSelector = null)
     {
         _page = page;
+        _frameRoot = frameRoot;
         _selector = selector;
         _nthIndex = nthIndex;
         _hasText = hasText;
@@ -43,10 +55,21 @@ internal sealed class Locator : ILocator
         _childSelector = childSelector;
     }
 
+    // The frame this locator resolves against, falling back to the page's main frame.
+    private IFrame ResolutionFrame => _frameRoot ?? _page.GetFrameForSelectors();
+
+    // The session that owns this locator's frame. Always the page session while every frame
+    // renders in the page's process, but looked up so that stops being an assumption.
+    private IMotusSession Session => _page.SessionFor(_frameRoot);
+
     // --- Internal Properties for Assertions ---
 
     internal string Selector => _selector;
-    internal string PageUrl => _page.Url;
+
+    // The URL failure messages should name: the frame's own URL for a frame-rooted locator,
+    // the page's otherwise.
+    internal string ContextUrl =>
+        _frameRoot is { Url.Length: > 0 } frame ? frame.Url : _page.Url;
 
     internal async Task<bool> IsEmptyAsync(CancellationToken ct)
     {
@@ -100,14 +123,14 @@ internal sealed class Locator : ILocator
 
         if (!_accessibilityEnabled)
         {
-            await _page.Session.SendAsync(
+            await Session.SendAsync(
                 "Accessibility.enable",
                 CdpJsonContext.Default.AccessibilityEnableResult,
                 ct).ConfigureAwait(false);
             _accessibilityEnabled = true;
         }
 
-        var result = await _page.Session.SendAsync(
+        var result = await Session.SendAsync(
             "Accessibility.queryAXTree",
             new AccessibilityQueryAXTreeParams(
                 ObjectId: objectId,
@@ -209,13 +232,13 @@ internal sealed class Locator : ILocator
     private ElementNotFoundException BuildNotFound(int baseMatchCount, int postScopeCount)
     {
         if (_childSelector is null)
-            return new ElementNotFoundException(_selector, _page.Url);
+            return new ElementNotFoundException(_selector, ContextUrl);
 
         if (baseMatchCount == 0)
         {
             var message = $"No element matches parent selector '{_selector}'. " +
                           $"No descendant query was attempted for '{_childSelector}'.";
-            return new ElementNotFoundException(_selector, _page.Url, message, innerException: null);
+            return new ElementNotFoundException(_selector, ContextUrl, message, innerException: null);
         }
 
         if (postScopeCount == 0)
@@ -224,10 +247,10 @@ internal sealed class Locator : ILocator
                           $"selector '{_childSelector}' returned no matches under any of them. " +
                           "If the descendant is rendered outside the parent's DOM subtree " +
                           "(for example, in a portal), query from the page root instead.";
-            return new ElementNotFoundException(_selector, _page.Url, message, innerException: null);
+            return new ElementNotFoundException(_selector, ContextUrl, message, innerException: null);
         }
 
-        return new ElementNotFoundException(_selector, _page.Url);
+        return new ElementNotFoundException(_selector, ContextUrl);
     }
 
     // Resolves the base selector via its strategy, then optionally applies nth selection on the base,
@@ -247,7 +270,7 @@ internal sealed class Locator : ILocator
         if (!registry.TryGetStrategy(prefix, out var strategy))
             throw new InvalidOperationException($"No selector strategy registered for prefix: {prefix}");
 
-        var handles = await strategy!.ResolveAsync(expression, _page.GetFrameForSelectors(), _pierceShadow, ct).ConfigureAwait(false);
+        var handles = await strategy!.ResolveAsync(expression, ResolutionFrame, _pierceShadow, ct).ConfigureAwait(false);
         var baseMatchCount = handles.Count;
 
         if (_parentSteps == 0 && _childSelector is null)
@@ -260,7 +283,7 @@ internal sealed class Locator : ILocator
             IElementHandle picked;
             if (_nthIndex == -1) picked = handles[^1];
             else if (_nthIndex.Value >= 0 && _nthIndex.Value < handles.Count) picked = handles[_nthIndex.Value];
-            else throw new ElementNotFoundException(_selector, _page.Url);
+            else throw new ElementNotFoundException(_selector, ContextUrl);
             handles = new[] { picked };
         }
 
@@ -334,7 +357,7 @@ internal sealed class Locator : ILocator
 
     private async Task<ElementHandle?> WalkParentsAsync(string objectId, int steps, CancellationToken ct)
     {
-        var result = await _page.Session.SendAsync(
+        var result = await Session.SendAsync(
             "Runtime.callFunctionOn",
             new RuntimeCallFunctionOnParams(
                 FunctionDeclaration: "function(n) { var e = this; for (var i = 0; i < n && e; i++) { e = e.parentElement; } return e; }",
@@ -352,7 +375,7 @@ internal sealed class Locator : ILocator
         if (result.Result.ObjectId is null)
             return null; // walked off the top (parentElement returned null)
 
-        return new ElementHandle(_page.Session, result.Result.ObjectId);
+        return new ElementHandle(Session, result.Result.ObjectId);
     }
 
     private async Task<IReadOnlyList<IElementHandle>> QueryDescendantsAsync(
@@ -376,7 +399,7 @@ internal sealed class Locator : ILocator
                 """
             : $$"""function() { return Array.from(this.querySelectorAll("{{escaped}}")); }""";
 
-        var result = await _page.Session.SendAsync(
+        var result = await Session.SendAsync(
             "Runtime.callFunctionOn",
             new RuntimeCallFunctionOnParams(
                 FunctionDeclaration: js,
@@ -394,7 +417,7 @@ internal sealed class Locator : ILocator
         if (result.Result.ObjectId is null)
             return [];
 
-        var props = await _page.Session.SendAsync(
+        var props = await Session.SendAsync(
             "Runtime.getProperties",
             new RuntimeGetPropertiesParams(result.Result.ObjectId, OwnProperties: true),
             CdpJsonContext.Default.RuntimeGetPropertiesParams,
@@ -405,7 +428,7 @@ internal sealed class Locator : ILocator
         foreach (var prop in props.Result)
         {
             if (int.TryParse(prop.Name, out _) && prop.Value?.ObjectId is not null)
-                handles.Add(new ElementHandle(_page.Session, prop.Value.ObjectId));
+                handles.Add(new ElementHandle(Session, prop.Value.ObjectId));
         }
         return handles;
     }
@@ -413,7 +436,7 @@ internal sealed class Locator : ILocator
     private async Task<T> EvalOnElementAsync<T>(string objectId, string jsFunction,
         RuntimeCallArgument[]? args, CancellationToken ct)
     {
-        var result = await _page.Session.SendAsync(
+        var result = await Session.SendAsync(
             "Runtime.callFunctionOn",
             new RuntimeCallFunctionOnParams(
                 FunctionDeclaration: jsFunction,
@@ -443,7 +466,7 @@ internal sealed class Locator : ILocator
     private async Task EvalOnElementVoidAsync(string objectId, string jsFunction,
         RuntimeCallArgument[]? args, CancellationToken ct)
     {
-        var result = await _page.Session.SendAsync(
+        var result = await Session.SendAsync(
             "Runtime.callFunctionOn",
             new RuntimeCallFunctionOnParams(
                 FunctionDeclaration: jsFunction,
@@ -462,6 +485,17 @@ internal sealed class Locator : ILocator
 
     private async Task<BoundingBox> GetBoundingBoxOrThrowAsync(string objectId, CancellationToken ct)
     {
+        // An element inside a frame measures itself against that frame's own viewport, but mouse
+        // and touch input is dispatched in the page's coordinate space. Reading the rect through
+        // the element would aim input at the frame's offset rather than the element, so a
+        // frame-rooted locator measures with the box model, which is reported against the page.
+        if (_frameRoot is not null)
+        {
+            var pageBox = await GetPageRelativeBoxAsync(objectId, ct).ConfigureAwait(false);
+            if (pageBox is not null)
+                return pageBox;
+        }
+
         var box = await EvalOnElementAsync<BoundingBox?>(objectId,
             """
             function() {
@@ -472,6 +506,24 @@ internal sealed class Locator : ILocator
             """, null, ct).ConfigureAwait(false);
 
         return box ?? throw new InvalidOperationException("Element has zero size bounding box.");
+    }
+
+    // Derives a page-relative box from the element's border quad, which DOM.getBoxModel reports
+    // as [x1,y1, x2,y2, x3,y3, x4,y4] clockwise from the top left. Returns null when the box model
+    // is unavailable, leaving the caller to fall back to measuring through the element.
+    private async Task<BoundingBox?> GetPageRelativeBoxAsync(string objectId, CancellationToken ct)
+    {
+        var model = await _page.GetBoxModelAsync(objectId, ct).ConfigureAwait(false);
+        if (model is null || model.Model.Border.Length < 8)
+            return null;
+
+        var quad = model.Model.Border;
+        var width = quad[2] - quad[0];
+        var height = quad[5] - quad[1];
+
+        return width == 0 && height == 0
+            ? null
+            : new BoundingBox(quad[0], quad[1], width, height);
     }
 
     // --- Action Hook Helper ---
@@ -546,14 +598,14 @@ internal sealed class Locator : ILocator
 
     // --- Chaining Properties ---
 
-    public ILocator First => new Locator(_page, _selector, 0, _hasText, _has, _hasNot, _defaultTimeout, _pierceShadow, _parentSteps, _childSelector);
+    public ILocator First => new Locator(_page, _frameRoot, _selector, 0, _hasText, _has, _hasNot, _defaultTimeout, _pierceShadow, _parentSteps, _childSelector);
 
-    public ILocator Last => new Locator(_page, _selector, -1, _hasText, _has, _hasNot, _defaultTimeout, _pierceShadow, _parentSteps, _childSelector);
+    public ILocator Last => new Locator(_page, _frameRoot, _selector, -1, _hasText, _has, _hasNot, _defaultTimeout, _pierceShadow, _parentSteps, _childSelector);
 
-    public ILocator Nth(int index) => new Locator(_page, _selector, index, _hasText, _has, _hasNot, _defaultTimeout, _pierceShadow, _parentSteps, _childSelector);
+    public ILocator Nth(int index) => new Locator(_page, _frameRoot, _selector, index, _hasText, _has, _hasNot, _defaultTimeout, _pierceShadow, _parentSteps, _childSelector);
 
     public ILocator Filter(LocatorOptions? options = null) =>
-        new Locator(_page, _selector, _nthIndex,
+        new Locator(_page, _frameRoot, _selector, _nthIndex,
             options?.HasText ?? _hasText,
             options?.Has ?? _has,
             options?.HasNot ?? _hasNot,
@@ -585,7 +637,7 @@ internal sealed class Locator : ILocator
         var newTimeout = options?.Timeout ?? _defaultTimeout;
 
         return new Locator(
-            _page, _selector, _nthIndex, newHasText, newHas, newHasNot,
+            _page, _frameRoot, _selector, _nthIndex, newHasText, newHas, newHasNot,
             newTimeout, newPierceShadow,
             _parentSteps + parentSteps, newChildSelector);
     }
@@ -818,7 +870,7 @@ internal sealed class Locator : ILocator
                 tempFiles.Add(tempPath);
             }
 
-            await _page.Session.SendAsync(
+            await Session.SendAsync(
                 "DOM.setFileInputFiles",
                 new DomSetFileInputFilesParams(
                     Files: tempFiles.ToArray(),
@@ -891,7 +943,7 @@ internal sealed class Locator : ILocator
         var format = options?.Type == ScreenshotType.Jpeg ? "jpeg" : "png";
         var quality = options?.Type == ScreenshotType.Jpeg ? options.Quality : null;
 
-        var result = await _page.Session.SendAsync(
+        var result = await Session.SendAsync(
             "Page.captureScreenshot",
             new PageCaptureScreenshotWithClipParams(
                 Clip: new PageClipRect(box.X, box.Y, box.Width, box.Height),
@@ -1213,7 +1265,7 @@ internal sealed class Locator : ILocator
     {
         using var cts = BuildActionCts(timeout);
         var objectId = await ResolveObjectIdCoreAsync(cts.Token).ConfigureAwait(false);
-        return new ElementHandle(_page.Session, objectId);
+        return new ElementHandle(Session, objectId);
     }
 
     public async Task<IReadOnlyList<IElementHandle>> ElementHandlesAsync()

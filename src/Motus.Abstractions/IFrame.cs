@@ -3,6 +3,10 @@ namespace Motus.Abstractions;
 /// <summary>
 /// Represents a frame within a page (including the main frame).
 /// </summary>
+/// <remarks>
+/// Locators created from a frame resolve inside that frame. A selector that matches in one frame
+/// and in another matches only the frame it was created from.
+/// </remarks>
 public interface IFrame
 {
     /// <summary>
@@ -94,11 +98,18 @@ public interface IFrame
     ILocator GetByAltText(string text, bool? exact = null);
 
     /// <summary>
-    /// Navigates the frame to the specified URL.
+    /// Navigates the frame to the specified URL, leaving the rest of the page where it is.
     /// </summary>
     /// <param name="url">The URL to navigate to.</param>
     /// <param name="options">Navigation options.</param>
     /// <returns>The response of the navigation, or null.</returns>
+    /// <remarks>
+    /// A frame other than the main frame reports only that it has finished loading, with no
+    /// separate signal for its DOM being ready, so <see cref="WaitUntil.DOMContentLoaded"/> and
+    /// <see cref="WaitUntil.Load"/> both wait for the same point.
+    /// <see cref="WaitUntil.NetworkIdle"/> is measured across the whole page rather than for this
+    /// frame alone. Navigating the main frame navigates the page.
+    /// </remarks>
     Task<IResponse?> GotoAsync(string url, NavigationOptions? options = null);
 
     /// <summary>
