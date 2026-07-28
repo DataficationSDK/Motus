@@ -2,6 +2,14 @@ using Motus.Abstractions;
 
 namespace Motus.Assertions;
 
+/// <summary>
+/// Assertions about a response the browser received, obtained from
+/// <see cref="Expect.That(IResponse)"/>.
+/// </summary>
+/// <remarks>
+/// These do not retry, unlike the locator and page assertions. A response is a completed fact
+/// rather than a moving target, so re-reading its status could never change the answer.
+/// </remarks>
 public sealed class ResponseAssertions
 {
     private readonly IResponse _response;
@@ -13,8 +21,13 @@ public sealed class ResponseAssertions
         _negate = negate;
     }
 
+    /// <summary>
+    /// Inverts the assertion that follows, so it passes when the condition does not hold.
+    /// </summary>
     public ResponseAssertions Not => new(_response, !_negate);
 
+    /// <summary>Asserts that the response carries a success status, meaning 200 through 299.</summary>
+    /// <exception cref="MotusAssertionException">The status falls outside that range.</exception>
     public Task ToBeOkAsync()
     {
         var ok = _response.Ok;
@@ -35,6 +48,9 @@ public sealed class ResponseAssertions
         return Task.CompletedTask;
     }
 
+    /// <summary>Asserts that the response's status code equals the expected one.</summary>
+    /// <param name="expected">The status code required, such as 404.</param>
+    /// <exception cref="MotusAssertionException">The status differs from the expected one.</exception>
     public Task ToHaveStatusAsync(int expected)
     {
         var match = _response.Status == expected;

@@ -2,6 +2,14 @@ using Motus.Abstractions;
 
 namespace Motus.Assertions;
 
+/// <summary>
+/// Assertions about a page as a whole, obtained from <see cref="Expect.That(IPage)"/>.
+/// </summary>
+/// <remarks>
+/// The URL, title and performance assertions re-evaluate until they hold or the timeout elapses,
+/// so a navigation still in flight is waited for rather than failed on. The accessibility audit is
+/// the exception and is evaluated once, since it describes the document as it stands.
+/// </remarks>
 public sealed class PageAssertions
 {
     private readonly Page _page;
@@ -13,6 +21,9 @@ public sealed class PageAssertions
         _negate = negate;
     }
 
+    /// <summary>
+    /// Inverts the assertion that follows, so it passes when the condition does not hold.
+    /// </summary>
     public PageAssertions Not => new(_page, !_negate);
 
     private Task RetryAsync(
@@ -24,6 +35,18 @@ public sealed class PageAssertions
             AssertionRetryHelper.ResolveTimeout(options?.Timeout),
             options?.Message, CancellationToken.None);
 
+    /// <summary>Asserts that the page's current URL equals or matches the expected pattern.</summary>
+    /// <param name="urlOrGlob">
+    /// A full URL, or a pattern containing <c>*</c> for any run of characters.
+    /// </param>
+    /// <param name="options">Timeout and failure message overrides.</param>
+    /// <remarks>
+    /// Three forms are accepted, and which one applies depends on the pattern. A pattern equal to
+    /// the URL matches it. A pattern containing <c>*</c> is matched against the whole URL, so
+    /// <c>https://example.com/orders/*</c> matches any order page but not the site root. A pattern
+    /// containing no <c>*</c> at all matches when the URL merely contains it, which is worth
+    /// knowing: <c>/orders</c> also matches <c>https://example.com/orders/17/edit</c>.
+    /// </remarks>
     public Task ToHaveUrlAsync(string urlOrGlob, AssertionOptions? options = null) =>
         RetryAsync(async ct =>
         {
@@ -32,6 +55,9 @@ public sealed class PageAssertions
             return (matches, url);
         }, "ToHaveUrl", urlOrGlob, options);
 
+    /// <summary>Asserts that the document title equals the expected string.</summary>
+    /// <param name="expected">The title the document must carry.</param>
+    /// <param name="options">Timeout and failure message overrides.</param>
     public Task ToHaveTitleAsync(string expected, AssertionOptions? options = null) =>
         RetryAsync(async ct =>
         {
@@ -39,6 +65,19 @@ public sealed class PageAssertions
             return (title == expected, title);
         }, "ToHaveTitle", expected, options);
 
+    /// <summary>
+    /// Asserts that the page raises no accessibility violations, and reports every violation it
+    /// found when it does.
+    /// </summary>
+    /// <param name="configure">
+    /// Narrows what counts as a failure: rules to skip, and whether warnings fail alongside errors.
+    /// </param>
+    /// <param name="options">Failure message override. The timeout is unused, since no retry occurs.</param>
+    /// <remarks>
+    /// A result already collected by the audit hook is reused; without one, an audit runs here
+    /// against the rules registered on the context. Unlike the other page assertions this is
+    /// evaluated once rather than retried, so wait for the page to settle before calling it.
+    /// </remarks>
     public async Task ToPassAccessibilityAuditAsync(
         Action<AccessibilityAssertionOptions>? configure = null,
         AssertionOptions? options = null)
@@ -81,6 +120,18 @@ public sealed class PageAssertions
         }
     }
 
+    /// <summary>
+    /// Asserts that every metric in the active performance budget is within its threshold, and
+    /// names the ones that are not when it fails.
+    /// </summary>
+    /// <param name="options">Timeout and failure message overrides.</param>
+    /// <remarks>
+    /// The budget is resolved in order from the one applied to the page, then the one carried by
+    /// the ambient test context, then the thresholds in configuration. When none of those supplies
+    /// a budget the call throws <see cref="InvalidOperationException"/> rather than passing, since
+    /// an assertion with nothing to assert would otherwise report success.
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">No performance budget is in effect.</exception>
     public async Task ToMeetPerformanceBudgetAsync(AssertionOptions? options = null)
     {
         var budget = ResolveBudget();
@@ -101,6 +152,12 @@ public sealed class PageAssertions
             .ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Asserts that Largest Contentful Paint, the time until the largest element in the viewport
+    /// has rendered, is at or below the given threshold.
+    /// </summary>
+    /// <param name="thresholdMs">The upper bound in milliseconds.</param>
+    /// <param name="options">Timeout and failure message overrides.</param>
     public Task ToHaveLcpBelowAsync(double thresholdMs, AssertionOptions? options = null) =>
         RetryAsync(async ct =>
         {
@@ -112,6 +169,12 @@ public sealed class PageAssertions
             return (actual <= thresholdMs, $"{actual:F1}ms");
         }, "ToHaveLcpBelow", $"< {thresholdMs}ms", options);
 
+    /// <summary>
+    /// Asserts that First Contentful Paint, the time until any content first appears, is at or
+    /// below the given threshold.
+    /// </summary>
+    /// <param name="thresholdMs">The upper bound in milliseconds.</param>
+    /// <param name="options">Timeout and failure message overrides.</param>
     public Task ToHaveFcpBelowAsync(double thresholdMs, AssertionOptions? options = null) =>
         RetryAsync(async ct =>
         {
@@ -123,6 +186,12 @@ public sealed class PageAssertions
             return (actual <= thresholdMs, $"{actual:F1}ms");
         }, "ToHaveFcpBelow", $"< {thresholdMs}ms", options);
 
+    /// <summary>
+    /// Asserts that Time To First Byte, the wait before the server's response begins arriving, is
+    /// at or below the given threshold.
+    /// </summary>
+    /// <param name="thresholdMs">The upper bound in milliseconds.</param>
+    /// <param name="options">Timeout and failure message overrides.</param>
     public Task ToHaveTtfbBelowAsync(double thresholdMs, AssertionOptions? options = null) =>
         RetryAsync(async ct =>
         {
@@ -134,6 +203,12 @@ public sealed class PageAssertions
             return (actual <= thresholdMs, $"{actual:F1}ms");
         }, "ToHaveTtfbBelow", $"< {thresholdMs}ms", options);
 
+    /// <summary>
+    /// Asserts that Cumulative Layout Shift, how much the page moved under the reader while
+    /// loading, is at or below the given threshold.
+    /// </summary>
+    /// <param name="threshold">The upper bound, as an unitless score rather than a duration.</param>
+    /// <param name="options">Timeout and failure message overrides.</param>
     public Task ToHaveClsBelowAsync(double threshold, AssertionOptions? options = null) =>
         RetryAsync(async ct =>
         {
@@ -145,6 +220,16 @@ public sealed class PageAssertions
             return (actual <= threshold, $"{actual:F3}");
         }, "ToHaveClsBelow", $"< {threshold}", options);
 
+    /// <summary>
+    /// Asserts that Interaction to Next Paint, how long the page took to respond visibly to the
+    /// reader, is at or below the given threshold.
+    /// </summary>
+    /// <param name="thresholdMs">The upper bound in milliseconds.</param>
+    /// <param name="options">Timeout and failure message overrides.</param>
+    /// <remarks>
+    /// The metric only exists once something has been interacted with, so a page that has merely
+    /// been loaded reports none and the assertion fails rather than passing vacuously.
+    /// </remarks>
     public Task ToHaveInpBelowAsync(double thresholdMs, AssertionOptions? options = null) =>
         RetryAsync(async ct =>
         {
