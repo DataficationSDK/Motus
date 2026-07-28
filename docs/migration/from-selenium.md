@@ -129,7 +129,7 @@ Motus provides explicit waiting utilities for cases that actionability checks do
 
 ## Assertions
 
-Motus provides a dedicated assertion API in the `Motus.Assertions` namespace that retries until the condition is met or the timeout expires, which eliminates timing-related assertion failures.
+Motus provides a dedicated assertion API in the `Motus.Assertions` namespace that retries until the condition is met or the timeout expires, which removes most timing-related assertion failures. It does not remove all of them: a locator assertion needs its element present already and fails at once when the locator matches nothing, so wait for an element that has still to render with `ToBeAttachedAsync` first.
 
 ```csharp
 using Motus.Assertions;
@@ -291,7 +291,7 @@ Add `await` to every element interaction and navigation call. Mark test methods 
 
 **7. Remove explicit waits.**
 
-Delete `WebDriverWait`, `Thread.Sleep`, and `ImplicitlyWait` calls. Motus auto-wait handles the common cases. For the uncommon cases, use the `WaitFor*Async` methods listed in the waiting section above.
+Delete `Thread.Sleep` and `ImplicitlyWait` calls. Motus auto-wait handles the common cases. Keep a `WebDriverWait` that was there to let an element render, though: an assertion re-evaluates its condition but does not wait for a missing element to appear. Replace those with `ToBeAttachedAsync` or the `WaitFor*Async` methods listed in the waiting section above.
 
 **8. Replace assertions.**
 

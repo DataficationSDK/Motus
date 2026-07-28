@@ -217,7 +217,7 @@ await locator.PressAsync("Enter");
 
 ### Assertions
 
-Assertions auto-retry until passing or a timeout is reached. Use `Expect.That()` or import it statically:
+Assertions re-evaluate until they pass or a timeout is reached, so there is no need to wait for a value the page has not settled on yet. A locator assertion still needs its element to be present: it fails at once when the locator matches nothing, so wait for an element that has still to render with `ToBeAttachedAsync` first. Use `Expect.That()` or import it statically:
 
 ```csharp
 using static Motus.Assertions.Expect;

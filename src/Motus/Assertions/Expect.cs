@@ -8,8 +8,8 @@ namespace Motus.Assertions;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Assertions read as a sentence, and the ones reached through a locator or a page retry until
-/// they hold rather than testing once:
+/// Assertions read as a sentence, and the ones reached through a locator or a page re-evaluate
+/// their condition until it holds or the timeout elapses, rather than testing once:
 /// </para>
 /// <code>
 /// await Expect.That(page.GetByRole("alert")).ToBeVisibleAsync();
@@ -17,8 +17,11 @@ namespace Motus.Assertions;
 /// await Expect.That(response).ToBeOkAsync();
 /// </code>
 /// <para>
-/// Because they retry, an explicit wait before an assertion is unnecessary. Insert <c>Not</c> to
-/// invert one: <c>Expect.That(locator).Not.ToBeVisibleAsync()</c>.
+/// Re-evaluating covers a value the page has not settled on yet, so an assertion after a
+/// navigation or an interaction is safe. It does not cover an element that is not there: a
+/// locator assertion needs its element present already and fails at once when the locator matches
+/// nothing, so wait for one that has still to render with <c>ToBeAttachedAsync</c> first. Insert
+/// <c>Not</c> to invert an assertion: <c>Expect.That(locator).Not.ToBeVisibleAsync()</c>.
 /// </para>
 /// </remarks>
 public static class Expect

@@ -8,8 +8,11 @@ namespace Motus.Assertions;
 /// </summary>
 /// <remarks>
 /// Every assertion here re-evaluates its condition until it holds or the timeout elapses, so a
-/// value the page has not produced yet is waited for rather than failed on. That makes an explicit
-/// wait before an assertion unnecessary, and makes one after a navigation or an interaction safe.
+/// value the page has not settled on yet is waited for rather than failed on, which makes an
+/// assertion after a navigation or an interaction safe. The element itself is a separate question:
+/// these need it present already and fail at once when the locator matches nothing, rather than
+/// waiting for it to appear, so wait for one that has still to render with
+/// <c>ToBeAttachedAsync</c> first.
 /// The timeout and the message on failure come from the <see cref="AssertionOptions"/> each method
 /// accepts.
 /// </remarks>
