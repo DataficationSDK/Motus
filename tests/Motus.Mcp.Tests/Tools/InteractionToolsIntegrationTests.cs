@@ -55,7 +55,11 @@ public class InteractionToolsIntegrationTests
 
         Assert.IsFalse((await CoreTools.NavigateAsync(Form, service, ct)).IsError ?? false, "navigate");
 
-        var snapText = TextOf(await CoreTools.SnapshotAsync(null, null, service, ct));
+        var snapText = TextOf(await CoreTools.SnapshotAsync(
+            pageService: service,
+            cancellationToken: ct,
+            root_ref: null,
+            max_depth: null));
         StringAssert.Contains(snapText, "[ref=e");
 
         var accept = RefForLineContaining(snapText, "Accept");
@@ -82,7 +86,12 @@ public class InteractionToolsIntegrationTests
         }
 
         AssertOk(await InteractionTools.WaitForElementAsync(accept, "visible", service, ct), "wait_for_element");
-        AssertOk(await InteractionTools.WaitForAsync(null, "Ready", null, service, ct), "wait_for text");
+        AssertOk(await InteractionTools.WaitForAsync(
+            pageService: service,
+            cancellationToken: ct,
+            time: null,
+            text: "Ready",
+            text_gone: null), "wait_for text");
         AssertOk(await InteractionTools.PressKeyAsync("Escape", service, ct), "press_key");
     }
 

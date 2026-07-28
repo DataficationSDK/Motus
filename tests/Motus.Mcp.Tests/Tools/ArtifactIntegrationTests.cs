@@ -57,7 +57,11 @@ public class ArtifactIntegrationTests
 
         AssertOk(await CoreTools.NavigateAsync(SamplePage, pages, ct), "navigate");
 
-        var result = await CodegenTools.GeneratePomAsync("Sample.Generated", "SamplePageModel", pages, ct);
+        var result = await CodegenTools.GeneratePomAsync(
+            pageService: pages,
+            cancellationToken: ct,
+            @namespace: "Sample.Generated",
+            class_name: "SamplePageModel");
         AssertOk(result, "generate_pom");
 
         var source = TextOf(result);
@@ -74,9 +78,16 @@ public class ArtifactIntegrationTests
         _artifacts.Add(path);
 
         AssertOk(await CoreTools.NavigateAsync(SamplePage, pages, ct), "navigate");
-        AssertOk(await RecordingTools.TraceStartAsync(screenshots: true, snapshots: true, pages, ct), "trace_start");
+        AssertOk(await RecordingTools.TraceStartAsync(
+            pageService: pages,
+            cancellationToken: ct,
+            screenshots: true,
+            snapshots: true), "trace_start");
         AssertOk(await CoreTools.NavigateAsync(SamplePage, pages, ct), "navigate-again");
-        AssertOk(await RecordingTools.TraceStopAsync(path, pages, ct), "trace_stop");
+        AssertOk(await RecordingTools.TraceStopAsync(
+            pageService: pages,
+            cancellationToken: ct,
+            path: path), "trace_stop");
 
         Assert.IsTrue(File.Exists(path), "trace file should exist");
         Assert.IsTrue(new FileInfo(path).Length > 0, "trace file should be non-empty");
@@ -93,7 +104,10 @@ public class ArtifactIntegrationTests
         AssertOk(await CoreTools.NavigateAsync(SamplePage, pages, ct), "navigate");
         AssertOk(await RecordingTools.HarStartAsync(pages, ct), "har_start");
         AssertOk(await CoreTools.NavigateAsync(SamplePage, pages, ct), "navigate-again");
-        AssertOk(await RecordingTools.HarStopAsync(path, pages, ct), "har_stop");
+        AssertOk(await RecordingTools.HarStopAsync(
+            pageService: pages,
+            cancellationToken: ct,
+            path: path), "har_stop");
 
         Assert.IsTrue(File.Exists(path), "HAR file should exist");
 
@@ -113,11 +127,19 @@ public class ArtifactIntegrationTests
 
         AssertOk(await CoreTools.NavigateAsync(SamplePage, pages, ct), "navigate");
         AssertOk(await CoordinateTools.ResizeAsync(640, 480, pages, ct), "resize");
-        AssertOk(await RecordingTools.VideoStartAsync(path, pages, ct), "video_start");
+        AssertOk(await RecordingTools.VideoStartAsync(
+            pageService: pages,
+            cancellationToken: ct,
+            path: path), "video_start");
 
         // Produce on-screen changes so the screencast emits frames.
         AssertOk(await CoreTools.NavigateAsync(SamplePage, pages, ct), "navigate-again");
-        AssertOk(await InteractionTools.WaitForAsync(500, null, null, pages, ct), "wait");
+        AssertOk(await InteractionTools.WaitForAsync(
+            pageService: pages,
+            cancellationToken: ct,
+            time: 500,
+            text: null,
+            text_gone: null), "wait");
 
         var stop = await RecordingTools.VideoStopAsync(pages, ct);
         AssertOk(stop, "video_stop");

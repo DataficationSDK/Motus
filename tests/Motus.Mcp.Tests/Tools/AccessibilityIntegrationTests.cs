@@ -54,7 +54,10 @@ public class AccessibilityIntegrationTests
 
         AssertOk(await CoreTools.NavigateAsync(DefectivePage, pages, ct), "navigate");
 
-        var all = await AccessibilityTools.AuditAccessibilityAsync(null, pages, ct);
+        var all = await AccessibilityTools.AuditAccessibilityAsync(
+            pageService: pages,
+            cancellationToken: ct,
+            min_severity: null);
         AssertOk(all, "audit_accessibility");
 
         var violations = Violations(all);
@@ -73,7 +76,10 @@ public class AccessibilityIntegrationTests
             $"expected at least one violation to carry a ref; rules were: {rulesText}");
 
         // Filtering to errors returns a subset, all of which are errors.
-        var errorsOnly = await AccessibilityTools.AuditAccessibilityAsync("error", pages, ct);
+        var errorsOnly = await AccessibilityTools.AuditAccessibilityAsync(
+            pageService: pages,
+            cancellationToken: ct,
+            min_severity: "error");
         AssertOk(errorsOnly, "audit_accessibility error filter");
 
         var errors = Violations(errorsOnly);

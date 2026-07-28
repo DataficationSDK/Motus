@@ -8,18 +8,44 @@ internal sealed partial class Page
     {
         var format = options?.Type == ScreenshotType.Jpeg ? "jpeg" : "png";
         var quality = options?.Type == ScreenshotType.Jpeg ? options.Quality : null;
+        bool? beyondViewport = options?.FullPage == true ? true : null;
 
-        var result = await _session.SendAsync(
-            "Page.captureScreenshot",
-            new PageCaptureScreenshotParams(
-                Format: format,
-                Quality: quality,
-                CaptureBeyondViewport: options?.FullPage == true ? true : null),
-            CdpJsonContext.Default.PageCaptureScreenshotParams,
-            CdpJsonContext.Default.PageCaptureScreenshotResult,
-            _pageCts.Token).ConfigureAwait(false);
+        // A clip travels in its own request shape rather than as one more field beside the others,
+        // so it needs the params record that carries one. Sending the plain record with a clip set
+        // drops the region silently and answers with the whole viewport, which reads as the clip
+        // having been ignored rather than refused.
+        string data;
+        if (options?.Clip is { } clip)
+        {
+            var clipped = await _session.SendAsync(
+                "Page.captureScreenshot",
+                new PageCaptureScreenshotWithClipParams(
+                    Clip: new PageClipRect(clip.X, clip.Y, clip.Width, clip.Height),
+                    Format: format,
+                    Quality: quality,
+                    CaptureBeyondViewport: beyondViewport),
+                CdpJsonContext.Default.PageCaptureScreenshotWithClipParams,
+                CdpJsonContext.Default.PageCaptureScreenshotResult,
+                _pageCts.Token).ConfigureAwait(false);
 
-        var bytes = Convert.FromBase64String(result.Data);
+            data = clipped.Data;
+        }
+        else
+        {
+            var whole = await _session.SendAsync(
+                "Page.captureScreenshot",
+                new PageCaptureScreenshotParams(
+                    Format: format,
+                    Quality: quality,
+                    CaptureBeyondViewport: beyondViewport),
+                CdpJsonContext.Default.PageCaptureScreenshotParams,
+                CdpJsonContext.Default.PageCaptureScreenshotResult,
+                _pageCts.Token).ConfigureAwait(false);
+
+            data = whole.Data;
+        }
+
+        var bytes = Convert.FromBase64String(data);
 
         if (options?.Path is not null)
         {

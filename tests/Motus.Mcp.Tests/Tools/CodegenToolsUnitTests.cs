@@ -21,7 +21,11 @@ public class CodegenToolsUnitTests
         var page = new FakeToolPage(new AccessibilitySnapshot([], 0, null));
         var service = new FakeActivePageService(page);
 
-        var result = await CodegenTools.GeneratePomAsync(@namespace: null, class_name: null, service, Ct);
+        var result = await CodegenTools.GeneratePomAsync(
+            pageService: service,
+            cancellationToken: Ct,
+            @namespace: null,
+            class_name: null);
 
         Assert.IsTrue(result.IsError ?? false);
         StringAssert.Contains(TextOf(result), "page object model");

@@ -17,9 +17,6 @@ internal sealed partial class Page : IPage
 
     private readonly ConcurrentDictionary<string, Frame> _frames = new();
 
-    // Context ids are numbered per session, so two frames in different processes can both be
-    // context 1. The session has to be part of the key or the reverse lookup is ambiguous.
-    private readonly ConcurrentDictionary<(string? SessionId, int ContextId), string> _executionContextToFrameId = new();
     private readonly ConcurrentDictionary<string, int> _frameIdToExecutionContext = new();
 
     // Frames that render in their own process are reached over a session of their own. A frame
@@ -31,8 +28,10 @@ internal sealed partial class Page : IPage
     // session is usable. Callers that need to talk to a frame await its entry here.
     private readonly ConcurrentDictionary<string, Task> _frameTargetInit = new();
 
-    // Isolated world per frame, created on demand and dropped when the frame navigates.
-    private readonly ConcurrentDictionary<string, int> _frameIdToIsolatedWorld = new();
+    // Isolated world per frame, created on demand and dropped when the frame navigates. The value
+    // is the in-flight creation rather than the finished id, so two callers asking at once share
+    // one world instead of each making one and leaving the loser behind in the renderer.
+    private readonly ConcurrentDictionary<string, Lazy<Task<int>>> _frameIdToIsolatedWorld = new();
     private readonly ConcurrentDictionary<string, Download> _downloads = new();
     private readonly ConcurrentDictionary<string, Func<object?[], Task<object?>>> _bindings = new();
     private readonly List<string> _initScripts = [];

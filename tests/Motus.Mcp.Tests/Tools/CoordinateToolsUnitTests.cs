@@ -38,7 +38,13 @@ public class CoordinateToolsUnitTests
         var (page, service) = Setup();
 
         var result = await CoordinateTools.ClickXyAsync(
-            150, 250, @double: null, button: null, modifiers: null, service, CancellationToken.None);
+            x: 150,
+            y: 250,
+            pageService: service,
+            cancellationToken: CancellationToken.None,
+            @double: null,
+            button: null,
+            modifiers: null);
 
         Assert.IsFalse(result.IsError ?? false);
         Assert.AreEqual(1, page.FakeMouse.Clicks.Count);
@@ -51,7 +57,13 @@ public class CoordinateToolsUnitTests
         var (page, service) = Setup();
 
         var result = await CoordinateTools.ClickXyAsync(
-            10, 20, @double: true, button: null, modifiers: null, service, CancellationToken.None);
+            x: 10,
+            y: 20,
+            pageService: service,
+            cancellationToken: CancellationToken.None,
+            @double: true,
+            button: null,
+            modifiers: null);
 
         Assert.IsFalse(result.IsError ?? false);
         Assert.AreEqual(0, page.FakeMouse.Clicks.Count);
@@ -64,7 +76,13 @@ public class CoordinateToolsUnitTests
         var (page, service) = Setup();
 
         var result = await CoordinateTools.ClickXyAsync(
-            5, 5, @double: null, button: "right", modifiers: ["Control", "shift"], service, CancellationToken.None);
+            x: 5,
+            y: 5,
+            pageService: service,
+            cancellationToken: CancellationToken.None,
+            @double: null,
+            button: "right",
+            modifiers: ["Control", "shift"]);
 
         Assert.IsFalse(result.IsError ?? false);
         var options = page.FakeMouse.Clicks[0].Options;
@@ -79,7 +97,13 @@ public class CoordinateToolsUnitTests
         var (page, service) = Setup();
 
         var result = await CoordinateTools.ClickXyAsync(
-            5, 5, @double: null, button: "back", modifiers: null, service, CancellationToken.None);
+            x: 5,
+            y: 5,
+            pageService: service,
+            cancellationToken: CancellationToken.None,
+            @double: null,
+            button: "back",
+            modifiers: null);
 
         Assert.IsTrue(result.IsError ?? false);
         Assert.AreEqual(0, page.FakeMouse.Clicks.Count);
@@ -91,7 +115,13 @@ public class CoordinateToolsUnitTests
         var (page, service) = Setup();
 
         var result = await CoordinateTools.ClickXyAsync(
-            5, 5, @double: null, button: null, modifiers: ["Hyper"], service, CancellationToken.None);
+            x: 5,
+            y: 5,
+            pageService: service,
+            cancellationToken: CancellationToken.None,
+            @double: null,
+            button: null,
+            modifiers: ["Hyper"]);
 
         Assert.IsTrue(result.IsError ?? false);
         StringAssert.Contains(TextOf(result), "Hyper");
@@ -171,9 +201,16 @@ public class CoordinateToolsUnitTests
         var (page, service) = Setup();
 
         var result = await CoordinateTools.DragAsync(
-            start_ref: null, end_ref: null,
-            start_x: 10, start_y: 20, end_x: 200, end_y: 220,
-            steps: 5, hold_ms: null, service, CancellationToken.None);
+            pageService: service,
+            cancellationToken: CancellationToken.None,
+            start_ref: null,
+            end_ref: null,
+            start_x: 10,
+            start_y: 20,
+            end_x: 200,
+            end_y: 220,
+            steps: 5,
+            hold_ms: null);
 
         Assert.IsFalse(result.IsError ?? false);
         CollectionAssert.AreEqual(new[] { "move", "down", "move", "up" }, page.FakeMouse.Sequence);
@@ -188,9 +225,16 @@ public class CoordinateToolsUnitTests
         var (page, service) = Setup();
 
         await CoordinateTools.DragAsync(
-            start_ref: null, end_ref: null,
-            start_x: 0, start_y: 0, end_x: 50, end_y: 50,
-            steps: null, hold_ms: null, service, CancellationToken.None);
+            pageService: service,
+            cancellationToken: CancellationToken.None,
+            start_ref: null,
+            end_ref: null,
+            start_x: 0,
+            start_y: 0,
+            end_x: 50,
+            end_y: 50,
+            steps: null,
+            hold_ms: null);
 
         Assert.AreEqual(10, page.FakeMouse.Moves[1].Options?.Steps);
     }
@@ -200,13 +244,24 @@ public class CoordinateToolsUnitTests
     {
         var page = new FakeToolPage(Snapshot(Node("listitem", "Revenue", 10)));
         var service = new FakeActivePageService(page);
-        await CoreTools.SnapshotAsync(null, null, service, CancellationToken.None);
+        await CoreTools.SnapshotAsync(
+            pageService: service,
+            cancellationToken: CancellationToken.None,
+            root_ref: null,
+            max_depth: null);
         page.RecordingLocator.Box = new BoundingBox(100, 200, 50, 30);
 
         var result = await CoordinateTools.DragAsync(
-            start_ref: "e1", end_ref: "e1",
-            start_x: null, start_y: null, end_x: null, end_y: null,
-            steps: null, hold_ms: null, service, CancellationToken.None);
+            pageService: service,
+            cancellationToken: CancellationToken.None,
+            start_ref: "e1",
+            end_ref: "e1",
+            start_x: null,
+            start_y: null,
+            end_x: null,
+            end_y: null,
+            steps: null,
+            hold_ms: null);
 
         Assert.IsFalse(result.IsError ?? false);
         CollectionAssert.AreEqual(new[] { "move", "down", "move", "up" }, page.FakeMouse.Sequence);
@@ -219,9 +274,16 @@ public class CoordinateToolsUnitTests
         var (page, service) = Setup();
 
         var result = await CoordinateTools.DragAsync(
-            start_ref: "e1", end_ref: "e2",
-            start_x: null, start_y: null, end_x: null, end_y: null,
-            steps: null, hold_ms: null, service, CancellationToken.None);
+            pageService: service,
+            cancellationToken: CancellationToken.None,
+            start_ref: "e1",
+            end_ref: "e2",
+            start_x: null,
+            start_y: null,
+            end_x: null,
+            end_y: null,
+            steps: null,
+            hold_ms: null);
 
         Assert.IsTrue(result.IsError ?? false);
         StringAssert.Contains(TextOf(result), "snapshot");
@@ -234,9 +296,16 @@ public class CoordinateToolsUnitTests
         var (page, service) = Setup();
 
         var result = await CoordinateTools.DragAsync(
-            start_ref: "e1", end_ref: null,
-            start_x: null, start_y: null, end_x: 50, end_y: 50,
-            steps: null, hold_ms: null, service, CancellationToken.None);
+            pageService: service,
+            cancellationToken: CancellationToken.None,
+            start_ref: "e1",
+            end_ref: null,
+            start_x: null,
+            start_y: null,
+            end_x: 50,
+            end_y: 50,
+            steps: null,
+            hold_ms: null);
 
         Assert.IsTrue(result.IsError ?? false);
         Assert.AreEqual(0, page.FakeMouse.Sequence.Count);
@@ -248,9 +317,16 @@ public class CoordinateToolsUnitTests
         var (page, service) = Setup();
 
         var result = await CoordinateTools.DragAsync(
-            start_ref: null, end_ref: null,
-            start_x: 10, start_y: null, end_x: 50, end_y: 50,
-            steps: null, hold_ms: null, service, CancellationToken.None);
+            pageService: service,
+            cancellationToken: CancellationToken.None,
+            start_ref: null,
+            end_ref: null,
+            start_x: 10,
+            start_y: null,
+            end_x: 50,
+            end_y: 50,
+            steps: null,
+            hold_ms: null);
 
         Assert.IsTrue(result.IsError ?? false);
         Assert.AreEqual(0, page.FakeMouse.Sequence.Count);

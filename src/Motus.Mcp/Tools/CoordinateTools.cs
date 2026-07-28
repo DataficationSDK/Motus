@@ -29,11 +29,11 @@ public sealed class CoordinateTools
     public static async Task<CallToolResult> ClickXyAsync(
         [Description("The x coordinate in CSS pixels from the left edge of the viewport.")] int x,
         [Description("The y coordinate in CSS pixels from the top edge of the viewport.")] int y,
-        [Description("Double-click instead of a single click.")] bool? @double,
-        [Description("The mouse button: left (default), right, or middle.")] string? button,
-        [Description("Modifier keys held during the click: Alt, Control, Meta, Shift.")] string[]? modifiers,
         ActivePageService pageService,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        [Description("Double-click instead of a single click.")] bool? @double = null,
+        [Description("The mouse button: left (default), right, or middle.")] string? button = null,
+        [Description("Modifier keys held during the click: Alt, Control, Meta, Shift.")] string[]? modifiers = null)
     {
         try
         {
@@ -135,16 +135,16 @@ public sealed class CoordinateTools
         + "coordinates (start_x/start_y/end_x/end_y); coordinates work on canvas drop-zones that have no refs. "
         + "Intermediate moves are always emitted because drag libraries commonly require observed movement.")]
     public static async Task<CallToolResult> DragAsync(
-        [Description("The ref of the element to drag, from the latest snapshot.")] string? start_ref,
-        [Description("The ref of the drop target, from the latest snapshot.")] string? end_ref,
-        [Description("The x coordinate to drag from, in CSS pixels.")] int? start_x,
-        [Description("The y coordinate to drag from, in CSS pixels.")] int? start_y,
-        [Description("The x coordinate to drop at, in CSS pixels.")] int? end_x,
-        [Description("The y coordinate to drop at, in CSS pixels.")] int? end_y,
-        [Description("Number of intermediate pointer moves between press and release. Default 10.")] int? steps,
-        [Description("Milliseconds to hold the button down before moving, for libraries that threshold drag start.")] int? hold_ms,
         ActivePageService pageService,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        [Description("The ref of the element to drag, from the latest snapshot.")] string? start_ref = null,
+        [Description("The ref of the drop target, from the latest snapshot.")] string? end_ref = null,
+        [Description("The x coordinate to drag from, in CSS pixels.")] int? start_x = null,
+        [Description("The y coordinate to drag from, in CSS pixels.")] int? start_y = null,
+        [Description("The x coordinate to drop at, in CSS pixels.")] int? end_x = null,
+        [Description("The y coordinate to drop at, in CSS pixels.")] int? end_y = null,
+        [Description("Number of intermediate pointer moves between press and release. Default 10.")] int? steps = null,
+        [Description("Milliseconds to hold the button down before moving, for libraries that threshold drag start.")] int? hold_ms = null)
     {
         var hasRefs = start_ref is not null || end_ref is not null;
         var hasCoords = start_x is not null || start_y is not null || end_x is not null || end_y is not null;

@@ -404,7 +404,21 @@ internal sealed class BrowserContext : IBrowserContext
         }
     }
 
-    public async Task CloseAsync()
+    /// <summary>
+    /// Lets go of this context without touching the browser: unloads plugins, releases pages and
+    /// sessions, and leaves the context itself running.
+    /// </summary>
+    /// <remarks>
+    /// Used when disconnecting rather than closing. Disconnecting means Motus stops driving the
+    /// browser, not that anything in it goes away, so the context keeps existing and its tabs stay
+    /// open. Without this the handles survive a disconnect over a dead transport and the plugin
+    /// hosts are never unloaded.
+    /// </remarks>
+    internal Task ReleaseLocallyAsync() => CloseCoreAsync(disposeInBrowser: false);
+
+    public Task CloseAsync() => CloseCoreAsync(disposeInBrowser: !_adopted);
+
+    private async Task CloseCoreAsync(bool disposeInBrowser)
     {
         if (Interlocked.CompareExchange(ref _closed, 1, 0) != 0)
             return;
@@ -445,9 +459,10 @@ internal sealed class BrowserContext : IBrowserContext
 
         // Dispose the browser context. An adopted one is left alone: it was open before Motus
         // arrived, disposing it would close windows belonging to whoever is using the browser,
-        // and the default context has no id to dispose in any case. Everything above this point
-        // is local bookkeeping and applies either way.
-        if (!_adopted)
+        // and the default context has no id to dispose in any case. A disconnect leaves every
+        // context alone for the same reason. Everything above this point is local bookkeeping and
+        // applies either way.
+        if (disposeInBrowser)
         {
             try
             {

@@ -953,7 +953,11 @@ internal sealed class Locator : ILocator
         var format = options?.Type == ScreenshotType.Jpeg ? "jpeg" : "png";
         var quality = options?.Type == ScreenshotType.Jpeg ? options.Quality : null;
 
-        var result = await Session.SendAsync(
+        // Capture is the page's to do, not the frame's. A renderer hosting a frame refuses the
+        // command outright, and the clip is already in the page's coordinate space, which is the
+        // space the page session expects. Every other command here follows the element's session
+        // because it carries a remote object id; this one carries only a rectangle.
+        var result = await _page.Session.SendAsync(
             "Page.captureScreenshot",
             new PageCaptureScreenshotWithClipParams(
                 Clip: new PageClipRect(box.X, box.Y, box.Width, box.Height),

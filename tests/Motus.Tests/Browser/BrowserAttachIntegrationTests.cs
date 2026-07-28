@@ -171,6 +171,33 @@ public class BrowserAttachIntegrationTests
         Assert.IsTrue(await EndpointAnswersAsync());
     }
 
+    /// <summary>
+    /// Disconnecting lets go of the contexts locally while leaving them open in the browser.
+    /// </summary>
+    /// <remarks>
+    /// Handles left listed after a disconnect are backed by a transport that is gone, so every
+    /// call through them fails obscurely. Letting go of them locally is not the same as closing
+    /// them: the tab that was already open has to still be there afterwards, which the reconnect
+    /// below is what proves.
+    /// </remarks>
+    [TestMethod]
+    public async Task DisconnectAsync_ReleasesContextsLocallyButLeavesThemOpen()
+    {
+        var browser = await MotusLauncher.ConnectAsync(HttpEndpoint, new ConnectOptions());
+        Assert.IsTrue(browser.Contexts.Count > 0, "Connecting adopted no context to release.");
+
+        await browser.DisconnectAsync();
+
+        Assert.AreEqual(0, browser.Contexts.Count,
+            "Contexts are still listed after a disconnect, over a transport that is gone.");
+
+        await using var reconnected = await MotusLauncher.ConnectAsync(HttpEndpoint, new ConnectOptions());
+        Assert.IsTrue(reconnected.Contexts.Count > 0,
+            "Disconnecting took the browser's contexts with it.");
+        Assert.IsTrue(reconnected.Contexts.Any(c => c.Pages.Count > 0),
+            "The tab that was open before the disconnect is gone.");
+    }
+
     [TestMethod]
     public async Task DisposeAsync_OnAttachedBrowser_LeavesBrowserRunning()
     {

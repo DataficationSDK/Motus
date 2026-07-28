@@ -103,7 +103,7 @@ internal sealed partial class Page
         _ = PumpEventsAsync(session,
             "Runtime.executionContextCreated",
             CdpJsonContext.Default.RuntimeExecutionContextCreatedEvent,
-            evt => OnExecutionContextCreated(evt, session), ct);
+            OnExecutionContextCreated, ct);
 
         _ = PumpEventsAsync(session,
             "Runtime.consoleAPICalled",
@@ -217,23 +217,32 @@ internal sealed partial class Page
             _frameIdToSession[frameId] = source;
     }
 
-    private void OnExecutionContextCreated(RuntimeExecutionContextCreatedEvent evt, IMotusSession source)
+    private void OnExecutionContextCreated(RuntimeExecutionContextCreatedEvent evt)
     {
         var ctx = evt.Context;
 
         // Extract frameId from auxData if present
         string? frameId = null;
+        var isDefaultWorld = true;
         if (ctx.AuxData is JsonElement aux && aux.ValueKind == JsonValueKind.Object)
         {
             if (aux.TryGetProperty("frameId", out var fid))
                 frameId = fid.GetString();
+
+            // A frame has one main world and any number of others beside it. Only the main world
+            // is the frame's context: an isolated world reports the same frame id, and recording
+            // it here would send every later main-world evaluation into the isolated world, where
+            // the page's own globals do not exist. That failure is silent, so it is guarded at the
+            // one place contexts are recorded rather than at each reader.
+            if (aux.TryGetProperty("isDefault", out var isDefault)
+                && isDefault.ValueKind is JsonValueKind.False)
+            {
+                isDefaultWorld = false;
+            }
         }
 
-        if (frameId is not null)
-        {
+        if (frameId is not null && isDefaultWorld)
             _frameIdToExecutionContext[frameId] = ctx.Id;
-            _executionContextToFrameId[(source.SessionId, ctx.Id)] = frameId;
-        }
     }
 
     private void OnConsoleApiCalled(RuntimeConsoleApiCalledEvent evt)

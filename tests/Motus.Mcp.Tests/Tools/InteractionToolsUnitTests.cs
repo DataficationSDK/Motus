@@ -30,7 +30,11 @@ public class InteractionToolsUnitTests
     {
         var page = new FakeToolPage(Snapshot(Node(role, name, 10)));
         var service = new FakeActivePageService(page);
-        await CoreTools.SnapshotAsync(null, null, service, CancellationToken.None);
+        await CoreTools.SnapshotAsync(
+            pageService: service,
+            cancellationToken: CancellationToken.None,
+            root_ref: null,
+            max_depth: null);
         return (page, service);
     }
 
@@ -201,7 +205,12 @@ public class InteractionToolsUnitTests
         var page = new FakeToolPage(Snapshot());
         var service = new FakeActivePageService(page);
 
-        await InteractionTools.WaitForAsync(250, null, null, service, CancellationToken.None);
+        await InteractionTools.WaitForAsync(
+            pageService: service,
+            cancellationToken: CancellationToken.None,
+            time: 250,
+            text: null,
+            text_gone: null);
 
         Assert.AreEqual(250d, page.WaitedTimeoutMs);
     }
@@ -212,7 +221,12 @@ public class InteractionToolsUnitTests
         var page = new FakeToolPage(Snapshot());
         var service = new FakeActivePageService(page);
 
-        await InteractionTools.WaitForAsync(null, "Welcome", null, service, CancellationToken.None);
+        await InteractionTools.WaitForAsync(
+            pageService: service,
+            cancellationToken: CancellationToken.None,
+            time: null,
+            text: "Welcome",
+            text_gone: null);
 
         Assert.AreEqual(1, page.WaitedFunctions.Count);
         Assert.AreEqual("Welcome", page.WaitedFunctionArgs[0]);
@@ -224,7 +238,12 @@ public class InteractionToolsUnitTests
         var page = new FakeToolPage(Snapshot());
         var service = new FakeActivePageService(page);
 
-        var result = await InteractionTools.WaitForAsync(null, null, null, service, CancellationToken.None);
+        var result = await InteractionTools.WaitForAsync(
+            pageService: service,
+            cancellationToken: CancellationToken.None,
+            time: null,
+            text: null,
+            text_gone: null);
 
         Assert.IsTrue(result.IsError);
     }

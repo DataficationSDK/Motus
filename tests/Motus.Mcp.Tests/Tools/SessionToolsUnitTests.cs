@@ -34,7 +34,10 @@ public class SessionToolsUnitTests
     {
         var service = new FakeSessionPageService(Tab("https://a.test"));
 
-        var result = await SessionTools.TabOpenAsync(null, service, Ct);
+        var result = await SessionTools.TabOpenAsync(
+            pageService: service,
+            cancellationToken: Ct,
+            url: null);
 
         Assert.IsFalse(result.IsError ?? false);
         Assert.AreEqual(1, service.OpenedTabs);
@@ -46,7 +49,10 @@ public class SessionToolsUnitTests
     {
         var service = new FakeSessionPageService(Tab("https://a.test"));
 
-        var result = await SessionTools.TabOpenAsync("https://new.test", service, Ct);
+        var result = await SessionTools.TabOpenAsync(
+            pageService: service,
+            cancellationToken: Ct,
+            url: "https://new.test");
 
         Assert.IsFalse(result.IsError ?? false);
         Assert.AreEqual("https://new.test", service.Tabs[^1].NavigatedUrl);
@@ -79,7 +85,10 @@ public class SessionToolsUnitTests
     {
         var service = new FakeSessionPageService(Tab("https://a.test"), Tab("https://b.test"));
 
-        var result = await SessionTools.TabCloseAsync(null, service, Ct);
+        var result = await SessionTools.TabCloseAsync(
+            pageService: service,
+            cancellationToken: Ct,
+            index: null);
 
         Assert.IsFalse(result.IsError ?? false);
         Assert.IsTrue(service.Tabs[0].CloseCalled);
@@ -90,7 +99,10 @@ public class SessionToolsUnitTests
     {
         var service = new FakeSessionPageService(Tab("https://a.test"), Tab("https://b.test"));
 
-        var result = await SessionTools.TabCloseAsync(1, service, Ct);
+        var result = await SessionTools.TabCloseAsync(
+            pageService: service,
+            cancellationToken: Ct,
+            index: 1);
 
         Assert.IsFalse(result.IsError ?? false);
         Assert.IsTrue(service.Tabs[1].CloseCalled);
@@ -102,7 +114,10 @@ public class SessionToolsUnitTests
     {
         var service = new FakeSessionPageService(Tab("https://a.test"));
 
-        var result = await SessionTools.TabCloseAsync(9, service, Ct);
+        var result = await SessionTools.TabCloseAsync(
+            pageService: service,
+            cancellationToken: Ct,
+            index: 9);
 
         Assert.IsTrue(result.IsError);
         StringAssert.Contains(TextOf(result), "out of range");

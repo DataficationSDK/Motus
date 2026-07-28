@@ -264,9 +264,27 @@ internal sealed partial class Page
     /// </remarks>
     internal async Task<int?> GetIsolatedWorldContextIdAsync(string frameId)
     {
-        if (_frameIdToIsolatedWorld.TryGetValue(frameId, out var cached))
-            return cached;
+        // Lazy rather than a bare task, because GetOrAdd may run its factory more than once under
+        // contention and only keep one result. With a task that would mean a second world created
+        // in the renderer and never referred to again.
+        var pending = _frameIdToIsolatedWorld.GetOrAdd(
+            frameId,
+            id => new Lazy<Task<int>>(() => CreateIsolatedWorldAsync(id)));
 
+        try
+        {
+            return await pending.Value.ConfigureAwait(false);
+        }
+        catch
+        {
+            // A failed creation must not be cached, or the frame can never get a world again.
+            _frameIdToIsolatedWorld.TryRemove(new KeyValuePair<string, Lazy<Task<int>>>(frameId, pending));
+            throw;
+        }
+    }
+
+    private async Task<int> CreateIsolatedWorldAsync(string frameId)
+    {
         _frames.TryGetValue(frameId, out var frame);
 
         var result = await SessionFor(frame).SendAsync(
@@ -279,7 +297,6 @@ internal sealed partial class Page
             CdpJsonContext.Default.PageCreateIsolatedWorldResult,
             _pageCts.Token).ConfigureAwait(false);
 
-        _frameIdToIsolatedWorld[frameId] = result.ExecutionContextId;
         return result.ExecutionContextId;
     }
 }

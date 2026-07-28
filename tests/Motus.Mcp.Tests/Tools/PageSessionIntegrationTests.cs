@@ -57,13 +57,20 @@ public class PageSessionIntegrationTests
         Assert.IsFalse((await CoreTools.NavigateAsync(PageA, service, ct)).IsError ?? false, "navigate");
 
         // evaluate, page-level: a value defined on the page comes back as structured JSON.
-        var eval = await PageTools.EvaluateAsync("window.answer", null, service, ct);
+        var eval = await PageTools.EvaluateAsync(
+            expression: "window.answer",
+            pageService: service,
+            cancellationToken: ct,
+            @ref: null);
         Assert.IsFalse(eval.IsError ?? false, TextOf(eval));
         Assert.IsNotNull(eval.StructuredContent);
         Assert.AreEqual(42, eval.StructuredContent.Value.GetProperty("result").GetInt32());
 
         // Open and navigate a second tab, then confirm both are listed.
-        AssertOk(await SessionTools.TabOpenAsync(PageB, service, ct), "tab_open");
+        AssertOk(await SessionTools.TabOpenAsync(
+            pageService: service,
+            cancellationToken: ct,
+            url: PageB), "tab_open");
         var list = await SessionTools.TabListAsync(service, ct);
         StringAssert.Contains(TextOf(list), "[0]");
         StringAssert.Contains(TextOf(list), "[1]");
@@ -74,13 +81,21 @@ public class PageSessionIntegrationTests
         // Schedule a dialog so it fires after this call returns (rather than blocking a
         // click), then answer it once the handler has captured it.
         AssertOk(
-            await PageTools.EvaluateAsync("setTimeout(function(){ window.alert('hello'); }, 50); 0", null, service, ct),
+            await PageTools.EvaluateAsync(
+                expression: "setTimeout(function(){ window.alert('hello'); }, 50); 0",
+                pageService: service,
+                cancellationToken: ct,
+                @ref: null),
             "schedule dialog");
 
         CallToolResult dialog = ToolResultHelper.Error("dialog not seen");
         for (var attempt = 0; attempt < 20; attempt++)
         {
-            dialog = await PageTools.HandleDialogAsync(true, null, dialogs, ct);
+            dialog = await PageTools.HandleDialogAsync(
+                accept: true,
+                dialogService: dialogs,
+                cancellationToken: ct,
+                text: null);
             if (!(dialog.IsError ?? false))
                 break;
             await Task.Delay(100, ct);

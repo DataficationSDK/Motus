@@ -19,10 +19,10 @@ public sealed class CodegenTools
         + "with an inferred locator for each interactable element, plus a constructor and a navigate "
         + "helper. The generated source is returned inline.")]
     public static async Task<CallToolResult> GeneratePomAsync(
-        [Description("The namespace for the generated class. Defaults to Motus.Generated.")] string? @namespace,
-        [Description("The name of the generated class. Defaults to a name derived from the page URL.")] string? class_name,
         ActivePageService pageService,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        [Description("The namespace for the generated class. Defaults to Motus.Generated.")] string? @namespace = null,
+        [Description("The name of the generated class. Defaults to a name derived from the page URL.")] string? class_name = null)
     {
         try
         {

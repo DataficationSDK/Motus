@@ -58,9 +58,17 @@ public class CoreToolsUnitTests
         var page = new FakeToolPage(Snapshot(Node("button", "Go", 10)));
         var service = new FakeActivePageService(page);
 
-        await CoreTools.SnapshotAsync(null, null, service, CancellationToken.None);
+        await CoreTools.SnapshotAsync(
+            pageService: service,
+            cancellationToken: CancellationToken.None,
+            root_ref: null,
+            max_depth: null);
         await CoreTools.NavigateAsync("https://example.com", service, CancellationToken.None);
-        var click = await CoreTools.ClickAsync("e1", null, service, CancellationToken.None);
+        var click = await CoreTools.ClickAsync(
+            @ref: "e1",
+            pageService: service,
+            cancellationToken: CancellationToken.None,
+            @double: null);
 
         Assert.IsTrue(click.IsError);
         StringAssert.Contains(TextOf(click), "snapshot");
@@ -74,7 +82,11 @@ public class CoreToolsUnitTests
         var page = new FakeToolPage(Snapshot(Node("button", "Go", 10)));
         var service = new FakeActivePageService(page);
 
-        var result = await CoreTools.SnapshotAsync(null, null, service, CancellationToken.None);
+        var result = await CoreTools.SnapshotAsync(
+            pageService: service,
+            cancellationToken: CancellationToken.None,
+            root_ref: null,
+            max_depth: null);
 
         Assert.IsFalse(result.IsError ?? false);
         StringAssert.Contains(TextOf(result), "[ref=e1]");
@@ -86,7 +98,11 @@ public class CoreToolsUnitTests
         var page = new FakeToolPage(Snapshot(Node("group", "A", 10, Node("button", "A1", 11))));
         var service = new FakeActivePageService(page);
 
-        var result = await CoreTools.SnapshotAsync(null, 0, service, CancellationToken.None);
+        var result = await CoreTools.SnapshotAsync(
+            pageService: service,
+            cancellationToken: CancellationToken.None,
+            root_ref: null,
+            max_depth: 0);
 
         var text = TextOf(result);
         StringAssert.Contains(text, "- group \"A\"");
@@ -102,8 +118,16 @@ public class CoreToolsUnitTests
         var service = new FakeActivePageService(page);
 
         // Full snapshot first to populate the ref map: e1=A, e2=A1, e3=B, e4=B1.
-        await CoreTools.SnapshotAsync(null, null, service, CancellationToken.None);
-        var scoped = await CoreTools.SnapshotAsync("e3", null, service, CancellationToken.None);
+        await CoreTools.SnapshotAsync(
+            pageService: service,
+            cancellationToken: CancellationToken.None,
+            root_ref: null,
+            max_depth: null);
+        var scoped = await CoreTools.SnapshotAsync(
+            pageService: service,
+            cancellationToken: CancellationToken.None,
+            root_ref: "e3",
+            max_depth: null);
 
         var text = TextOf(scoped);
         StringAssert.StartsWith(text, "- group \"B\"");
@@ -116,8 +140,16 @@ public class CoreToolsUnitTests
         var page = new FakeToolPage(Snapshot(Node("button", "Go", 10)));
         var service = new FakeActivePageService(page);
 
-        await CoreTools.SnapshotAsync(null, null, service, CancellationToken.None);
-        var result = await CoreTools.SnapshotAsync("e999", null, service, CancellationToken.None);
+        await CoreTools.SnapshotAsync(
+            pageService: service,
+            cancellationToken: CancellationToken.None,
+            root_ref: null,
+            max_depth: null);
+        var result = await CoreTools.SnapshotAsync(
+            pageService: service,
+            cancellationToken: CancellationToken.None,
+            root_ref: "e999",
+            max_depth: null);
 
         Assert.IsTrue(result.IsError);
         StringAssert.Contains(TextOf(result), "e999");
@@ -131,8 +163,16 @@ public class CoreToolsUnitTests
         var page = new FakeToolPage(Snapshot(Node("button", "Go", 10)));
         var service = new FakeActivePageService(page);
 
-        await CoreTools.SnapshotAsync(null, null, service, CancellationToken.None);
-        var result = await CoreTools.ClickAsync("e1", null, service, CancellationToken.None);
+        await CoreTools.SnapshotAsync(
+            pageService: service,
+            cancellationToken: CancellationToken.None,
+            root_ref: null,
+            max_depth: null);
+        var result = await CoreTools.ClickAsync(
+            @ref: "e1",
+            pageService: service,
+            cancellationToken: CancellationToken.None,
+            @double: null);
 
         Assert.IsFalse(result.IsError ?? false);
         Assert.AreEqual(1, page.RecordingLocator.ClickCount);
@@ -146,8 +186,16 @@ public class CoreToolsUnitTests
         var page = new FakeToolPage(Snapshot(Node("button", "Go", 10)));
         var service = new FakeActivePageService(page);
 
-        await CoreTools.SnapshotAsync(null, null, service, CancellationToken.None);
-        await CoreTools.ClickAsync("e1", true, service, CancellationToken.None);
+        await CoreTools.SnapshotAsync(
+            pageService: service,
+            cancellationToken: CancellationToken.None,
+            root_ref: null,
+            max_depth: null);
+        await CoreTools.ClickAsync(
+            @ref: "e1",
+            pageService: service,
+            cancellationToken: CancellationToken.None,
+            @double: true);
 
         Assert.AreEqual(1, page.RecordingLocator.DblClickCount);
         Assert.AreEqual(0, page.RecordingLocator.ClickCount);
@@ -159,7 +207,11 @@ public class CoreToolsUnitTests
         var page = new FakeToolPage(Snapshot(Node("button", "Go", 10)));
         var service = new FakeActivePageService(page);
 
-        var result = await CoreTools.ClickAsync("e1", null, service, CancellationToken.None);
+        var result = await CoreTools.ClickAsync(
+            @ref: "e1",
+            pageService: service,
+            cancellationToken: CancellationToken.None,
+            @double: null);
 
         Assert.IsTrue(result.IsError);
         StringAssert.Contains(TextOf(result), "snapshot");
@@ -171,8 +223,16 @@ public class CoreToolsUnitTests
         var page = new FakeToolPage(Snapshot(Node("button", "Go", 10)));
         var service = new FakeActivePageService(page);
 
-        await CoreTools.SnapshotAsync(null, null, service, CancellationToken.None);
-        var result = await CoreTools.ClickAsync("e999", null, service, CancellationToken.None);
+        await CoreTools.SnapshotAsync(
+            pageService: service,
+            cancellationToken: CancellationToken.None,
+            root_ref: null,
+            max_depth: null);
+        var result = await CoreTools.ClickAsync(
+            @ref: "e999",
+            pageService: service,
+            cancellationToken: CancellationToken.None,
+            @double: null);
 
         Assert.IsTrue(result.IsError);
         StringAssert.Contains(TextOf(result), "e999");
@@ -186,8 +246,18 @@ public class CoreToolsUnitTests
         var page = new FakeToolPage(Snapshot(Node("textbox", "Name", 10)));
         var service = new FakeActivePageService(page);
 
-        await CoreTools.SnapshotAsync(null, null, service, CancellationToken.None);
-        var result = await CoreTools.TypeAsync("e1", "hello", null, null, service, CancellationToken.None);
+        await CoreTools.SnapshotAsync(
+            pageService: service,
+            cancellationToken: CancellationToken.None,
+            root_ref: null,
+            max_depth: null);
+        var result = await CoreTools.TypeAsync(
+            @ref: "e1",
+            text: "hello",
+            pageService: service,
+            cancellationToken: CancellationToken.None,
+            submit: null,
+            slowly: null);
 
         Assert.IsFalse(result.IsError ?? false);
         Assert.AreEqual("hello", page.RecordingLocator.FilledValue);
@@ -201,8 +271,18 @@ public class CoreToolsUnitTests
         var page = new FakeToolPage(Snapshot(Node("textbox", "Name", 10)));
         var service = new FakeActivePageService(page);
 
-        await CoreTools.SnapshotAsync(null, null, service, CancellationToken.None);
-        await CoreTools.TypeAsync("e1", "hello", null, slowly: true, service, CancellationToken.None);
+        await CoreTools.SnapshotAsync(
+            pageService: service,
+            cancellationToken: CancellationToken.None,
+            root_ref: null,
+            max_depth: null);
+        await CoreTools.TypeAsync(
+            @ref: "e1",
+            text: "hello",
+            pageService: service,
+            cancellationToken: CancellationToken.None,
+            submit: null,
+            slowly: true);
 
         Assert.AreEqual("hello", page.RecordingLocator.TypedValue);
         Assert.IsNull(page.RecordingLocator.FilledValue);
@@ -214,8 +294,18 @@ public class CoreToolsUnitTests
         var page = new FakeToolPage(Snapshot(Node("textbox", "Name", 10)));
         var service = new FakeActivePageService(page);
 
-        await CoreTools.SnapshotAsync(null, null, service, CancellationToken.None);
-        await CoreTools.TypeAsync("e1", "hello", submit: true, null, service, CancellationToken.None);
+        await CoreTools.SnapshotAsync(
+            pageService: service,
+            cancellationToken: CancellationToken.None,
+            root_ref: null,
+            max_depth: null);
+        await CoreTools.TypeAsync(
+            @ref: "e1",
+            text: "hello",
+            pageService: service,
+            cancellationToken: CancellationToken.None,
+            submit: true,
+            slowly: null);
 
         Assert.AreEqual("hello", page.RecordingLocator.FilledValue);
         CollectionAssert.AreEqual(new[] { "Enter" }, page.RecordingLocator.PressedKeys);
@@ -229,7 +319,10 @@ public class CoreToolsUnitTests
         var page = new FakeToolPage(Snapshot());
         var service = new FakeActivePageService(page);
 
-        var result = await CoreTools.ScreenshotAsync(null, service, CancellationToken.None);
+        var result = await CoreTools.ScreenshotAsync(
+            pageService: service,
+            cancellationToken: CancellationToken.None,
+            full_page: null);
 
         Assert.IsFalse(result.IsError ?? false);
         Assert.IsInstanceOfType<ImageContentBlock>(result.Content[0]);
@@ -243,7 +336,10 @@ public class CoreToolsUnitTests
         var page = new FakeToolPage(Snapshot());
         var service = new FakeActivePageService(page);
 
-        await CoreTools.ScreenshotAsync(true, service, CancellationToken.None);
+        await CoreTools.ScreenshotAsync(
+            pageService: service,
+            cancellationToken: CancellationToken.None,
+            full_page: true);
 
         Assert.AreEqual(true, page.ScreenshotFullPage);
     }

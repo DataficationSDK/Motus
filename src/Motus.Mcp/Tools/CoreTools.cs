@@ -45,10 +45,10 @@ public sealed class CoreTools
         + "selected. Each addressable element is tagged with a ref (e1, e2, ...) that click and type use to "
         + "address it. A page tree describes each iframe element but not its contents; frame_select looks inside.")]
     public static async Task<CallToolResult> SnapshotAsync(
-        [Description("Root the snapshot at the subtree of this ref from the previous snapshot.")] string? root_ref,
-        [Description("Limit how many levels deep the tree is rendered; 0 renders only the root.")] int? max_depth,
         ActivePageService pageService,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        [Description("Root the snapshot at the subtree of this ref from the previous snapshot.")] string? root_ref = null,
+        [Description("Limit how many levels deep the tree is rendered; 0 renders only the root.")] int? max_depth = null)
     {
         try
         {
@@ -85,9 +85,9 @@ public sealed class CoreTools
     [Description("Clicks the element addressed by a ref from the latest snapshot.")]
     public static async Task<CallToolResult> ClickAsync(
         [Description("The element ref from the latest snapshot, e.g. e5.")] string @ref,
-        [Description("Double-click instead of a single click.")] bool? @double,
         ActivePageService pageService,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        [Description("Double-click instead of a single click.")] bool? @double = null)
     {
         try
         {
@@ -120,10 +120,10 @@ public sealed class CoreTools
     public static async Task<CallToolResult> TypeAsync(
         [Description("The element ref from the latest snapshot, e.g. e3.")] string @ref,
         [Description("The text to enter.")] string text,
-        [Description("Press Enter after entering the text.")] bool? submit,
-        [Description("Type character by character instead of setting the value at once.")] bool? slowly,
         ActivePageService pageService,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        [Description("Press Enter after entering the text.")] bool? submit = null,
+        [Description("Type character by character instead of setting the value at once.")] bool? slowly = null)
     {
         try
         {
@@ -157,9 +157,9 @@ public sealed class CoreTools
     [McpServerTool(Name = "screenshot", Title = "Screenshot", Destructive = false, ReadOnly = true, Idempotent = true)]
     [Description("Captures a PNG screenshot of the active page and returns it as an image.")]
     public static async Task<CallToolResult> ScreenshotAsync(
-        [Description("Capture the full scrollable page instead of just the viewport.")] bool? full_page,
         ActivePageService pageService,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        [Description("Capture the full scrollable page instead of just the viewport.")] bool? full_page = null)
     {
         try
         {

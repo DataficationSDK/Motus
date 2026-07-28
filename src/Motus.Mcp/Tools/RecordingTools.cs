@@ -19,10 +19,10 @@ public sealed class RecordingTools
         + "the trace to a file. Optionally capture screenshots and DOM snapshots, which make the "
         + "trace richer but larger.")]
     public static async Task<CallToolResult> TraceStartAsync(
-        [Description("Capture screenshots throughout the trace. Defaults to true.")] bool? screenshots,
-        [Description("Capture DOM snapshots throughout the trace. Defaults to true.")] bool? snapshots,
         ActivePageService pageService,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        [Description("Capture screenshots throughout the trace. Defaults to true.")] bool? screenshots = null,
+        [Description("Capture DOM snapshots throughout the trace. Defaults to true.")] bool? snapshots = null)
     {
         try
         {
@@ -46,9 +46,9 @@ public sealed class RecordingTools
         + "path. Provide a path to choose where it is written, or omit it for an auto-generated path "
         + "under the temporary directory.")]
     public static async Task<CallToolResult> TraceStopAsync(
-        [Description("Where to write the trace ZIP. Omit for an auto-generated path.")] string? path,
         ActivePageService pageService,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        [Description("Where to write the trace ZIP. Omit for an auto-generated path.")] string? path = null)
     {
         try
         {
@@ -89,9 +89,9 @@ public sealed class RecordingTools
         + "archive (HAR) file. Returns the file path. Provide a path to choose where it is written, or "
         + "omit it for an auto-generated path under the temporary directory.")]
     public static async Task<CallToolResult> HarStopAsync(
-        [Description("Where to write the HAR file. Omit for an auto-generated path.")] string? path,
         ActivePageService pageService,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        [Description("Where to write the HAR file. Omit for an auto-generated path.")] string? path = null)
     {
         try
         {
@@ -114,9 +114,9 @@ public sealed class RecordingTools
         + "drawn. Not available when the server was launched with whole-session recording; those videos "
         + "finalize when each page closes.")]
     public static async Task<CallToolResult> VideoStartAsync(
-        [Description("Where to write the video (MJPEG AVI). Omit for an auto-generated path.")] string? path,
         ActivePageService pageService,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        [Description("Where to write the video (MJPEG AVI). Omit for an auto-generated path.")] string? path = null)
     {
         try
         {

@@ -28,6 +28,51 @@ public class PageIntegrationTests
             await _browser.DisposeAsync();
     }
 
+    /// <summary>
+    /// A screenshot clip has to reach the browser rather than be accepted and dropped.
+    /// </summary>
+    /// <remarks>
+    /// A clip travels in a different request shape from a plain capture, so sending the plain one
+    /// with a clip set produced a full-viewport image and no error at all. The captured size is
+    /// what shows the difference: a caller asking for a small region got back the whole viewport
+    /// and nothing said so.
+    /// </remarks>
+    [TestMethod]
+    public async Task ScreenshotAsync_WithAClip_CapturesOnlyThatRegion()
+    {
+        var page = await _browser!.NewPageAsync();
+        await page.SetViewportSizeAsync(new ViewportSize(800, 600));
+        await page.GotoAsync("data:text/html,<html><body style='margin:0'><div style='width:800px;height:600px;background:linear-gradient(red,blue)'></div></body></html>");
+
+        var clipped = await page.ScreenshotAsync(new ScreenshotOptions
+        {
+            Clip = new ClipRect(10, 20, 120, 90)
+        });
+        var whole = await page.ScreenshotAsync();
+
+        var (clipWidth, clipHeight) = ReadPngSize(clipped);
+        var (wholeWidth, wholeHeight) = ReadPngSize(whole);
+
+        Assert.AreEqual(120, clipWidth, "The clip's width did not reach the browser.");
+        Assert.AreEqual(90, clipHeight, "The clip's height did not reach the browser.");
+        Assert.IsTrue(wholeWidth > clipWidth && wholeHeight > clipHeight,
+            $"An unclipped capture ({wholeWidth}x{wholeHeight}) should be larger than a clipped one.");
+
+        await page.DisposeAsync();
+    }
+
+    /// <summary>
+    /// Reads the pixel dimensions out of a PNG's IHDR chunk, which starts at a fixed offset.
+    /// </summary>
+    private static (int Width, int Height) ReadPngSize(byte[] png)
+    {
+        Assert.IsTrue(png.Length > 24, "The capture is too short to be a PNG.");
+
+        var width = (png[16] << 24) | (png[17] << 16) | (png[18] << 8) | png[19];
+        var height = (png[20] << 24) | (png[21] << 16) | (png[22] << 8) | png[23];
+        return (width, height);
+    }
+
     [TestMethod]
     public async Task NewPageAsync_CreatesPage()
     {

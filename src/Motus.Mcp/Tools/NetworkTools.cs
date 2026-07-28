@@ -25,13 +25,13 @@ public sealed class NetworkTools
         + "response instead of hitting the network. Re-registering the same pattern replaces its rule.")]
     public static async Task<CallToolResult> RouteFulfillAsync(
         [Description("URL pattern to match: an exact URL, a glob with *, or a substring.")] string url_pattern,
-        [Description("HTTP status code to return. Defaults to 200.")] int? status,
-        [Description("Response body to return.")] string? body,
-        [Description("Content-Type of the response, e.g. application/json.")] string? content_type,
-        [Description("Additional response headers as name/value pairs.")] Dictionary<string, string>? headers,
         ActivePageService pageService,
         NetworkService networkService,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        [Description("HTTP status code to return. Defaults to 200.")] int? status = null,
+        [Description("Response body to return.")] string? body = null,
+        [Description("Content-Type of the response, e.g. application/json.")] string? content_type = null,
+        [Description("Additional response headers as name/value pairs.")] Dictionary<string, string>? headers = null)
     {
         try
         {
@@ -57,10 +57,10 @@ public sealed class NetworkTools
         + "sees a failed request. Re-registering the same pattern replaces its rule.")]
     public static async Task<CallToolResult> RouteAbortAsync(
         [Description("URL pattern to match: an exact URL, a glob with *, or a substring.")] string url_pattern,
-        [Description("Optional error code, e.g. aborted, accessdenied, connectionrefused, blockedbyclient.")] string? error_code,
         ActivePageService pageService,
         NetworkService networkService,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        [Description("Optional error code, e.g. aborted, accessdenied, connectionrefused, blockedbyclient.")] string? error_code = null)
     {
         try
         {
@@ -80,13 +80,13 @@ public sealed class NetworkTools
         + "its rule.")]
     public static async Task<CallToolResult> RouteContinueAsync(
         [Description("URL pattern to match: an exact URL, a glob with *, or a substring.")] string url_pattern,
-        [Description("Override the request URL.")] string? url,
-        [Description("Override the HTTP method, e.g. POST.")] string? method,
-        [Description("Override or add request headers as name/value pairs.")] Dictionary<string, string>? headers,
-        [Description("Override the request body.")] string? post_data,
         ActivePageService pageService,
         NetworkService networkService,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        [Description("Override the request URL.")] string? url = null,
+        [Description("Override the HTTP method, e.g. POST.")] string? method = null,
+        [Description("Override or add request headers as name/value pairs.")] Dictionary<string, string>? headers = null,
+        [Description("Override the request body.")] string? post_data = null)
     {
         try
         {

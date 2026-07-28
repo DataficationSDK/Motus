@@ -77,7 +77,14 @@ public class CoordinateToolsIntegrationTests
 
         // Click the painted button. With margin 0 the canvas sits at the page
         // origin, so viewport coordinates equal canvas offsets.
-        AssertOk(await CoordinateTools.ClickXyAsync(110, 100, null, null, null, service, ct), "click_xy");
+        AssertOk(await CoordinateTools.ClickXyAsync(
+            x: 110,
+            y: 100,
+            pageService: service,
+            cancellationToken: ct,
+            @double: null,
+            button: null,
+            modifiers: null), "click_xy");
         var clicked = await page.EvaluateAsync<string>("document.getElementById('clicked').textContent");
         Assert.AreEqual("click:110,100", clicked);
 
@@ -93,8 +100,16 @@ public class CoordinateToolsIntegrationTests
 
         // Drag from the painted button onto the painted drop zone.
         AssertOk(await CoordinateTools.DragAsync(
-            null, null, start_x: 110, start_y: 100, end_x: 440, end_y: 330,
-            steps: 8, hold_ms: null, service, ct), "drag");
+            pageService: service,
+            cancellationToken: ct,
+            start_ref: null,
+            end_ref: null,
+            start_x: 110,
+            start_y: 100,
+            end_x: 440,
+            end_y: 330,
+            steps: 8,
+            hold_ms: null), "drag");
         var dragged = await page.EvaluateAsync<string>("document.getElementById('dragged').textContent");
         Assert.AreEqual("drag:110,100-440,330", dragged);
     }

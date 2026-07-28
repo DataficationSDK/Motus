@@ -51,17 +51,34 @@ public class CoreToolsIntegrationTests
             "data:text/html,<button>Go</button><input aria-label=\"Name\"/>", service, ct);
         Assert.IsFalse(nav.IsError ?? false, "navigate should succeed.");
 
-        var snap = await CoreTools.SnapshotAsync(null, null, service, ct);
+        var snap = await CoreTools.SnapshotAsync(
+            pageService: service,
+            cancellationToken: ct,
+            root_ref: null,
+            max_depth: null);
         var snapText = ((TextContentBlock)snap.Content[0]).Text;
         StringAssert.Contains(snapText, "[ref=e");
 
-        var click = await CoreTools.ClickAsync(RefForLineContaining(snapText, "Go"), null, service, ct);
+        var click = await CoreTools.ClickAsync(
+            @ref: RefForLineContaining(snapText, "Go"),
+            pageService: service,
+            cancellationToken: ct,
+            @double: null);
         Assert.IsFalse(click.IsError ?? false, "click should succeed.");
 
-        var type = await CoreTools.TypeAsync(RefForLineContaining(snapText, "Name"), "hello", null, null, service, ct);
+        var type = await CoreTools.TypeAsync(
+            @ref: RefForLineContaining(snapText, "Name"),
+            text: "hello",
+            pageService: service,
+            cancellationToken: ct,
+            submit: null,
+            slowly: null);
         Assert.IsFalse(type.IsError ?? false, "type should succeed.");
 
-        var shot = await CoreTools.ScreenshotAsync(null, service, ct);
+        var shot = await CoreTools.ScreenshotAsync(
+            pageService: service,
+            cancellationToken: ct,
+            full_page: null);
         Assert.IsFalse(shot.IsError ?? false, "screenshot should succeed.");
         Assert.IsInstanceOfType<ImageContentBlock>(shot.Content[0]);
     }
@@ -75,8 +92,16 @@ public class CoreToolsIntegrationTests
         await CoreTools.NavigateAsync(
             "data:text/html,<main><ul><li>one</li><li>two</li></ul></main>", service, ct);
 
-        var full = ((TextContentBlock)(await CoreTools.SnapshotAsync(null, null, service, ct)).Content[0]).Text;
-        var shallow = ((TextContentBlock)(await CoreTools.SnapshotAsync(null, 0, service, ct)).Content[0]).Text;
+        var full = ((TextContentBlock)(await CoreTools.SnapshotAsync(
+            pageService: service,
+            cancellationToken: ct,
+            root_ref: null,
+            max_depth: null)).Content[0]).Text;
+        var shallow = ((TextContentBlock)(await CoreTools.SnapshotAsync(
+            pageService: service,
+            cancellationToken: ct,
+            root_ref: null,
+            max_depth: 0)).Content[0]).Text;
 
         Assert.IsTrue(
             LineCount(shallow) < LineCount(full),

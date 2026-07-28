@@ -21,10 +21,10 @@ public sealed class AccessibilityTools
         + "a ref usable with click, type, and other tools. A fresh snapshot is taken as part of the audit, "
         + "so refs from an earlier snapshot are replaced.")]
     public static async Task<CallToolResult> AuditAccessibilityAsync(
-        [Description("Only return violations at or above this severity: error, warning, or info. "
-            + "Omit to return all severities.")] string? min_severity,
         ActivePageService pageService,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        [Description("Only return violations at or above this severity: error, warning, or info. "
+            + "Omit to return all severities.")] string? min_severity = null)
     {
         AccessibilityViolationSeverity? threshold = null;
         if (!string.IsNullOrWhiteSpace(min_severity))

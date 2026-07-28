@@ -59,9 +59,21 @@ public class NetworkConsoleIntegrationTests
         var headers = new Dictionary<string, string> { ["Access-Control-Allow-Origin"] = "*" };
         AssertOk(
             await NetworkTools.RouteFulfillAsync(
-                "*api*", 200, "{\"value\":42}", "application/json", headers, pages, network, ct),
+                url_pattern: "*api*",
+                pageService: pages,
+                networkService: network,
+                cancellationToken: ct,
+                status: 200,
+                body: "{\"value\":42}",
+                content_type: "application/json",
+                headers: headers),
             "route_fulfill");
-        AssertOk(await NetworkTools.RouteAbortAsync("*blocked*", "blockedbyclient", pages, network, ct), "route_abort");
+        AssertOk(await NetworkTools.RouteAbortAsync(
+            url_pattern: "*blocked*",
+            pageService: pages,
+            networkService: network,
+            cancellationToken: ct,
+            error_code: "blockedbyclient"), "route_abort");
 
         var routes = await NetworkTools.RouteListAsync(pages, network, ct);
         StringAssert.Contains(TextOf(routes), "*api*");
@@ -71,9 +83,11 @@ public class NetworkConsoleIntegrationTests
         AssertOk(await CoreTools.NavigateAsync(BlankPage, pages, ct), "navigate");
         AssertOk(
             await PageTools.EvaluateAsync(
-                "fetch('https://example.test/api/x').then(function(r){return r.json();})"
+                expression: "fetch('https://example.test/api/x').then(function(r){return r.json();})"
                 + ".then(function(d){console.log('got ' + d.value);}); 0",
-                null, pages, ct),
+                pageService: pages,
+                cancellationToken: ct,
+                @ref: null),
             "fetch mocked api");
 
         var consoleText = await PollAsync(() => ConsoleTools.ConsoleMessages(console, ct), s => s.Contains("got 42"), ct);
@@ -81,7 +95,11 @@ public class NetworkConsoleIntegrationTests
 
         // Trigger a request that the abort rule blocks.
         AssertOk(
-            await PageTools.EvaluateAsync("fetch('https://example.test/blocked/y').catch(function(){}); 0", null, pages, ct),
+            await PageTools.EvaluateAsync(
+                expression: "fetch('https://example.test/blocked/y').catch(function(){}); 0",
+                pageService: pages,
+                cancellationToken: ct,
+                @ref: null),
             "fetch blocked");
 
         var networkText = await PollAsync(
@@ -92,7 +110,11 @@ public class NetworkConsoleIntegrationTests
 
         // An uncaught error surfaces as a page error in the console buffer.
         AssertOk(
-            await PageTools.EvaluateAsync("setTimeout(function(){ throw new Error('boom'); }, 10); 0", null, pages, ct),
+            await PageTools.EvaluateAsync(
+                expression: "setTimeout(function(){ throw new Error('boom'); }, 10); 0",
+                pageService: pages,
+                cancellationToken: ct,
+                @ref: null),
             "schedule error");
 
         var errorText = await PollAsync(

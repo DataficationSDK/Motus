@@ -156,11 +156,11 @@ public sealed class InteractionTools
         + "look at the scoped frame when one is selected, and at the page otherwise. Provide exactly one of "
         + "time, text, or text_gone.")]
     public static async Task<CallToolResult> WaitForAsync(
-        [Description("Time to wait in milliseconds.")] int? time,
-        [Description("Wait until this text appears anywhere on the page or the scoped frame.")] string? text,
-        [Description("Wait until this text is gone from the page or the scoped frame.")] string? text_gone,
         ActivePageService pageService,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        [Description("Time to wait in milliseconds.")] int? time = null,
+        [Description("Wait until this text appears anywhere on the page or the scoped frame.")] string? text = null,
+        [Description("Wait until this text is gone from the page or the scoped frame.")] string? text_gone = null)
     {
         try
         {

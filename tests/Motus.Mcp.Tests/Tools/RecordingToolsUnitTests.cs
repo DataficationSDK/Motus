@@ -18,7 +18,11 @@ public class RecordingToolsUnitTests
     {
         var service = new FakeNetworkPageService();
 
-        var result = await RecordingTools.TraceStartAsync(screenshots: true, snapshots: false, service, Ct);
+        var result = await RecordingTools.TraceStartAsync(
+            pageService: service,
+            cancellationToken: Ct,
+            screenshots: true,
+            snapshots: false);
 
         Assert.IsFalse(result.IsError ?? false);
         Assert.IsTrue(service.Context.TracingFake.Started);
@@ -31,7 +35,11 @@ public class RecordingToolsUnitTests
     {
         var service = new FakeNetworkPageService();
 
-        await RecordingTools.TraceStartAsync(screenshots: null, snapshots: null, service, Ct);
+        await RecordingTools.TraceStartAsync(
+            pageService: service,
+            cancellationToken: Ct,
+            screenshots: null,
+            snapshots: null);
 
         Assert.AreEqual(true, service.Context.TracingFake.StartedWith?.Screenshots);
         Assert.AreEqual(true, service.Context.TracingFake.StartedWith?.Snapshots);
@@ -42,7 +50,10 @@ public class RecordingToolsUnitTests
     {
         var service = new FakeNetworkPageService();
 
-        var result = await RecordingTools.TraceStopAsync("/tmp/example-trace.zip", service, Ct);
+        var result = await RecordingTools.TraceStopAsync(
+            pageService: service,
+            cancellationToken: Ct,
+            path: "/tmp/example-trace.zip");
 
         Assert.IsFalse(result.IsError ?? false);
         Assert.IsTrue(service.Context.TracingFake.Stopped);
@@ -55,7 +66,10 @@ public class RecordingToolsUnitTests
     {
         var service = new FakeNetworkPageService();
 
-        var result = await RecordingTools.TraceStopAsync(path: null, service, Ct);
+        var result = await RecordingTools.TraceStopAsync(
+            pageService: service,
+            cancellationToken: Ct,
+            path: null);
 
         var path = service.Context.TracingFake.StoppedWith?.Path;
         Assert.IsFalse(string.IsNullOrEmpty(path));
@@ -82,7 +96,10 @@ public class RecordingToolsUnitTests
         var page = new FakeToolPage(EmptySnapshot());
         var service = new FakeNetworkPageService(page);
 
-        var result = await RecordingTools.HarStopAsync("/tmp/example.har", service, Ct);
+        var result = await RecordingTools.HarStopAsync(
+            pageService: service,
+            cancellationToken: Ct,
+            path: "/tmp/example.har");
 
         Assert.IsFalse(result.IsError ?? false);
         Assert.AreEqual("/tmp/example.har", page.HarStoppedPath);
@@ -95,7 +112,7 @@ public class RecordingToolsUnitTests
         var page = new FakeToolPage(EmptySnapshot());
         var service = new FakeNetworkPageService(page);
 
-        await RecordingTools.HarStopAsync(path: null, service, Ct);
+        await RecordingTools.HarStopAsync(pageService: service, cancellationToken: Ct, path: null);
 
         Assert.IsFalse(string.IsNullOrEmpty(page.HarStoppedPath));
         StringAssert.EndsWith(page.HarStoppedPath, ".har");
@@ -107,7 +124,10 @@ public class RecordingToolsUnitTests
         var page = new FakeToolPage(EmptySnapshot()) { HarError = new IOException("disk full") };
         var service = new FakeNetworkPageService(page);
 
-        var result = await RecordingTools.HarStopAsync("/tmp/example.har", service, Ct);
+        var result = await RecordingTools.HarStopAsync(
+            pageService: service,
+            cancellationToken: Ct,
+            path: "/tmp/example.har");
 
         Assert.IsTrue(result.IsError ?? false);
         StringAssert.Contains(TextOf(result), "disk full");
@@ -119,7 +139,10 @@ public class RecordingToolsUnitTests
         var page = new FakeToolPage(EmptySnapshot());
         var service = new FakeNetworkPageService(page);
 
-        var result = await RecordingTools.VideoStartAsync("/tmp/example.avi", service, Ct);
+        var result = await RecordingTools.VideoStartAsync(
+            pageService: service,
+            cancellationToken: Ct,
+            path: "/tmp/example.avi");
 
         Assert.IsFalse(result.IsError ?? false);
         Assert.AreEqual("/tmp/example.avi", page.VideoRecordingPath);
@@ -132,7 +155,10 @@ public class RecordingToolsUnitTests
         var page = new FakeToolPage(EmptySnapshot());
         var service = new FakeNetworkPageService(page);
 
-        var result = await RecordingTools.VideoStartAsync(path: null, service, Ct);
+        var result = await RecordingTools.VideoStartAsync(
+            pageService: service,
+            cancellationToken: Ct,
+            path: null);
 
         Assert.IsFalse(result.IsError ?? false);
         Assert.IsFalse(string.IsNullOrEmpty(page.VideoRecordingPath));
@@ -149,7 +175,10 @@ public class RecordingToolsUnitTests
         };
         var service = new FakeNetworkPageService(page);
 
-        var result = await RecordingTools.VideoStartAsync(path: null, service, Ct);
+        var result = await RecordingTools.VideoStartAsync(
+            pageService: service,
+            cancellationToken: Ct,
+            path: null);
 
         Assert.IsTrue(result.IsError ?? false);
         StringAssert.Contains(TextOf(result), "already in progress");
@@ -160,7 +189,10 @@ public class RecordingToolsUnitTests
     {
         var page = new FakeToolPage(EmptySnapshot());
         var service = new FakeNetworkPageService(page);
-        await RecordingTools.VideoStartAsync("/tmp/example.avi", service, Ct);
+        await RecordingTools.VideoStartAsync(
+            pageService: service,
+            cancellationToken: Ct,
+            path: "/tmp/example.avi");
 
         var result = await RecordingTools.VideoStopAsync(service, Ct);
 

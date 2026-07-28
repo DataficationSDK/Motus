@@ -173,7 +173,7 @@ A remote debugging endpoint grants complete control of the browser and of every 
 
 ## Known traps
 
-**An out-of-process frame is not in the endpoint's target list.** `http://127.0.0.1:9222/json/list` lists pages and workers, and a frame the browser renders in its own process is not among them, even though it is a separate CDP target. Motus finds these frames through auto-attach on the page's own session, so they appear in `page.Frames` regardless. Do not conclude from an empty target list that a frame is unreachable. See [Frames and iframes](frames-and-iframes.md).
+**The endpoint's target list is not a list of a page's frames.** `http://127.0.0.1:9222/json/list` reports one entry per CDP target. A frame the browser put in its own process appears there, typed `iframe` rather than `page`, and a frame the page's own renderer hosts does not appear at all, because it has no target. Checking the list by hand will undercount the frames on a page, and filtering it for `page` entries will miss every frame. Motus reports both kinds in `page.Frames`, so read frames from there. See [Frames and iframes](frames-and-iframes.md).
 
 **A browser already running under its ordinary profile ignores the flag.** As above: the second command hands off to the running instance and exits, and no port opens. Check that the endpoint answers before concluding Motus cannot reach it.
 

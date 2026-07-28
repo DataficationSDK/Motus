@@ -19,7 +19,14 @@ public class NetworkToolsUnitTests
         var headers = new Dictionary<string, string> { ["X-Test"] = "1" };
 
         var result = await NetworkTools.RouteFulfillAsync(
-            "*api*", 201, "{\"ok\":true}", "application/json", headers, pages, network, Ct);
+            url_pattern: "*api*",
+            pageService: pages,
+            networkService: network,
+            cancellationToken: Ct,
+            status: 201,
+            body: "{\"ok\":true}",
+            content_type: "application/json",
+            headers: headers);
 
         Assert.IsFalse(result.IsError ?? false, TextOf(result));
         CollectionAssert.Contains(pages.Context.RoutedPatterns, "*api*");
@@ -39,7 +46,12 @@ public class NetworkToolsUnitTests
         var pages = new FakeNetworkPageService();
         var network = new NetworkService();
 
-        var result = await NetworkTools.RouteAbortAsync("*track*", "blockedbyclient", pages, network, Ct);
+        var result = await NetworkTools.RouteAbortAsync(
+            url_pattern: "*track*",
+            pageService: pages,
+            networkService: network,
+            cancellationToken: Ct,
+            error_code: "blockedbyclient");
 
         Assert.IsFalse(result.IsError ?? false, TextOf(result));
         var route = new FakeRoute();
@@ -54,7 +66,15 @@ public class NetworkToolsUnitTests
         var pages = new FakeNetworkPageService();
         var network = new NetworkService();
 
-        var result = await NetworkTools.RouteContinueAsync("*api*", null, "POST", null, "body", pages, network, Ct);
+        var result = await NetworkTools.RouteContinueAsync(
+            url_pattern: "*api*",
+            pageService: pages,
+            networkService: network,
+            cancellationToken: Ct,
+            url: null,
+            method: "POST",
+            headers: null,
+            post_data: "body");
 
         Assert.IsFalse(result.IsError ?? false, TextOf(result));
         var route = new FakeRoute();
@@ -69,7 +89,15 @@ public class NetworkToolsUnitTests
     {
         var pages = new FakeNetworkPageService();
         var network = new NetworkService();
-        await NetworkTools.RouteFulfillAsync("*api*", null, null, null, null, pages, network, Ct);
+        await NetworkTools.RouteFulfillAsync(
+            url_pattern: "*api*",
+            pageService: pages,
+            networkService: network,
+            cancellationToken: Ct,
+            status: null,
+            body: null,
+            content_type: null,
+            headers: null);
 
         var result = await NetworkTools.UnrouteAsync("*api*", pages, network, Ct);
 
@@ -106,8 +134,21 @@ public class NetworkToolsUnitTests
     {
         var pages = new FakeNetworkPageService();
         var network = new NetworkService();
-        await NetworkTools.RouteFulfillAsync("*api*", null, null, null, null, pages, network, Ct);
-        await NetworkTools.RouteAbortAsync("*track*", null, pages, network, Ct);
+        await NetworkTools.RouteFulfillAsync(
+            url_pattern: "*api*",
+            pageService: pages,
+            networkService: network,
+            cancellationToken: Ct,
+            status: null,
+            body: null,
+            content_type: null,
+            headers: null);
+        await NetworkTools.RouteAbortAsync(
+            url_pattern: "*track*",
+            pageService: pages,
+            networkService: network,
+            cancellationToken: Ct,
+            error_code: null);
 
         var result = await NetworkTools.RouteListAsync(pages, network, Ct);
 
@@ -148,7 +189,15 @@ public class NetworkToolsUnitTests
         var pages = new ThrowingContextService();
         var network = new NetworkService();
 
-        var result = await NetworkTools.RouteFulfillAsync("*api*", null, null, null, null, pages, network, Ct);
+        var result = await NetworkTools.RouteFulfillAsync(
+            url_pattern: "*api*",
+            pageService: pages,
+            networkService: network,
+            cancellationToken: Ct,
+            status: null,
+            body: null,
+            content_type: null,
+            headers: null);
 
         Assert.IsTrue(result.IsError);
         StringAssert.Contains(TextOf(result), "boom");

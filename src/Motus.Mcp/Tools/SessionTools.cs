@@ -54,9 +54,9 @@ public sealed class SessionTools
     [Description("Opens a new tab in the active context and makes it active. Navigates it to the URL when one is "
         + "given. Take a snapshot before addressing elements in the new tab.")]
     public static async Task<CallToolResult> TabOpenAsync(
-        [Description("URL to open the new tab at. Omit to open a blank tab.")] string? url,
         ActivePageService pageService,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        [Description("URL to open the new tab at. Omit to open a blank tab.")] string? url = null)
     {
         try
         {
@@ -97,9 +97,9 @@ public sealed class SessionTools
     [Description("Closes the tab at the given zero-based index, or the active tab when no index is given. The "
         + "next available tab becomes active.")]
     public static async Task<CallToolResult> TabCloseAsync(
-        [Description("Zero-based index of the tab to close. Omit to close the active tab.")] int? index,
         ActivePageService pageService,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        [Description("Zero-based index of the tab to close. Omit to close the active tab.")] int? index = null)
     {
         try
         {

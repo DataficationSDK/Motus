@@ -241,6 +241,80 @@ public class OutOfProcessFrameTests
             "The DOM must be fully present in the isolated world.");
     }
 
+    /// <summary>
+    /// Using a frame's isolated world must not change where its main world evaluates.
+    /// </summary>
+    /// <remarks>
+    /// The order is the whole test. A frame has one main world and any number of others beside it,
+    /// and every one of them announces the same frame id as it is created, so recording the latest
+    /// as the frame's context sends later main-world evaluation into a world where the page's own
+    /// globals do not exist. Asking for the main world first hides that entirely, because the
+    /// answer is cached before anything else can claim the frame, which is why the main world is
+    /// asked for last here.
+    /// </remarks>
+    [TestMethod]
+    public async Task MainWorld_StillAnswersOnceTheIsolatedWorldHasBeenUsed()
+    {
+        var isolated = new EvaluateOptions { World = ExecutionWorld.Isolated };
+        var middle = await FrameAsync("middle");
+
+        Assert.AreEqual("undefined",
+            await middle.EvaluateAsync<string>("typeof window.marker", null, isolated));
+        Assert.AreEqual("middle", await middle.EvaluateAsync<string>("window.marker"),
+            "The frame's main world stopped answering once its isolated world existed.");
+
+        // The main frame is the case that takes the whole page with it: page.EvaluateAsync
+        // resolves through the context recorded for the main frame, so a page that never touches
+        // a frame at all still loses its globals here.
+        Assert.AreEqual("undefined",
+            await _page!.MainFrame.EvaluateAsync<string>("typeof window.pageGlobal", null, isolated));
+        Assert.AreEqual("outer", await _page.EvaluateAsync<string>("window.pageGlobal"),
+            "page.EvaluateAsync stopped seeing the page's globals once an isolated world existed.");
+    }
+
+    /// <summary>
+    /// An element inside a frame with a process of its own can be screenshotted.
+    /// </summary>
+    /// <remarks>
+    /// Capture belongs to the page, not to the frame: the renderer hosting a frame refuses the
+    /// command outright, so routing it to the frame's session fails loudly rather than returning
+    /// the wrong picture. Only a frame-rooted locator can reach this element at all. The captured
+    /// size is checked as well, because it is what shows the clip was honored rather than the whole
+    /// viewport coming back; the clip's coordinate space is already pinned by the click and
+    /// bounding-box tests above, which share the same measurement.
+    /// </remarks>
+    [TestMethod]
+    public async Task ElementScreenshotInsideACrossOriginFrame_CapturesJustThatElement()
+    {
+        var middle = await FrameAsync("middle");
+        var target = middle.Locator("#target");
+
+        var box = await target.BoundingBoxAsync();
+        Assert.IsNotNull(box);
+
+        var png = await target.ScreenshotAsync();
+        var (width, height) = ReadPngSize(png);
+
+        // Chromium rounds a fractional clip out to whole pixels, so this allows a pixel either way
+        // rather than pinning the rounding rule itself.
+        Assert.IsTrue(Math.Abs(width - box.Width) <= 1,
+            $"Captured width {width} does not match the element's {box.Width:F0}.");
+        Assert.IsTrue(Math.Abs(height - box.Height) <= 1,
+            $"Captured height {height} does not match the element's {box.Height:F0}.");
+    }
+
+    /// <summary>
+    /// Reads the pixel dimensions out of a PNG's IHDR chunk, which starts at a fixed offset.
+    /// </summary>
+    private static (int Width, int Height) ReadPngSize(byte[] png)
+    {
+        Assert.IsTrue(png.Length > 24, "The capture is too short to be a PNG.");
+
+        var width = (png[16] << 24) | (png[17] << 16) | (png[18] << 8) | png[19];
+        var height = (png[20] << 24) | (png[21] << 16) | (png[22] << 8) | png[23];
+        return (width, height);
+    }
+
     [TestMethod]
     public async Task DetachingAFrame_LeavesItsHandleReportingDetached()
     {

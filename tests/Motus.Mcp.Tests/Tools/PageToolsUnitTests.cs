@@ -33,7 +33,11 @@ public class PageToolsUnitTests
     {
         var page = new FakeToolPage(Snapshot(Node("textbox", "Field", 10)));
         var service = new FakeActivePageService(page);
-        await CoreTools.SnapshotAsync(null, null, service, Ct);
+        await CoreTools.SnapshotAsync(
+            pageService: service,
+            cancellationToken: Ct,
+            root_ref: null,
+            max_depth: null);
         return (page, service);
     }
 
@@ -84,7 +88,11 @@ public class PageToolsUnitTests
         var (_, service) = await SnapshottedAsync();
 
         await PageTools.ReloadAsync(service, Ct);
-        var afterReload = await PageTools.EvaluateAsync("x", "e1", service, Ct);
+        var afterReload = await PageTools.EvaluateAsync(
+            expression: "x",
+            pageService: service,
+            cancellationToken: Ct,
+            @ref: "e1");
 
         Assert.IsTrue(afterReload.IsError);
         StringAssert.Contains(TextOf(afterReload), "snapshot");
@@ -95,7 +103,11 @@ public class PageToolsUnitTests
     [TestMethod]
     public async Task HandleDialog_NoPendingDialog_ReturnsError()
     {
-        var result = await PageTools.HandleDialogAsync(true, null, new DialogService(), Ct);
+        var result = await PageTools.HandleDialogAsync(
+            accept: true,
+            dialogService: new DialogService(),
+            cancellationToken: Ct,
+            text: null);
 
         Assert.IsTrue(result.IsError);
         StringAssert.Contains(TextOf(result), "No dialog");
@@ -106,7 +118,11 @@ public class PageToolsUnitTests
     {
         var (dialogService, dialog) = PendingDialog(new FakeDialog(DialogType.Confirm, "Sure?"));
 
-        var result = await PageTools.HandleDialogAsync(true, null, dialogService, Ct);
+        var result = await PageTools.HandleDialogAsync(
+            accept: true,
+            dialogService: dialogService,
+            cancellationToken: Ct,
+            text: null);
 
         Assert.IsFalse(result.IsError ?? false);
         Assert.IsTrue(dialog.Accepted);
@@ -118,7 +134,11 @@ public class PageToolsUnitTests
     {
         var (dialogService, dialog) = PendingDialog(new FakeDialog(DialogType.Prompt, "Name?"));
 
-        var result = await PageTools.HandleDialogAsync(true, "Ada", dialogService, Ct);
+        var result = await PageTools.HandleDialogAsync(
+            accept: true,
+            dialogService: dialogService,
+            cancellationToken: Ct,
+            text: "Ada");
 
         Assert.IsFalse(result.IsError ?? false);
         Assert.AreEqual("Ada", dialog.AcceptedText);
@@ -129,7 +149,11 @@ public class PageToolsUnitTests
     {
         var (dialogService, dialog) = PendingDialog(new FakeDialog(DialogType.Confirm, "Sure?"));
 
-        var result = await PageTools.HandleDialogAsync(false, null, dialogService, Ct);
+        var result = await PageTools.HandleDialogAsync(
+            accept: false,
+            dialogService: dialogService,
+            cancellationToken: Ct,
+            text: null);
 
         Assert.IsFalse(result.IsError ?? false);
         Assert.IsTrue(dialog.Dismissed);
@@ -152,7 +176,11 @@ public class PageToolsUnitTests
         var page = new FakeToolPage(Snapshot()) { EvaluateReturn = Json("42") };
         var service = new FakeActivePageService(page);
 
-        var result = await PageTools.EvaluateAsync("1 + 41", null, service, Ct);
+        var result = await PageTools.EvaluateAsync(
+            expression: "1 + 41",
+            pageService: service,
+            cancellationToken: Ct,
+            @ref: null);
 
         Assert.IsFalse(result.IsError ?? false);
         Assert.AreEqual("1 + 41", page.EvaluatedExpression);
@@ -169,7 +197,11 @@ public class PageToolsUnitTests
         var page = new FakeToolPage(Snapshot()) { EvaluateReturn = Json("\"ready\"") };
         var service = new FakeActivePageService(page);
 
-        var result = await PageTools.EvaluateAsync("document.readyState", null, service, Ct);
+        var result = await PageTools.EvaluateAsync(
+            expression: "document.readyState",
+            pageService: service,
+            cancellationToken: Ct,
+            @ref: null);
 
         Assert.IsNotNull(result.StructuredContent);
         Assert.AreEqual(JsonValueKind.Object, result.StructuredContent.Value.ValueKind);
@@ -182,7 +214,11 @@ public class PageToolsUnitTests
         var page = new FakeToolPage(Snapshot()) { EvaluateReturn = Json("{\"cells\":3,\"names\":[\"a\",\"b\"]}") };
         var service = new FakeActivePageService(page);
 
-        var result = await PageTools.EvaluateAsync("({ cells: 3, names: ['a', 'b'] })", null, service, Ct);
+        var result = await PageTools.EvaluateAsync(
+            expression: "({ cells: 3, names: ['a', 'b'] })",
+            pageService: service,
+            cancellationToken: Ct,
+            @ref: null);
 
         Assert.IsNotNull(result.StructuredContent);
         var value = result.StructuredContent.Value.GetProperty("result");
@@ -196,7 +232,11 @@ public class PageToolsUnitTests
         var page = new FakeToolPage(Snapshot()) { EvaluateReturn = Json("[1,2,3]") };
         var service = new FakeActivePageService(page);
 
-        var result = await PageTools.EvaluateAsync("[1, 2, 3]", null, service, Ct);
+        var result = await PageTools.EvaluateAsync(
+            expression: "[1, 2, 3]",
+            pageService: service,
+            cancellationToken: Ct,
+            @ref: null);
 
         Assert.IsNotNull(result.StructuredContent);
         Assert.AreEqual(JsonValueKind.Object, result.StructuredContent.Value.ValueKind);
@@ -210,7 +250,11 @@ public class PageToolsUnitTests
         var page = new FakeToolPage(Snapshot()) { EvaluateReturn = default };
         var service = new FakeActivePageService(page);
 
-        var result = await PageTools.EvaluateAsync("window.setTitle()", null, service, Ct);
+        var result = await PageTools.EvaluateAsync(
+            expression: "window.setTitle()",
+            pageService: service,
+            cancellationToken: Ct,
+            @ref: null);
 
         Assert.IsFalse(result.IsError ?? false);
         Assert.IsNotNull(result.StructuredContent);
@@ -224,7 +268,11 @@ public class PageToolsUnitTests
         var (page, service) = await SnapshottedAsync();
         page.RecordingLocator.ElementEvaluateReturn = Json("\"hello\"");
 
-        var result = await PageTools.EvaluateAsync("el => el.textContent", "e1", service, Ct);
+        var result = await PageTools.EvaluateAsync(
+            expression: "el => el.textContent",
+            pageService: service,
+            cancellationToken: Ct,
+            @ref: "e1");
 
         Assert.IsFalse(result.IsError ?? false);
         Assert.AreEqual("el => el.textContent", page.RecordingLocator.EvaluatedElementExpression);
@@ -238,7 +286,11 @@ public class PageToolsUnitTests
         var page = new FakeToolPage(Snapshot(Node("textbox", "Field", 10)));
         var service = new FakeActivePageService(page);
 
-        var result = await PageTools.EvaluateAsync("el => el.value", "e1", service, Ct);
+        var result = await PageTools.EvaluateAsync(
+            expression: "el => el.value",
+            pageService: service,
+            cancellationToken: Ct,
+            @ref: "e1");
 
         Assert.IsTrue(result.IsError);
         StringAssert.Contains(TextOf(result), "snapshot");
@@ -249,7 +301,11 @@ public class PageToolsUnitTests
     {
         var (_, service) = await SnapshottedAsync();
 
-        var result = await PageTools.EvaluateAsync("el => el.value", "e999", service, Ct);
+        var result = await PageTools.EvaluateAsync(
+            expression: "el => el.value",
+            pageService: service,
+            cancellationToken: Ct,
+            @ref: "e999");
 
         Assert.IsTrue(result.IsError);
         StringAssert.Contains(TextOf(result), "e999");
@@ -261,7 +317,11 @@ public class PageToolsUnitTests
         var page = new FakeToolPage(Snapshot()) { EvaluateError = new InvalidOperationException("boom") };
         var service = new FakeActivePageService(page);
 
-        var result = await PageTools.EvaluateAsync("nope()", null, service, Ct);
+        var result = await PageTools.EvaluateAsync(
+            expression: "nope()",
+            pageService: service,
+            cancellationToken: Ct,
+            @ref: null);
 
         Assert.IsTrue(result.IsError);
         StringAssert.Contains(TextOf(result), "boom");

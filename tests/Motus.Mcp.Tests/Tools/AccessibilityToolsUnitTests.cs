@@ -56,7 +56,10 @@ public class AccessibilityToolsUnitTests
         var page = new FakeToolPage(TwoElementSnapshot()) { AuditResult = ThreeViolations() };
         var service = new FakeActivePageService(page);
 
-        var result = await AccessibilityTools.AuditAccessibilityAsync(null, service, Ct);
+        var result = await AccessibilityTools.AuditAccessibilityAsync(
+            pageService: service,
+            cancellationToken: Ct,
+            min_severity: null);
 
         Assert.IsFalse(result.IsError ?? false);
         Assert.AreEqual(3, result.StructuredContent!.Value.GetProperty("violationCount").GetInt32());
@@ -77,7 +80,10 @@ public class AccessibilityToolsUnitTests
         var page = new FakeToolPage(TwoElementSnapshot()) { AuditResult = ThreeViolations() };
         var service = new FakeActivePageService(page);
 
-        var result = await AccessibilityTools.AuditAccessibilityAsync("error", service, Ct);
+        var result = await AccessibilityTools.AuditAccessibilityAsync(
+            pageService: service,
+            cancellationToken: Ct,
+            min_severity: "error");
 
         Assert.IsFalse(result.IsError ?? false);
         var rules = Violations(result).Select(v => v.GetProperty("ruleId").GetString()).ToArray();
@@ -90,7 +96,10 @@ public class AccessibilityToolsUnitTests
         var page = new FakeToolPage(TwoElementSnapshot());
         var service = new FakeActivePageService(page);
 
-        var result = await AccessibilityTools.AuditAccessibilityAsync(null, service, Ct);
+        var result = await AccessibilityTools.AuditAccessibilityAsync(
+            pageService: service,
+            cancellationToken: Ct,
+            min_severity: null);
 
         Assert.IsFalse(result.IsError ?? false);
         Assert.IsNull(result.StructuredContent);
@@ -103,7 +112,10 @@ public class AccessibilityToolsUnitTests
         var page = new FakeToolPage(TwoElementSnapshot()) { AuditResult = ThreeViolations() };
         var service = new FakeActivePageService(page);
 
-        var result = await AccessibilityTools.AuditAccessibilityAsync("bogus", service, Ct);
+        var result = await AccessibilityTools.AuditAccessibilityAsync(
+            pageService: service,
+            cancellationToken: Ct,
+            min_severity: "bogus");
 
         Assert.IsTrue(result.IsError ?? false);
         StringAssert.Contains(((TextContentBlock)result.Content[0]).Text, "bogus");
@@ -115,7 +127,10 @@ public class AccessibilityToolsUnitTests
         var page = new FakeToolPage(TwoElementSnapshot()) { AuditError = new InvalidOperationException("boom") };
         var service = new FakeActivePageService(page);
 
-        var result = await AccessibilityTools.AuditAccessibilityAsync(null, service, Ct);
+        var result = await AccessibilityTools.AuditAccessibilityAsync(
+            pageService: service,
+            cancellationToken: Ct,
+            min_severity: null);
 
         Assert.IsTrue(result.IsError ?? false);
         StringAssert.Contains(((TextContentBlock)result.Content[0]).Text, "boom");

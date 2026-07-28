@@ -85,9 +85,9 @@ public sealed class PageTools
         + "enter when accepting.")]
     public static async Task<CallToolResult> HandleDialogAsync(
         [Description("True to accept the dialog, false to dismiss it.")] bool accept,
-        [Description("Text to enter in a prompt dialog when accepting. Ignored for alert and confirm.")] string? text,
         DialogService dialogService,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        [Description("Text to enter in a prompt dialog when accepting. Ignored for alert and confirm.")] string? text = null)
     {
         var dialog = dialogService.TakePendingDialog();
         if (dialog is null)
@@ -117,10 +117,10 @@ public sealed class PageTools
         + "(undefined, functions, DOM nodes) come back as null.")]
     public static async Task<CallToolResult> EvaluateAsync(
         [Description("The JavaScript expression to evaluate.")] string expression,
-        [Description("An element ref from the latest snapshot to evaluate against. Omit to evaluate in the page "
-            + "or the scoped frame.")] string? @ref,
         ActivePageService pageService,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        [Description("An element ref from the latest snapshot to evaluate against. Omit to evaluate in the page "
+            + "or the scoped frame.")] string? @ref = null)
     {
         try
         {

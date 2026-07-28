@@ -188,6 +188,29 @@ internal sealed class Browser : IBrowser
         UnregisterProcessExitHandler();
         _browserCts.Cancel();
 
+        // Local teardown only. Nothing in the browser is closed, because disconnecting means Motus
+        // stops driving it rather than that anything in it goes away. Without this the contexts
+        // stay listed over a transport that is about to go, and their plugin hosts are never
+        // unloaded.
+        List<BrowserContext> contextsToRelease;
+        lock (_contexts)
+        {
+            contextsToRelease = _contexts.ToList();
+            _contexts.Clear();
+        }
+
+        foreach (var context in contextsToRelease)
+        {
+            try
+            {
+                await context.ReleaseLocallyAsync().ConfigureAwait(false);
+            }
+            catch
+            {
+                // One context that will not let go is not a reason to stay connected.
+            }
+        }
+
         await _transport.DisposeAsync().ConfigureAwait(false);
     }
 
@@ -262,6 +285,10 @@ internal sealed class Browser : IBrowser
                 // Best-effort cleanup
             }
         }
+
+        // Last, so the target pumps above have already been cancelled and nobody is still holding
+        // the token. Disposal always reaches here, including after a close or a disconnect.
+        _browserCts.Dispose();
     }
 
     public async Task<IBrowserContext> NewContextAsync(ContextOptions? options = null)

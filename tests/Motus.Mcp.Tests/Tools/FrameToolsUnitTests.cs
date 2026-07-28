@@ -70,11 +70,19 @@ public class FrameToolsUnitTests
     {
         var (service, _, _) = PageWithAFrame();
 
-        var before = TextOf(await CoreTools.SnapshotAsync(null, null, service, CancellationToken.None));
+        var before = TextOf(await CoreTools.SnapshotAsync(
+            pageService: service,
+            cancellationToken: CancellationToken.None,
+            root_ref: null,
+            max_depth: null));
         StringAssert.Contains(before, "page heading");
 
         await FrameTools.FrameSelectAsync(1, service, CancellationToken.None);
-        var after = TextOf(await CoreTools.SnapshotAsync(null, null, service, CancellationToken.None));
+        var after = TextOf(await CoreTools.SnapshotAsync(
+            pageService: service,
+            cancellationToken: CancellationToken.None,
+            root_ref: null,
+            max_depth: null));
 
         StringAssert.Contains(after, "frame heading");
         Assert.IsFalse(after.Contains("page heading", StringComparison.Ordinal),
@@ -86,7 +94,11 @@ public class FrameToolsUnitTests
     {
         var (service, _, _) = PageWithAFrame();
 
-        var text = TextOf(await CoreTools.SnapshotAsync(null, null, service, CancellationToken.None));
+        var text = TextOf(await CoreTools.SnapshotAsync(
+            pageService: service,
+            cancellationToken: CancellationToken.None,
+            root_ref: null,
+            max_depth: null));
 
         // Without this an agent reads an iframe element with nothing under it and concludes the
         // content is missing, which is the whole failure this hint exists to prevent.
@@ -99,8 +111,16 @@ public class FrameToolsUnitTests
         var (service, page, child) = PageWithAFrame();
 
         await FrameTools.FrameSelectAsync(1, service, CancellationToken.None);
-        await CoreTools.SnapshotAsync(null, null, service, CancellationToken.None);
-        await CoreTools.ClickAsync("e1", null, service, CancellationToken.None);
+        await CoreTools.SnapshotAsync(
+            pageService: service,
+            cancellationToken: CancellationToken.None,
+            root_ref: null,
+            max_depth: null);
+        await CoreTools.ClickAsync(
+            @ref: "e1",
+            pageService: service,
+            cancellationToken: CancellationToken.None,
+            @double: null);
 
         Assert.AreEqual(42, child.ResolvedBackendNodeId,
             "a backend node id only means anything on the session that reported it");
@@ -114,10 +134,18 @@ public class FrameToolsUnitTests
         var (service, page, child) = PageWithAFrame();
 
         await FrameTools.FrameSelectAsync(1, service, CancellationToken.None);
-        await CoreTools.SnapshotAsync(null, null, service, CancellationToken.None);
+        await CoreTools.SnapshotAsync(
+            pageService: service,
+            cancellationToken: CancellationToken.None,
+            root_ref: null,
+            max_depth: null);
         await FrameTools.FrameSelectAsync(0, service, CancellationToken.None);
 
-        await CoreTools.ClickAsync("e1", null, service, CancellationToken.None);
+        await CoreTools.ClickAsync(
+            @ref: "e1",
+            pageService: service,
+            cancellationToken: CancellationToken.None,
+            @double: null);
 
         Assert.AreEqual(42, child.ResolvedBackendNodeId);
         Assert.IsNull(page.ResolvedBackendNodeId);
@@ -129,7 +157,11 @@ public class FrameToolsUnitTests
         var (service, page, child) = PageWithAFrame();
 
         await FrameTools.FrameSelectAsync(1, service, CancellationToken.None);
-        await PageTools.EvaluateAsync("window.marker", null, service, CancellationToken.None);
+        await PageTools.EvaluateAsync(
+            expression: "window.marker",
+            pageService: service,
+            cancellationToken: CancellationToken.None,
+            @ref: null);
 
         CollectionAssert.Contains(child.Evaluated, "window.marker");
         Assert.IsNull(page.EvaluatedExpression);
@@ -141,7 +173,12 @@ public class FrameToolsUnitTests
         var (service, page, child) = PageWithAFrame();
 
         await FrameTools.FrameSelectAsync(1, service, CancellationToken.None);
-        await InteractionTools.WaitForAsync(null, "ready", null, service, CancellationToken.None);
+        await InteractionTools.WaitForAsync(
+            pageService: service,
+            cancellationToken: CancellationToken.None,
+            time: null,
+            text: "ready",
+            text_gone: null);
 
         Assert.AreEqual(1, child.WaitedFunctions.Count,
             "text inside a frame is not in the page's document, so a page-level wait would time out");
