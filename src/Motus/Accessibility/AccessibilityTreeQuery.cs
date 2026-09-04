@@ -65,6 +65,7 @@ internal sealed class AccessibilityTreeQuery
 
         // First pass: convert non-ignored CDP nodes to public AccessibilityNode records
         var converted = new Dictionary<string, AccessibilityNode>(rawNodes.Length);
+        var childrenById = new Dictionary<string, List<AccessibilityNode>>(rawNodes.Length);
         foreach (var raw in rawNodes)
         {
             if (raw.Ignored)
@@ -73,6 +74,8 @@ internal sealed class AccessibilityTreeQuery
                 continue;
             }
 
+            var children = new List<AccessibilityNode>();
+            childrenById[raw.NodeId] = children;
             var props = BuildProperties(raw.Properties);
             converted[raw.NodeId] = new AccessibilityNode(
                 NodeId: raw.NodeId,
@@ -81,19 +84,18 @@ internal sealed class AccessibilityTreeQuery
                 Value: ExtractString(raw.Value),
                 Description: ExtractString(raw.Description),
                 Properties: props,
-                Children: [],
+                Children: children,
                 BackendDOMNodeId: raw.BackendDOMNodeId,
                 Ignored: false);
         }
 
-        // Second pass: wire ChildIds into actual Children lists
-        var withChildren = new Dictionary<string, AccessibilityNode>(converted.Count);
+        // Populate the lists already held by each node. Copying records here would leave
+        // parents pointing to the original child records with empty descendants.
         foreach (var (nodeId, raw) in byId)
         {
-            if (raw.Ignored || !converted.TryGetValue(nodeId, out var node))
+            if (raw.Ignored || !childrenById.TryGetValue(nodeId, out var childList))
                 continue;
 
-            var childList = new List<AccessibilityNode>();
             if (raw.ChildIds is not null)
             {
                 foreach (var childId in raw.ChildIds)
@@ -103,7 +105,6 @@ internal sealed class AccessibilityTreeQuery
                 }
             }
 
-            withChildren[nodeId] = node with { Children = childList };
         }
 
         // Find root nodes: nodes not referenced as children of any other walkable node
@@ -121,12 +122,12 @@ internal sealed class AccessibilityTreeQuery
         {
             if (raw.Ignored)
                 continue;
-            if (!childIds.Contains(raw.NodeId) && withChildren.TryGetValue(raw.NodeId, out var rootNode))
+            if (!childIds.Contains(raw.NodeId) && converted.TryGetValue(raw.NodeId, out var rootNode))
                 roots.Add(rootNode);
         }
 
         // Flat list in depth-first order
-        var all = new List<AccessibilityNode>(withChildren.Count);
+        var all = new List<AccessibilityNode>(converted.Count);
         var visited = new HashSet<string>();
         foreach (var root in roots)
             CollectDepthFirst(root, all, visited);
