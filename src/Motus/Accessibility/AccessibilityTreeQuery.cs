@@ -55,7 +55,11 @@ internal sealed class AccessibilityTreeQuery
         return BuildTree(result.Nodes);
     }
 
-    private static AccessibilityTreeResult BuildTree(AccessibilityAXNode[] rawNodes)
+    /// <summary>
+    /// Turns the browser's flat node list into a tree of walkable nodes: ignored nodes are
+    /// dropped and their descendants take their place under the nearest ancestor that survived.
+    /// </summary>
+    internal static AccessibilityTreeResult BuildTree(AccessibilityAXNode[] rawNodes)
     {
         var byId = new Dictionary<string, AccessibilityAXNode>(rawNodes.Length);
         foreach (var n in rawNodes)
@@ -91,38 +95,30 @@ internal sealed class AccessibilityTreeQuery
 
         // Populate the lists already held by each node. Copying records here would leave
         // parents pointing to the original child records with empty descendants.
-        foreach (var (nodeId, raw) in byId)
-        {
-            if (raw.Ignored || !childrenById.TryGetValue(nodeId, out var childList))
-                continue;
-
-            if (raw.ChildIds is not null)
-            {
-                foreach (var childId in raw.ChildIds)
-                {
-                    if (converted.TryGetValue(childId, out var childNode))
-                        childList.Add(childNode);
-                }
-            }
-
-        }
-
-        // Find root nodes: nodes not referenced as children of any other walkable node
-        var childIds = new HashSet<string>();
+        //
+        // A child the browser ignored stands in for its own non-ignored descendants, which take
+        // its place in the parent's child list. Browsers ignore a great many wrapper elements
+        // that carry no meaning of their own, and skipping such a child outright would detach
+        // everything beneath it: a form inside a stack of layout divs, or the text inside a list
+        // item, would be left with no parent at all.
         foreach (var raw in rawNodes)
         {
-            if (raw.Ignored || raw.ChildIds is null)
+            if (raw.Ignored || !childrenById.TryGetValue(raw.NodeId, out var childList))
                 continue;
-            foreach (var id in raw.ChildIds)
-                childIds.Add(id);
+
+            AppendChildren(raw, childList, byId, converted, []);
         }
 
+        // Find root nodes: a node the browser did not ignore that has no parent, or whose every
+        // ancestor was ignored. Deriving roots from "not named as the child of a walkable node"
+        // instead would promote every descendant of an ignored wrapper to the top level.
         var roots = new List<AccessibilityNode>();
         foreach (var raw in rawNodes)
         {
-            if (raw.Ignored)
+            if (raw.Ignored || !converted.TryGetValue(raw.NodeId, out var rootNode))
                 continue;
-            if (!childIds.Contains(raw.NodeId) && converted.TryGetValue(raw.NodeId, out var rootNode))
+
+            if (!HasWalkableAncestor(raw, byId))
                 roots.Add(rootNode);
         }
 
@@ -132,11 +128,80 @@ internal sealed class AccessibilityTreeQuery
         foreach (var root in roots)
             CollectDepthFirst(root, all, visited);
 
+        // A node whose parent chain reaches a walkable ancestor that does not name it back is
+        // reachable by neither route. The protocol does not produce that, but the audit engine
+        // reads the flat list and would quietly stop reporting on anything missing from it, so
+        // whatever the walk did not reach becomes a root of its own rather than disappearing.
+        foreach (var raw in rawNodes)
+        {
+            if (raw.Ignored
+                || visited.Contains(raw.NodeId)
+                || !converted.TryGetValue(raw.NodeId, out var stranded))
+            {
+                continue;
+            }
+
+            roots.Add(stranded);
+            CollectDepthFirst(stranded, all, visited);
+        }
+
         return new AccessibilityTreeResult(
             Roots: roots,
             AllWalkableNodes: all,
             IgnoredCount: ignoredCount,
             DiagnosticMessage: null);
+    }
+
+    /// <summary>
+    /// Appends a node's children to the list the parent already holds, replacing each ignored
+    /// child with that child's own non-ignored descendants, recursively, so an ignored node
+    /// flattens in place rather than cutting its subtree loose.
+    /// </summary>
+    private static void AppendChildren(
+        AccessibilityAXNode parent,
+        List<AccessibilityNode> childList,
+        Dictionary<string, AccessibilityAXNode> byId,
+        Dictionary<string, AccessibilityNode> converted,
+        HashSet<string> visited)
+    {
+        if (parent.ChildIds is null)
+            return;
+
+        foreach (var childId in parent.ChildIds)
+        {
+            // Trees from the protocol are acyclic. A guard costs nothing, and the failure it
+            // rules out would not be an error, it would be a walk that never ends.
+            if (!visited.Add(childId))
+                continue;
+
+            if (converted.TryGetValue(childId, out var childNode))
+                childList.Add(childNode);
+            else if (byId.TryGetValue(childId, out var ignoredChild))
+                AppendChildren(ignoredChild, childList, byId, converted, visited);
+        }
+    }
+
+    /// <summary>
+    /// Whether any ancestor of the node survived into the walkable tree. A node with none is a
+    /// root, because flattening has attached everything else to one.
+    /// </summary>
+    private static bool HasWalkableAncestor(
+        AccessibilityAXNode node, Dictionary<string, AccessibilityAXNode> byId)
+    {
+        var seen = new HashSet<string> { node.NodeId };
+        var parentId = node.ParentId;
+
+        while (parentId is not null && byId.TryGetValue(parentId, out var parent))
+        {
+            if (!parent.Ignored)
+                return true;
+            if (!seen.Add(parent.NodeId))
+                return false;
+
+            parentId = parent.ParentId;
+        }
+
+        return false;
     }
 
     private static string? ExtractString(AccessibilityAXValue? val) =>

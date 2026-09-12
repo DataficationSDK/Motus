@@ -118,21 +118,38 @@ public class InteractionToolsUnitTests
 
     // --- upload_files ---
 
+    /// <summary>
+    /// A directory the reads are allowed to come from, standing in for the roots an MCP client
+    /// reports. A unique name per run: the net8.0 and net10.0 test assemblies run as separate
+    /// processes and would otherwise contend for one fixed path under the temp dir.
+    /// </summary>
+    private static (string Directory, SecurityPolicy Policy) ReadableDirectory()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"motus_upload_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+
+        var policy = new SecurityPolicy(new McpServerLaunchOptions { OutputDirectory = directory })
+        {
+            ReadRootsOverride = _ => new ValueTask<IReadOnlyList<string>>(new[] { directory }),
+        };
+
+        return (directory, policy);
+    }
+
     [TestMethod]
     public async Task UploadFiles_ReadsFilesAndUploads()
     {
         var (page, service) = await SnapshottedAsync("button", "Upload");
-        // A unique name per run: the net8.0 and net10.0 test assemblies run as separate
-        // processes and would otherwise contend for one fixed path under the temp dir.
-        var path = Path.Combine(Path.GetTempPath(), $"motus_upload_{Guid.NewGuid():N}.txt");
+        var (directory, policy) = ReadableDirectory();
+        var path = Path.Combine(directory, "upload.txt");
         var bytes = new byte[] { 1, 2, 3, 4 };
         await File.WriteAllBytesAsync(path, bytes);
         try
         {
             var result = await InteractionTools.UploadFilesAsync(
-                "e1", [path], service, CancellationToken.None);
+                "e1", [path], service, CancellationToken.None, server: null, policy: policy);
 
-            Assert.IsFalse(result.IsError ?? false);
+            Assert.IsFalse(result.IsError ?? false, TextOf(result));
             var uploaded = page.RecordingLocator.UploadedFiles;
             Assert.IsNotNull(uploaded);
             Assert.AreEqual(1, uploaded.Count);
@@ -142,7 +159,7 @@ public class InteractionToolsUnitTests
         }
         finally
         {
-            File.Delete(path);
+            Directory.Delete(directory, recursive: true);
         }
     }
 
@@ -150,13 +167,70 @@ public class InteractionToolsUnitTests
     public async Task UploadFiles_MissingPath_ReturnsErrorNamingPath()
     {
         var (_, service) = await SnapshottedAsync("button", "Upload");
-        var missing = Path.Combine(Path.GetTempPath(), "motus_does_not_exist_12345.bin");
+        var (directory, policy) = ReadableDirectory();
+        var missing = Path.Combine(directory, "motus_does_not_exist_12345.bin");
+        try
+        {
+            var result = await InteractionTools.UploadFilesAsync(
+                "e1", [missing], service, CancellationToken.None, server: null, policy: policy);
 
-        var result = await InteractionTools.UploadFilesAsync(
-            "e1", [missing], service, CancellationToken.None);
+            Assert.IsTrue(result.IsError);
+            StringAssert.Contains(TextOf(result), missing);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
 
-        Assert.IsTrue(result.IsError);
-        StringAssert.Contains(TextOf(result), missing);
+    [TestMethod]
+    public async Task UploadFiles_PathOutsideTheReadableDirectories_IsRefusedWithoutReadingIt()
+    {
+        var (page, service) = await SnapshottedAsync("button", "Upload");
+        var (directory, policy) = ReadableDirectory();
+        var outside = Path.Combine(Path.GetTempPath(), $"motus_outside_{Guid.NewGuid():N}.txt");
+        await File.WriteAllTextAsync(outside, "secret");
+        try
+        {
+            var result = await InteractionTools.UploadFilesAsync(
+                "e1", [outside], service, CancellationToken.None, server: null, policy: policy);
+
+            Assert.IsTrue(result.IsError);
+            StringAssert.Contains(TextOf(result), "Reads are confined to");
+            Assert.IsNull(page.RecordingLocator.UploadedFiles, "nothing should have reached the page");
+        }
+        finally
+        {
+            File.Delete(outside);
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task UploadFiles_WithUnrestrictedFileAccess_ReadsAnywhere()
+    {
+        var (page, service) = await SnapshottedAsync("button", "Upload");
+        var (directory, _) = ReadableDirectory();
+        var unrestricted = new SecurityPolicy(new McpServerLaunchOptions
+        {
+            OutputDirectory = directory,
+            AllowUnrestrictedFileAccess = true,
+        });
+        var outside = Path.Combine(Path.GetTempPath(), $"motus_outside_{Guid.NewGuid():N}.txt");
+        await File.WriteAllTextAsync(outside, "secret");
+        try
+        {
+            var result = await InteractionTools.UploadFilesAsync(
+                "e1", [outside], service, CancellationToken.None, server: null, policy: unrestricted);
+
+            Assert.IsFalse(result.IsError ?? false, TextOf(result));
+            Assert.AreEqual(1, page.RecordingLocator.UploadedFiles?.Count);
+        }
+        finally
+        {
+            File.Delete(outside);
+            Directory.Delete(directory, recursive: true);
+        }
     }
 
     // --- press_key (page level) ---

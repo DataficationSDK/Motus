@@ -43,16 +43,20 @@ public sealed class RecordingTools
 
     [McpServerTool(Name = "trace_stop", Title = "Stop trace recording", Destructive = false, ReadOnly = false)]
     [Description("Stops the trace started by trace_start and writes it to a ZIP file. Returns the file "
-        + "path. Provide a path to choose where it is written, or omit it for an auto-generated path "
-        + "under the temporary directory.")]
+        + "path. Provide a path relative to the server's output directory to choose where it is "
+        + "written, or omit it for an auto-generated name in that directory.")]
     public static async Task<CallToolResult> TraceStopAsync(
         ActivePageService pageService,
         CancellationToken cancellationToken,
-        [Description("Where to write the trace ZIP. Omit for an auto-generated path.")] string? path = null)
+        [Description("Where to write the trace ZIP, relative to the server's output directory. Omit for an "
+            + "auto-generated path.")] string? path = null,
+        SecurityPolicy? policy = null)
     {
+        if (!(policy ?? SecurityPolicy.Default).TryResolveOutputPath(path, "motus-trace", ".zip", out var resolved, out var refusal))
+            return ToolResultHelper.Error(refusal!);
+
         try
         {
-            var resolved = ResolvePath(path, "motus-trace", ".zip");
             var context = await pageService.GetOrCreateActiveContextAsync(cancellationToken).ConfigureAwait(false);
             await context.Tracing.StopAsync(new TracingStopOptions { Path = resolved }).ConfigureAwait(false);
 
@@ -86,16 +90,20 @@ public sealed class RecordingTools
 
     [McpServerTool(Name = "har_stop", Title = "Stop HAR recording", Destructive = false, ReadOnly = false)]
     [Description("Stops the recording started by har_start and writes the captured traffic to an HTTP "
-        + "archive (HAR) file. Returns the file path. Provide a path to choose where it is written, or "
-        + "omit it for an auto-generated path under the temporary directory.")]
+        + "archive (HAR) file. Returns the file path. Provide a path relative to the server's output "
+        + "directory to choose where it is written, or omit it for an auto-generated name there.")]
     public static async Task<CallToolResult> HarStopAsync(
         ActivePageService pageService,
         CancellationToken cancellationToken,
-        [Description("Where to write the HAR file. Omit for an auto-generated path.")] string? path = null)
+        [Description("Where to write the HAR file, relative to the server's output directory. Omit for an "
+            + "auto-generated path.")] string? path = null,
+        SecurityPolicy? policy = null)
     {
+        if (!(policy ?? SecurityPolicy.Default).TryResolveOutputPath(path, "motus", ".har", out var resolved, out var refusal))
+            return ToolResultHelper.Error(refusal!);
+
         try
         {
-            var resolved = ResolvePath(path, "motus", ".har");
             var page = await pageService.GetOrCreateActivePageAsync(cancellationToken).ConfigureAwait(false);
             await page.StopHarRecordingAsync(resolved, cancellationToken).ConfigureAwait(false);
 
@@ -116,11 +124,15 @@ public sealed class RecordingTools
     public static async Task<CallToolResult> VideoStartAsync(
         ActivePageService pageService,
         CancellationToken cancellationToken,
-        [Description("Where to write the video (MJPEG AVI). Omit for an auto-generated path.")] string? path = null)
+        [Description("Where to write the video (MJPEG AVI), relative to the server's output directory. Omit "
+            + "for an auto-generated path.")] string? path = null,
+        SecurityPolicy? policy = null)
     {
+        if (!(policy ?? SecurityPolicy.Default).TryResolveOutputPath(path, "motus-video", ".avi", out var resolved, out var refusal))
+            return ToolResultHelper.Error(refusal!);
+
         try
         {
-            var resolved = ResolvePath(path, "motus-video", ".avi");
             var page = await pageService.GetOrCreateActivePageAsync(cancellationToken).ConfigureAwait(false);
             await page.StartVideoRecordingAsync(resolved, size: null, cancellationToken).ConfigureAwait(false);
 
@@ -151,15 +163,5 @@ public sealed class RecordingTools
         {
             return ToolResultHelper.Error($"Stopping video recording failed: {ex.Message}");
         }
-    }
-
-    private static string ResolvePath(string? path, string prefix, string extension)
-    {
-        if (!string.IsNullOrWhiteSpace(path))
-            return path;
-
-        var stamp = DateTime.UtcNow.ToString("yyyyMMdd-HHmmss");
-        var unique = Guid.NewGuid().ToString("N")[..8];
-        return Path.Combine(Path.GetTempPath(), $"{prefix}-{stamp}-{unique}{extension}");
     }
 }

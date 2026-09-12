@@ -19,6 +19,8 @@ public class ArtifactIntegrationTests
     private BrowserSessionManager? _sessions;
     private ActivePageService? _pages;
     private readonly List<string> _artifacts = [];
+    private string _outputDir = string.Empty;
+    private SecurityPolicy _policy = null!;
 
     [TestInitialize]
     public void Setup()
@@ -26,6 +28,11 @@ public class ArtifactIntegrationTests
         var executablePath = ResolveInstalledBrowser();
         if (executablePath is null)
             Assert.Inconclusive("No installed browser found; skipping integration test.");
+
+        // The tools resolve the path they are given inside this directory, so the artifacts these
+        // tests read back land somewhere known rather than wherever the caller asked for.
+        _outputDir = Path.Combine(Path.GetTempPath(), $"motus_artifacts_{Guid.NewGuid():N}");
+        _policy = new SecurityPolicy(new McpServerLaunchOptions { OutputDirectory = _outputDir });
 
         _sessions = new BrowserSessionManager(new McpServerLaunchOptions
         {
@@ -47,6 +54,8 @@ public class ArtifactIntegrationTests
         {
             try { if (File.Exists(path)) File.Delete(path); } catch { /* best effort */ }
         }
+
+        try { Directory.Delete(_outputDir, recursive: true); } catch { /* best effort */ }
     }
 
     [TestMethod]
@@ -74,7 +83,8 @@ public class ArtifactIntegrationTests
     {
         var pages = _pages!;
         var ct = CancellationToken.None;
-        var path = Path.Combine(Path.GetTempPath(), $"motus-trace-test-{Guid.NewGuid():N}.zip");
+        var name = $"motus-trace-test-{Guid.NewGuid():N}.zip";
+        var path = Path.Combine(_outputDir, name);
         _artifacts.Add(path);
 
         AssertOk(await CoreTools.NavigateAsync(SamplePage, pages, ct), "navigate");
@@ -87,7 +97,8 @@ public class ArtifactIntegrationTests
         AssertOk(await RecordingTools.TraceStopAsync(
             pageService: pages,
             cancellationToken: ct,
-            path: path), "trace_stop");
+            path: name,
+            policy: _policy), "trace_stop");
 
         Assert.IsTrue(File.Exists(path), "trace file should exist");
         Assert.IsTrue(new FileInfo(path).Length > 0, "trace file should be non-empty");
@@ -98,7 +109,8 @@ public class ArtifactIntegrationTests
     {
         var pages = _pages!;
         var ct = CancellationToken.None;
-        var path = Path.Combine(Path.GetTempPath(), $"motus-har-test-{Guid.NewGuid():N}.har");
+        var name = $"motus-har-test-{Guid.NewGuid():N}.har";
+        var path = Path.Combine(_outputDir, name);
         _artifacts.Add(path);
 
         AssertOk(await CoreTools.NavigateAsync(SamplePage, pages, ct), "navigate");
@@ -107,7 +119,8 @@ public class ArtifactIntegrationTests
         AssertOk(await RecordingTools.HarStopAsync(
             pageService: pages,
             cancellationToken: ct,
-            path: path), "har_stop");
+            path: name,
+            policy: _policy), "har_stop");
 
         Assert.IsTrue(File.Exists(path), "HAR file should exist");
 
@@ -122,7 +135,8 @@ public class ArtifactIntegrationTests
     {
         var pages = _pages!;
         var ct = CancellationToken.None;
-        var path = Path.Combine(Path.GetTempPath(), $"motus-video-test-{Guid.NewGuid():N}.avi");
+        var name = $"motus-video-test-{Guid.NewGuid():N}.avi";
+        var path = Path.Combine(_outputDir, name);
         _artifacts.Add(path);
 
         AssertOk(await CoreTools.NavigateAsync(SamplePage, pages, ct), "navigate");
@@ -130,7 +144,8 @@ public class ArtifactIntegrationTests
         AssertOk(await RecordingTools.VideoStartAsync(
             pageService: pages,
             cancellationToken: ct,
-            path: path), "video_start");
+            path: name,
+            policy: _policy), "video_start");
 
         // Produce on-screen changes so the screencast emits frames.
         AssertOk(await CoreTools.NavigateAsync(SamplePage, pages, ct), "navigate-again");

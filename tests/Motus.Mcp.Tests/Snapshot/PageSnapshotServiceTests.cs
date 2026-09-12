@@ -116,6 +116,27 @@ public class PageSnapshotServiceTests
             "a snapshot with refs should not carry the degraded note");
     }
 
+    [TestMethod]
+    public async Task TakeSnapshot_WhenTheBrowserCannotProduceATree_SaysSoRatherThanBlamingThePage()
+    {
+        var snapshot = new AccessibilitySnapshot(
+            Roots: [],
+            IgnoredCount: 0,
+            DiagnosticMessage: "Accessibility.getFullAXTree is not supported on the active transport "
+                + "(Firefox/WebDriver BiDi). Use a Chromium-based browser for accessibility audits.");
+
+        var service = new PageSnapshotService(new FakeAccessibilityPage(snapshot));
+
+        var text = await service.TakeSnapshotAsync();
+
+        StringAssert.Contains(text, "not supported on the active transport");
+        StringAssert.Contains(text, "cannot be used with this browser");
+        StringAssert.Contains(text, "click_xy");
+        Assert.IsFalse(
+            text.Contains("canvas", StringComparison.Ordinal),
+            "the page is not the reason the tree is empty, so do not send the agent looking at it");
+    }
+
     private static AccessibilitySnapshot EmptySnapshot()
         => new([], IgnoredCount: 0, DiagnosticMessage: null);
 

@@ -31,8 +31,15 @@ public sealed class NetworkTools
         [Description("HTTP status code to return. Defaults to 200.")] int? status = null,
         [Description("Response body to return.")] string? body = null,
         [Description("Content-Type of the response, e.g. application/json.")] string? content_type = null,
-        [Description("Additional response headers as name/value pairs.")] Dictionary<string, string>? headers = null)
+        [Description("Additional response headers as name/value pairs.")] Dictionary<string, string>? headers = null,
+        SecurityPolicy? policy = null)
     {
+        if (ToolArguments.Missing("url_pattern", url_pattern) is { } missing)
+            return missing;
+
+        if ((policy ?? SecurityPolicy.Default).RefuseHeaders(headers) is { } refusal)
+            return ToolResultHelper.Error(refusal);
+
         try
         {
             var context = await pageService.GetOrCreateActiveContextAsync(cancellationToken).ConfigureAwait(false);
@@ -62,6 +69,9 @@ public sealed class NetworkTools
         CancellationToken cancellationToken,
         [Description("Optional error code, e.g. aborted, accessdenied, connectionrefused, blockedbyclient.")] string? error_code = null)
     {
+        if (ToolArguments.Missing("url_pattern", url_pattern) is { } missing)
+            return missing;
+
         try
         {
             var context = await pageService.GetOrCreateActiveContextAsync(cancellationToken).ConfigureAwait(false);
@@ -86,8 +96,15 @@ public sealed class NetworkTools
         [Description("Override the request URL.")] string? url = null,
         [Description("Override the HTTP method, e.g. POST.")] string? method = null,
         [Description("Override or add request headers as name/value pairs.")] Dictionary<string, string>? headers = null,
-        [Description("Override the request body.")] string? post_data = null)
+        [Description("Override the request body.")] string? post_data = null,
+        SecurityPolicy? policy = null)
     {
+        if (ToolArguments.Missing("url_pattern", url_pattern) is { } missing)
+            return missing;
+
+        if ((policy ?? SecurityPolicy.Default).RefuseUrl(url) is { } refusal)
+            return ToolResultHelper.Error(refusal);
+
         try
         {
             var context = await pageService.GetOrCreateActiveContextAsync(cancellationToken).ConfigureAwait(false);
@@ -114,6 +131,9 @@ public sealed class NetworkTools
         NetworkService networkService,
         CancellationToken cancellationToken)
     {
+        if (ToolArguments.Missing("url_pattern", url_pattern) is { } missing)
+            return missing;
+
         try
         {
             var context = await pageService.GetOrCreateActiveContextAsync(cancellationToken).ConfigureAwait(false);

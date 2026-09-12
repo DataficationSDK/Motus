@@ -100,7 +100,7 @@ internal sealed class Browser : IBrowser
             _heartbeat.Start();
         }
 
-        await AdoptExistingTargetsAsync(ct).ConfigureAwait(false);
+        await StartTargetTrackingAsync(ct).ConfigureAwait(false);
     }
 
     public async Task CloseAsync()
@@ -338,20 +338,53 @@ internal sealed class Browser : IBrowser
     private const string PageTargetType = "page";
 
     /// <summary>
+    /// Starts watching what opens and closes in the browser, so a tab a page opens for itself
+    /// becomes a page of the context it belongs to rather than a window nothing can reach.
+    /// </summary>
+    /// <remarks>
+    /// Target discovery is how a tab nobody asked for is noticed, and only a transport that
+    /// multiplexes targets offers it. One that models browsing contexts its own way has nothing to
+    /// discover here and must not be pushed through these semantics.
+    ///
+    /// A browser Motus started is watched in full, because everything in it is Motus's. A browser
+    /// Motus only connected to is watched when the caller asked for what was already open to be
+    /// taken over, and is left alone otherwise: declining that is asking not to be handed windows
+    /// the caller did not open.
+    /// </remarks>
+    private async Task StartTargetTrackingAsync(CancellationToken ct)
+    {
+        if ((_registry.BrowserSession.Capabilities & MotusCapabilities.TargetMultiplexing) == 0)
+            return;
+
+        if (_adoptExistingTargets)
+        {
+            await AdoptExistingTargetsAsync(ct).ConfigureAwait(false);
+            return;
+        }
+
+        if (!_ownsProcess)
+            return;
+
+        // Listening first, because the browser replays every target it already has the moment
+        // discovery is switched on, and a pump that has not subscribed yet would drop them. Nothing
+        // is lost by hearing that replay: those targets sit in the browser's own context, which a
+        // browser Motus started never takes over, so they are ignored on arrival.
+        StartTargetLifecyclePump();
+
+        await _registry.BrowserSession.SendAsync(
+            "Target.setDiscoverTargets",
+            new TargetSetDiscoverTargetsParams(Discover: true),
+            CdpJsonContext.Default.TargetSetDiscoverTargetsParams,
+            CdpJsonContext.Default.TargetSetDiscoverTargetsResult,
+            ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
     /// Brings the contexts and pages already open in the browser under this handle, so a caller
     /// who connected to a running browser can see and drive what is in it.
     /// </summary>
     private async Task AdoptExistingTargetsAsync(CancellationToken ct)
     {
-        if (!_adoptExistingTargets)
-            return;
-
-        // Adoption is expressed through target discovery, which only a transport that multiplexes
-        // targets offers. One that models browsing contexts its own way has nothing to adopt here
-        // and must not be pushed through these semantics.
-        if ((_registry.BrowserSession.Capabilities & MotusCapabilities.TargetMultiplexing) == 0)
-            return;
-
         await _registry.BrowserSession.SendAsync(
             "Target.setDiscoverTargets",
             new TargetSetDiscoverTargetsParams(Discover: true),
@@ -420,7 +453,16 @@ internal sealed class Browser : IBrowser
     /// <summary>
     /// Attaches to a page target that already exists and wraps it as a page on the given context.
     /// </summary>
-    private async Task AdoptPageTargetAsync(BrowserContext context, string targetId, CancellationToken ct)
+    /// <param name="openerTargetId">
+    /// The target that opened this one, when the browser reported one. A page that opened another
+    /// page is told about it, which is the only way a caller can act on a tab it did not ask for
+    /// at the moment it appears.
+    /// </param>
+    private async Task AdoptPageTargetAsync(
+        BrowserContext context,
+        string targetId,
+        CancellationToken ct,
+        string? openerTargetId = null)
     {
         string? sessionId = null;
         Page? page = null;
@@ -444,7 +486,7 @@ internal sealed class Browser : IBrowser
             // replays nothing and the frame map would stay empty. Read the tree instead.
             await page.SeedFrameTreeAsync(ct).ConfigureAwait(false);
 
-            await context.AdoptPageAsync(page).ConfigureAwait(false);
+            await context.AdoptPageAsync(page, openerTargetId).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -518,26 +560,33 @@ internal sealed class Browser : IBrowser
         lock (_contexts)
             context = _contexts.FirstOrDefault(c => c.BrowserContextId == id);
 
-        // A page in a context Motus created is that context's own business: it builds and
-        // registers the page itself, and adopting it here would make a second handle to one tab.
-        if (context is not null && !context.IsAdopted)
+        if (context is null)
+        {
+            // A tab in a browser context Motus never created belongs to whoever else is using the
+            // browser. It is taken over only by a handle opened to drive what was already there;
+            // a browser Motus started shows what Motus opened, and what those pages open.
+            if (!_adoptExistingTargets)
+                return;
+
+            context = await GetOrCreateAdoptedContextAsync(id).ConfigureAwait(false);
+        }
+
+        // The context is asked rather than only checked for the target, because a page being built
+        // right now is not in its page list yet and would otherwise be wrapped a second time here.
+        if (!await context.TryClaimDiscoveredTargetAsync(info.TargetId).ConfigureAwait(false))
             return;
 
-        context ??= await GetOrCreateAdoptedContextAsync(id).ConfigureAwait(false);
-
-        if (context.HasPageForTarget(info.TargetId))
-            return;
-
-        await AdoptPageTargetAsync(context, info.TargetId, _browserCts.Token).ConfigureAwait(false);
+        await AdoptPageTargetAsync(
+            context, info.TargetId, _browserCts.Token, info.OpenerId).ConfigureAwait(false);
     }
 
     private async Task OnTargetDestroyedAsync(TargetTargetDestroyedEvent evt)
     {
-        List<BrowserContext> adopted;
+        List<BrowserContext> contexts;
         lock (_contexts)
-            adopted = _contexts.Where(c => c.IsAdopted).ToList();
+            contexts = _contexts.ToList();
 
-        foreach (var context in adopted)
+        foreach (var context in contexts)
         {
             if (await context.RetirePageAsync(evt.TargetId).ConfigureAwait(false))
                 return;

@@ -29,8 +29,15 @@ public sealed class BrowserTools
         [Description("The browser's debugging endpoint, e.g. http://127.0.0.1:9222, or its CDP WebSocket URL.")]
         string endpoint,
         ActivePageService pageService,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        SecurityPolicy? policy = null)
     {
+        if (ToolArguments.Missing("endpoint", endpoint) is { } missing)
+            return missing;
+
+        if ((policy ?? SecurityPolicy.Default).RefuseAttach() is { } refusal)
+            return ToolResultHelper.Error(refusal);
+
         try
         {
             await pageService.AttachAsync(endpoint, cancellationToken).ConfigureAwait(false);

@@ -57,6 +57,11 @@ public class InteractionToolsWireTests
 
         CollectionAssert.DoesNotContain(properties, "pageService");
         CollectionAssert.DoesNotContain(properties, "cancellationToken");
+
+        // The server supplies these; advertising them would invite an agent to set its own
+        // boundaries, or to pass something for a parameter it has no value for.
+        CollectionAssert.DoesNotContain(properties, "policy");
+        CollectionAssert.DoesNotContain(properties, "server");
     }
 
     private static async Task WithClientAsync(Func<McpClient, CancellationToken, Task> body)

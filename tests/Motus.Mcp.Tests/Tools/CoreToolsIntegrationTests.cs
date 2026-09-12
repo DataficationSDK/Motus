@@ -108,6 +108,46 @@ public class CoreToolsIntegrationTests
             $"max_depth=0 should render fewer lines (shallow={LineCount(shallow)}, full={LineCount(full)}).");
     }
 
+    [TestMethod]
+    public async Task Navigate_ToAFileUrl_IsRefusedAndLeavesThePageWhereItWas()
+    {
+        var service = _pages!;
+        var ct = CancellationToken.None;
+
+        await CoreTools.NavigateAsync("data:text/html,<h1>before</h1>", service, ct);
+        var page = await service.GetOrCreateActivePageAsync(ct);
+        var before = page.Url;
+
+        var result = await CoreTools.NavigateAsync("file:///etc/hosts", service, ct);
+
+        Assert.IsTrue(result.IsError);
+        StringAssert.Contains(((TextContentBlock)result.Content[0]).Text, "file:// navigation is disabled");
+        Assert.AreEqual(before, page.Url, "the browser should never have been asked to open the file");
+    }
+
+    [TestMethod]
+    public async Task Navigate_ToAFileUrl_WithUnrestrictedFileAccess_ReachesTheBrowser()
+    {
+        var service = _pages!;
+        var ct = CancellationToken.None;
+        var unrestricted = new SecurityPolicy(new McpServerLaunchOptions { AllowUnrestrictedFileAccess = true });
+
+        var file = Path.Combine(Path.GetTempPath(), $"motus_local_{Guid.NewGuid():N}.html");
+        await File.WriteAllTextAsync(file, "<title>local</title><h1>local</h1>", ct);
+        try
+        {
+            var result = await CoreTools.NavigateAsync(new Uri(file).AbsoluteUri, service, ct, unrestricted);
+
+            Assert.IsFalse(result.IsError ?? false, ((TextContentBlock)result.Content[0]).Text);
+            var page = await service.GetOrCreateActivePageAsync(ct);
+            Assert.AreEqual("local", await page.TitleAsync());
+        }
+        finally
+        {
+            File.Delete(file);
+        }
+    }
+
     private static int LineCount(string text)
         => text.Split('\n', StringSplitOptions.RemoveEmptyEntries).Length;
 

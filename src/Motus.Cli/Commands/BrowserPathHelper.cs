@@ -23,6 +23,17 @@ public static class BrowserPathHelper
         return ReadMarker(LegacyMarkerPath);
     }
 
+    /// <summary>
+    /// Resolves only the browser installed for the given channel, with no fall back to the legacy
+    /// marker. The legacy marker records a path without recording which browser it points at, so a
+    /// caller that asked for a particular channel cannot be answered from it.
+    /// </summary>
+    public static string? ResolveChannel(string channel)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(channel);
+        return ReadMarker(Path.Combine(BrowserCacheDir, $".installed.{channel.ToLowerInvariant()}"));
+    }
+
     private static string? ReadMarker(string markerPath)
     {
         if (!File.Exists(markerPath))

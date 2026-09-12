@@ -90,8 +90,16 @@ public interface IPage : IAsyncDisposable
     event EventHandler<PageErrorEventArgs>? PageError;
 
     /// <summary>
-    /// Raised when a popup page is opened.
+    /// Raised when this page opens another one, through <c>window.open</c> or a link with
+    /// <c>target="_blank"</c>. The new page is also in <see cref="IBrowserContext.Pages"/>.
     /// </summary>
+    /// <remarks>
+    /// The page handed over is ready to be driven: its domains are enabled and its frame tree is
+    /// read, so a handler can navigate it, wait on it, or close it without any further step. It
+    /// may still be on <c>about:blank</c> at that moment, since the browser opens the tab before
+    /// the document it was asked for arrives, so wait on the page rather than reading its URL
+    /// straight away.
+    /// </remarks>
     event EventHandler<IPage>? Popup;
 
     /// <summary>

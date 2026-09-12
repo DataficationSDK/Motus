@@ -76,9 +76,26 @@ public class BrowserAttachIntegrationTests
     }
 
     [TestMethod]
-    public async Task BrowserAttach_SwitchesAwayFromTheBrowserTheServerStarted()
+    public async Task BrowserAttach_WithoutTheOption_IsRefused()
     {
         await using var bundle = new McpSessionBundle(new McpServerLaunchOptions { Headless = true });
+
+        var result = await BrowserTools.BrowserAttachAsync(
+            _browser!.HttpEndpoint, bundle.Pages, CancellationToken.None, bundle.Security);
+
+        Assert.IsTrue(result.IsError);
+        StringAssert.Contains(TextOf(result), "--allow-attach");
+        Assert.IsFalse(bundle.Sessions.IsAttached);
+        Assert.IsTrue(_browser.IsRunning);
+    }
+
+    [TestMethod]
+    public async Task BrowserAttach_SwitchesAwayFromTheBrowserTheServerStarted()
+    {
+        // Pointing the session at a browser that is already running is something the server has to
+        // have been started with, so the tool is reached the way an operator who allowed it would.
+        await using var bundle = new McpSessionBundle(
+            new McpServerLaunchOptions { Headless = true, AllowAttach = true });
 
         try
         {
@@ -93,7 +110,7 @@ public class BrowserAttachIntegrationTests
         }
 
         var result = await BrowserTools.BrowserAttachAsync(
-            _browser!.HttpEndpoint, bundle.Pages, CancellationToken.None);
+            _browser!.HttpEndpoint, bundle.Pages, CancellationToken.None, bundle.Security);
 
         Assert.IsFalse(result.IsError ?? false, TextOf(result));
         Assert.IsTrue(bundle.Sessions.IsAttached);
@@ -111,7 +128,7 @@ public class BrowserAttachIntegrationTests
             new McpServerLaunchOptions { Endpoint = _browser!.HttpEndpoint });
 
         var result = await BrowserTools.BrowserAttachAsync(
-            "http://127.0.0.1:1", bundle.Pages, CancellationToken.None);
+            "http://127.0.0.1:1", bundle.Pages, CancellationToken.None, bundle.Security);
 
         Assert.IsTrue(result.IsError);
         StringAssert.Contains(TextOf(result), "remote debugging port");

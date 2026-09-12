@@ -196,4 +196,21 @@ public class SessionToolsUnitTests
         Assert.IsFalse(result.IsError ?? false);
         CollectionAssert.Contains(service.ClosedContexts, "userB");
     }
+
+    // --- tab_open: the local filesystem ---
+
+    [TestMethod]
+    public async Task TabOpen_AtAFileUrl_IsRefusedWithoutOpeningATab()
+    {
+        var service = new FakeSessionPageService(Tab("https://a.test"));
+
+        var result = await SessionTools.TabOpenAsync(
+            pageService: service,
+            cancellationToken: Ct,
+            url: "file:///etc/hosts");
+
+        Assert.IsTrue(result.IsError);
+        StringAssert.Contains(TextOf(result), "file:// navigation is disabled");
+        Assert.AreEqual(0, service.OpenedTabs);
+    }
 }

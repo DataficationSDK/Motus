@@ -119,6 +119,12 @@ internal sealed partial class Page : IPage
 
     internal void SetVideoRecorder(VideoRecorder recorder) => _videoRecorder = recorder;
 
+    /// <summary>
+    /// Tells listeners that this page opened another one. Raised by the context once the new page
+    /// is ready to be driven, so a handler can act on it without waiting for anything else.
+    /// </summary>
+    internal void RaisePopup(Abstractions.IPage popup) => Popup?.Invoke(this, popup);
+
     // Upload payloads are staged on disk and read lazily by the browser, so the
     // backing directories must survive until the page goes away (see
     // Locator.SetInputFilesAsync). Registered dirs are deleted on dispose.

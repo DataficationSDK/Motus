@@ -56,13 +56,17 @@ public sealed class SessionTools
     public static async Task<CallToolResult> TabOpenAsync(
         ActivePageService pageService,
         CancellationToken cancellationToken,
-        [Description("URL to open the new tab at. Omit to open a blank tab.")] string? url = null)
+        [Description("URL to open the new tab at. Omit to open a blank tab.")] string? url = null,
+        SecurityPolicy? policy = null)
     {
+        if ((policy ?? SecurityPolicy.Default).RefuseUrl(url) is { } refusal)
+            return ToolResultHelper.Error(refusal);
+
         try
         {
             var page = await pageService.OpenNewTabAsync(cancellationToken).ConfigureAwait(false);
             if (!string.IsNullOrEmpty(url))
-                await page.GotoAsync(url).ConfigureAwait(false);
+                await page.GotoAsync(url, pageService.Navigation).ConfigureAwait(false);
 
             pageService.InvalidateSnapshot(page);
             return ToolResultHelper.Text($"Opened tab at {(string.IsNullOrEmpty(url) ? "about:blank" : url)}");
@@ -138,6 +142,9 @@ public sealed class SessionTools
         ActivePageService pageService,
         CancellationToken cancellationToken)
     {
+        if (ToolArguments.Missing("name", name) is { } missing)
+            return missing;
+
         try
         {
             await pageService.CreateContextAsync(name, cancellationToken).ConfigureAwait(false);
@@ -156,6 +163,9 @@ public sealed class SessionTools
         ActivePageService pageService,
         CancellationToken cancellationToken)
     {
+        if (ToolArguments.Missing("name", name) is { } missing)
+            return missing;
+
         try
         {
             pageService.SelectContext(name);
@@ -175,6 +185,9 @@ public sealed class SessionTools
         ActivePageService pageService,
         CancellationToken cancellationToken)
     {
+        if (ToolArguments.Missing("name", name) is { } missing)
+            return missing;
+
         try
         {
             await pageService.CloseContextAsync(name, cancellationToken).ConfigureAwait(false);

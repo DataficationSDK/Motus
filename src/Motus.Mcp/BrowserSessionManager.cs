@@ -64,6 +64,12 @@ public sealed class BrowserSessionManager : IAsyncDisposable
     /// </summary>
     internal Func<string, CancellationToken, Task<IBrowser>>? ConnectOverride { get; init; }
 
+    /// <summary>
+    /// The configuration this session was built with. Exposed because settings that no layer below
+    /// can hold, such as the per-action timeout, have to be readable by the layers that apply them.
+    /// </summary>
+    public McpServerLaunchOptions Options => _options;
+
     /// <summary>The name of the context that unscoped tool calls act on.</summary>
     public string ActiveContextName { get; private set; } = DefaultContextName;
 

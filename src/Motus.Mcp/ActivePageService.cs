@@ -50,6 +50,28 @@ public class ActivePageService
     }
 
     /// <summary>
+    /// The dialog watcher following the active page, or null when the session has none. Exposed so
+    /// a tool can race its action against a dialog without taking a second injected service: the
+    /// dialog follows the active page, and this is what owns that.
+    /// </summary>
+    public DialogService? Dialogs => _dialogService;
+
+    /// <summary>
+    /// How long an element action may take, in milliseconds, or null for the framework default.
+    /// Neither a page nor a context holds a default for this, so every tool passes it on the call
+    /// it makes, and reads it from here so there is one place it comes from.
+    /// </summary>
+    public double? ActionTimeout => _sessions.Options.ActionTimeout;
+
+    /// <summary>
+    /// The options every navigation is made with, carrying the configured navigation timeout, or
+    /// null when none was configured and the framework default applies.
+    /// </summary>
+    public NavigationOptions? Navigation => _sessions.Options.NavigationTimeout is { } timeout
+        ? new NavigationOptions { Timeout = timeout }
+        : null;
+
+    /// <summary>
     /// Returns the active page, reusing the cached one while it is still open and
     /// belongs to the current browser, and otherwise resolving a fresh one. The
     /// browser and its active context are launched lazily through

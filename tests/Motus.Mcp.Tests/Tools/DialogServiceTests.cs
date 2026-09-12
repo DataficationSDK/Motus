@@ -73,6 +73,99 @@ public class DialogServiceTests
     }
 
     [TestMethod]
+    public void PeekPendingDialog_DoesNotClearIt()
+    {
+        var service = new DialogService();
+        var page = Page();
+        service.Subscribe(page);
+        var dialog = new FakeDialog(DialogType.Confirm, "Delete this?");
+        page.RaiseDialog(dialog);
+
+        Assert.AreSame(dialog, service.PeekPendingDialog());
+        Assert.AreSame(dialog, service.PeekPendingDialog(), "a peek should be repeatable.");
+        Assert.AreSame(dialog, service.TakePendingDialog(), "handle_dialog still has to find it.");
+        Assert.IsNull(service.PeekPendingDialog());
+    }
+
+    [TestMethod]
+    public async Task ArmAsync_CompletesWithTheNextDialog()
+    {
+        var service = new DialogService();
+        var page = Page();
+        service.Subscribe(page);
+
+        var armed = service.ArmAsync();
+        Assert.IsFalse(armed.IsCompleted, "nothing has opened a dialog yet.");
+
+        var dialog = new FakeDialog(DialogType.Alert, "Are you sure?");
+        page.RaiseDialog(dialog);
+
+        Assert.AreSame(dialog, await armed);
+    }
+
+    [TestMethod]
+    public async Task ArmAsync_WithADialogAlreadyPending_CompletesAtOnce()
+    {
+        var service = new DialogService();
+        var page = Page();
+        service.Subscribe(page);
+        page.RaiseDialog(new FakeDialog(DialogType.Alert, "still here"));
+
+        var armed = service.ArmAsync();
+
+        Assert.AreEqual("still here", (await armed).Message);
+    }
+
+    [TestMethod]
+    public void Disarm_LeavesALaterDialogPendingWithoutCompletingTheArmedTask()
+    {
+        var service = new DialogService();
+        var page = Page();
+        service.Subscribe(page);
+
+        var armed = service.ArmAsync();
+        service.Disarm();
+        page.RaiseDialog(new FakeDialog(DialogType.Alert, "after the action"));
+
+        Assert.IsFalse(armed.IsCompleted, "the action that armed this one has already returned.");
+        Assert.IsNotNull(service.PeekPendingDialog(), "the dialog is still open and still has to be reported.");
+    }
+
+    [TestMethod]
+    public void Policy_Accept_AnswersTheDialogAndLeavesNothingPending()
+    {
+        var service = new DialogService { Policy = DialogPolicy.Accept };
+        var page = Page();
+        service.Subscribe(page);
+
+        var dialog = new FakeDialog(DialogType.Confirm, "Delete this?");
+        page.RaiseDialog(dialog);
+
+        Assert.IsTrue(dialog.Accepted);
+        Assert.IsNull(service.PeekPendingDialog(), "an answered dialog is not waiting for anyone.");
+    }
+
+    [TestMethod]
+    public void Policy_Dismiss_AnswersTheDialogAndLeavesNothingPending()
+    {
+        var service = new DialogService { Policy = DialogPolicy.Dismiss };
+        var page = Page();
+        service.Subscribe(page);
+
+        var dialog = new FakeDialog(DialogType.Confirm, "Delete this?");
+        page.RaiseDialog(dialog);
+
+        Assert.IsTrue(dialog.Dismissed);
+        Assert.IsNull(service.PeekPendingDialog());
+    }
+
+    [TestMethod]
+    public void Policy_Ask_IsTheDefault()
+    {
+        Assert.AreEqual(DialogPolicy.Ask, new DialogService().Policy);
+    }
+
+    [TestMethod]
     public void Subscribe_SamePageTwice_DoesNotDoubleCapture()
     {
         var service = new DialogService();
@@ -85,5 +178,15 @@ public class DialogServiceTests
         page.RaiseDialog(new FakeDialog());
         Assert.IsNotNull(service.TakePendingDialog());
         Assert.IsNull(service.TakePendingDialog());
+    }
+
+    [TestMethod]
+    public void Policy_ComesFromTheLaunchOptions()
+    {
+        Assert.AreEqual(DialogPolicy.Accept, new DialogService(new McpServerLaunchOptions { Dialogs = "accept" }).Policy);
+        Assert.AreEqual(DialogPolicy.Dismiss, new DialogService(new McpServerLaunchOptions { Dialogs = "Dismiss" }).Policy);
+        Assert.AreEqual(DialogPolicy.Ask, new DialogService(new McpServerLaunchOptions { Dialogs = "ask" }).Policy);
+        Assert.AreEqual(DialogPolicy.Ask, new DialogService(new McpServerLaunchOptions()).Policy);
+        Assert.AreEqual(DialogPolicy.Ask, new DialogService().Policy);
     }
 }

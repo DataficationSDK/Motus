@@ -43,8 +43,9 @@ public static class McpServerHost
         });
 
         builder.Services.AddSingleton(options);
+        builder.Services.AddSingleton<SecurityPolicy>();
         builder.Services.AddSingleton<BrowserSessionManager>();
-        builder.Services.AddSingleton<DialogService>();
+        builder.Services.AddSingleton(sp => new DialogService(sp.GetRequiredService<McpServerLaunchOptions>()));
         builder.Services.AddSingleton<ConsoleService>();
         builder.Services.AddSingleton<NetworkService>();
         builder.Services.AddSingleton(sp => new ActivePageService(

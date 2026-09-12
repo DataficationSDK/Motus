@@ -214,4 +214,43 @@ public class NetworkToolsUnitTests
         public override Task<IBrowserContext> GetOrCreateActiveContextAsync(CancellationToken cancellationToken = default)
             => throw new InvalidOperationException("boom");
     }
+
+    // --- interception and the local filesystem ---
+
+    [TestMethod]
+    public async Task RouteFulfill_RedirectingToAFileUrl_IsRefusedWithoutRegistering()
+    {
+        var pages = new FakeNetworkPageService();
+        var network = new NetworkService();
+
+        var result = await NetworkTools.RouteFulfillAsync(
+            url_pattern: "*api*",
+            pageService: pages,
+            networkService: network,
+            cancellationToken: Ct,
+            status: 302,
+            headers: new Dictionary<string, string> { ["Location"] = "file:///etc/hosts" });
+
+        Assert.IsTrue(result.IsError);
+        StringAssert.Contains(TextOf(result), "file:// navigation is disabled");
+        Assert.AreEqual(0, pages.Context.RoutedPatterns.Count);
+    }
+
+    [TestMethod]
+    public async Task RouteContinue_OverridingTheUrlWithAFileUrl_IsRefusedWithoutRegistering()
+    {
+        var pages = new FakeNetworkPageService();
+        var network = new NetworkService();
+
+        var result = await NetworkTools.RouteContinueAsync(
+            url_pattern: "*api*",
+            pageService: pages,
+            networkService: network,
+            cancellationToken: Ct,
+            url: "file:///etc/hosts");
+
+        Assert.IsTrue(result.IsError);
+        StringAssert.Contains(TextOf(result), "file:// navigation is disabled");
+        Assert.AreEqual(0, pages.Context.RoutedPatterns.Count);
+    }
 }

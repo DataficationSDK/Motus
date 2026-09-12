@@ -25,14 +25,24 @@ public sealed class CoreTools
     public static async Task<CallToolResult> NavigateAsync(
         [Description("The URL to navigate to.")] string url,
         ActivePageService pageService,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        SecurityPolicy? policy = null)
     {
+        if (ToolArguments.Missing("url", url) is { } missing)
+            return missing;
+
+        if ((policy ?? SecurityPolicy.Default).RefuseUrl(url) is { } refusal)
+            return ToolResultHelper.Error(refusal);
+
         try
         {
             var page = await pageService.GetOrCreateActivePageAsync(cancellationToken).ConfigureAwait(false);
-            await page.GotoAsync(url).ConfigureAwait(false);
-            pageService.InvalidateSnapshot(page);
-            return ToolResultHelper.Text($"Navigated to {url}");
+            return await ActionRunner.RunAsync(pageService.Dialogs, cancellationToken, async _ =>
+            {
+                await page.GotoAsync(url, pageService.Navigation).ConfigureAwait(false);
+                pageService.InvalidateSnapshot(page);
+                return ToolResultHelper.Text($"Navigated to {url}");
+            }).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -54,17 +64,23 @@ public sealed class CoreTools
         {
             var page = await pageService.GetOrCreateActivePageAsync(cancellationToken).ConfigureAwait(false);
             var frame = pageService.GetActiveFrame();
-            var text = await pageService.GetSnapshotService(page)
-                .TakeSnapshotAsync(frame, root_ref, max_depth, cancellationToken)
-                .ConfigureAwait(false);
 
-            // Said on every scoped snapshot rather than only on the frame_select that set the
-            // scope, because the two are often several calls apart and a tree that silently
-            // describes a different document than the agent expects is hard to notice.
-            if (frame is not null)
-                text = $"Scoped to frame {frame.Url}\n\n{text}";
+            // Reading the tree is a request to the renderer like any other, so it goes through the
+            // runner too: a page stopped on a dialog cannot answer it either.
+            return await ActionRunner.RunAsync(pageService.Dialogs, cancellationToken, async token =>
+            {
+                var text = await pageService.GetSnapshotService(page)
+                    .TakeSnapshotAsync(frame, root_ref, max_depth, token)
+                    .ConfigureAwait(false);
 
-            return ToolResultHelper.Text(text);
+                // Said on every scoped snapshot rather than only on the frame_select that set the
+                // scope, because the two are often several calls apart and a tree that silently
+                // describes a different document than the agent expects is hard to notice.
+                if (frame is not null)
+                    text = $"Scoped to frame {frame.Url}\n\n{text}";
+
+                return ToolResultHelper.Text(text);
+            }).ConfigureAwait(false);
         }
         catch (SnapshotNotTakenException)
         {
@@ -89,17 +105,23 @@ public sealed class CoreTools
         CancellationToken cancellationToken,
         [Description("Double-click instead of a single click.")] bool? @double = null)
     {
+        if (ToolArguments.Missing("ref", @ref) is { } missing)
+            return missing;
+
         try
         {
             var page = await pageService.GetOrCreateActivePageAsync(cancellationToken).ConfigureAwait(false);
             var locator = pageService.GetSnapshotService(page).ResolveRef(@ref);
 
-            if (@double == true)
-                await locator.DblClickAsync().ConfigureAwait(false);
-            else
-                await locator.ClickAsync().ConfigureAwait(false);
+            return await ActionRunner.RunAsync(pageService.Dialogs, cancellationToken, async _ =>
+            {
+                if (@double == true)
+                    await locator.DblClickAsync(pageService.ActionTimeout).ConfigureAwait(false);
+                else
+                    await locator.ClickAsync(pageService.ActionTimeout).ConfigureAwait(false);
 
-            return ToolResultHelper.Text($"Clicked {@ref}");
+                return ToolResultHelper.Text($"Clicked {@ref}");
+            }).ConfigureAwait(false);
         }
         catch (SnapshotNotTakenException)
         {
@@ -125,20 +147,28 @@ public sealed class CoreTools
         [Description("Press Enter after entering the text.")] bool? submit = null,
         [Description("Type character by character instead of setting the value at once.")] bool? slowly = null)
     {
+        if (ToolArguments.Missing("ref", @ref) is { } missingRef)
+            return missingRef;
+        if (ToolArguments.Unset("text", text) is { } missingText)
+            return missingText;
+
         try
         {
             var page = await pageService.GetOrCreateActivePageAsync(cancellationToken).ConfigureAwait(false);
             var locator = pageService.GetSnapshotService(page).ResolveRef(@ref);
 
-            if (slowly == true)
-                await locator.TypeAsync(text).ConfigureAwait(false);
-            else
-                await locator.FillAsync(text).ConfigureAwait(false);
+            return await ActionRunner.RunAsync(pageService.Dialogs, cancellationToken, async _ =>
+            {
+                if (slowly == true)
+                    await locator.TypeAsync(text).ConfigureAwait(false);
+                else
+                    await locator.FillAsync(text, pageService.ActionTimeout).ConfigureAwait(false);
 
-            if (submit == true)
-                await locator.PressAsync("Enter").ConfigureAwait(false);
+                if (submit == true)
+                    await locator.PressAsync("Enter").ConfigureAwait(false);
 
-            return ToolResultHelper.Text($"Typed into {@ref}");
+                return ToolResultHelper.Text($"Typed into {@ref}");
+            }).ConfigureAwait(false);
         }
         catch (SnapshotNotTakenException)
         {
@@ -164,9 +194,12 @@ public sealed class CoreTools
         try
         {
             var page = await pageService.GetOrCreateActivePageAsync(cancellationToken).ConfigureAwait(false);
-            var bytes = await page.ScreenshotAsync(new ScreenshotOptions { FullPage = full_page ?? false })
-                .ConfigureAwait(false);
-            return ToolResultHelper.Image(bytes);
+            return await ActionRunner.RunAsync(pageService.Dialogs, cancellationToken, async _ =>
+            {
+                var bytes = await page.ScreenshotAsync(new ScreenshotOptions { FullPage = full_page ?? false })
+                    .ConfigureAwait(false);
+                return ToolResultHelper.Image(bytes);
+            }).ConfigureAwait(false);
         }
         catch (Exception ex)
         {

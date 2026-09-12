@@ -10,8 +10,8 @@ namespace Motus.Mcp.Tests.Tools;
 /// can be exercised without a browser. The snapshot registry, gating, and
 /// invalidation run for real against the fake page.
 /// </summary>
-internal sealed class FakeActivePageService(FakeToolPage page)
-    : ActivePageService(new BrowserSessionManager(new McpServerLaunchOptions()))
+internal sealed class FakeActivePageService(FakeToolPage page, DialogService? dialogService = null)
+    : ActivePageService(new BrowserSessionManager(new McpServerLaunchOptions()), dialogService)
 {
     public FakeToolPage Page { get; } = page;
 

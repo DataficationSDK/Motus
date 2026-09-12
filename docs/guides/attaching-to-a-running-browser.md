@@ -151,6 +151,14 @@ motus mcp --connect http://127.0.0.1:9222
 
 Or an agent can attach at any point with the `browser_attach` tool, which is the option to reach for when the endpoint is not known at the time the MCP client is configured. `browser_status` reports which browser is being driven, whether it was started by the server, and how many contexts and tabs are open.
 
+That tool refuses unless the server was started with `--allow-attach`, or with `--connect`, which implies it:
+
+```bash
+motus mcp --allow-attach
+```
+
+Choosing which browser a session drives is the operator's decision rather than the agent's. A browser with a debugging port open may be holding somebody's signed-in sessions, and an agent acting partly on instructions that came from the pages it visited is not the right party to make that call. The tool stays listed when it is not allowed, so an agent that needs it can say which option to restart with.
+
 Two consequences of attaching are worth stating plainly:
 
 - **Options that describe starting a browser have nothing to act on.** `--headless`, `--channel`, `--viewport`, `--record-video` and `--show-cursor` all bind either at launch or at context creation, and an attached session does neither. The server says so on startup rather than ignoring them silently. The `resize` tool still changes a page's viewport at runtime.

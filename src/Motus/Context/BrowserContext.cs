@@ -30,6 +30,13 @@ internal sealed class BrowserContext : IBrowserContext
     private readonly Dictionary<string, string> _extraHeaders = new();
     private readonly ContextOptions? _options;
     private readonly bool _adopted;
+
+    // The targets this context has asked the browser for and has not finished wrapping. Target
+    // discovery announces a new tab to the whole browser, so without this the tab a page was
+    // asked for would also arrive as a tab that appeared on its own.
+    private readonly ConcurrentDictionary<string, byte> _targetsBeingCreated = new(StringComparer.Ordinal);
+    private readonly SemaphoreSlim _targetClaimGate = new(1, 1);
+
     private volatile bool _offline;
     private int _closed;
     private int _storageStateRestored;
@@ -169,15 +176,28 @@ internal sealed class BrowserContext : IBrowserContext
 
         try
         {
-            // Create a target in this browser context
-            var createResult = await _registry.BrowserSession.SendAsync(
-                "Target.createTarget",
-                new TargetCreateTargetParams("about:blank", BrowserContextId: _browserContextId),
-                CdpJsonContext.Default.TargetCreateTargetParams,
-                CdpJsonContext.Default.TargetCreateTargetResult,
-                CancellationToken.None).ConfigureAwait(false);
+            // Create a target in this browser context. The claim is held across the call because
+            // the browser announces the new target to whoever is watching for tabs, and can do so
+            // before this call returns: without the claim, that announcement would be taken for a
+            // tab the page opened and the same target would become a second page.
+            await _targetClaimGate.WaitAsync().ConfigureAwait(false);
+            TargetCreateTargetResult createResult;
+            try
+            {
+                createResult = await _registry.BrowserSession.SendAsync(
+                    "Target.createTarget",
+                    new TargetCreateTargetParams("about:blank", BrowserContextId: _browserContextId),
+                    CdpJsonContext.Default.TargetCreateTargetParams,
+                    CdpJsonContext.Default.TargetCreateTargetResult,
+                    CancellationToken.None).ConfigureAwait(false);
 
-            targetId = createResult.TargetId;
+                targetId = createResult.TargetId;
+                _targetsBeingCreated[targetId] = 0;
+            }
+            finally
+            {
+                _targetClaimGate.Release();
+            }
 
             // Attach to the target to get a session
             var attachResult = await _registry.BrowserSession.SendAsync(
@@ -194,73 +214,7 @@ internal sealed class BrowserContext : IBrowserContext
             using var initCts = new CancellationTokenSource(PageInitTimeout);
             await page.InitializeAsync(initCts.Token).ConfigureAwait(false);
 
-            // Apply context options (viewport, locale, timezone, etc.)
-            await ApplyContextOptionsToPageAsync(page).ConfigureAwait(false);
-
-            // Propagate context-level extra headers to the new page
-            Dictionary<string, string> extraHeaders;
-            lock (_extraHeaders)
-                extraHeaders = new Dictionary<string, string>(_extraHeaders);
-            if (extraHeaders.Count > 0)
-            {
-                await page.Session.SendAsync(
-                    "Network.setExtraHTTPHeaders",
-                    new NetworkSetExtraHttpHeadersParams(extraHeaders),
-                    CdpJsonContext.Default.NetworkSetExtraHttpHeadersParams,
-                    CdpJsonContext.Default.NetworkSetExtraHttpHeadersResult,
-                    CancellationToken.None).ConfigureAwait(false);
-            }
-
-            // Propagate context-level offline state to the new page
-            if (_offline)
-            {
-                await page.Session.SendAsync(
-                    "Network.emulateNetworkConditions",
-                    new NetworkEmulateNetworkConditionsParams(
-                        Offline: true, Latency: 0,
-                        DownloadThroughput: -1, UploadThroughput: -1),
-                    CdpJsonContext.Default.NetworkEmulateNetworkConditionsParams,
-                    CdpJsonContext.Default.NetworkEmulateNetworkConditionsResult,
-                    CancellationToken.None).ConfigureAwait(false);
-            }
-
-            // Restore storage state (one-time per context)
-            if (_options?.StorageState is not null && Interlocked.CompareExchange(ref _storageStateRestored, 1, 0) == 0)
-            {
-                var state = _options.StorageState;
-
-                if (state.Cookies.Count > 0)
-                    await AddCookiesInternalAsync(page, state.Cookies).ConfigureAwait(false);
-
-                if (state.Origins.Count > 0)
-                {
-                    foreach (var origin in state.Origins)
-                    {
-                        if (origin.LocalStorage.Count == 0)
-                            continue;
-
-                        var script = string.Join("\n", origin.LocalStorage.Select(kv =>
-                            $"localStorage.setItem({System.Text.Json.JsonSerializer.Serialize(kv.Key)}, {System.Text.Json.JsonSerializer.Serialize(kv.Value)});"));
-
-                        await page.Session.SendAsync(
-                            "Runtime.evaluate",
-                            new RuntimeEvaluateParams(Expression: script, ReturnByValue: true),
-                            CdpJsonContext.Default.RuntimeEvaluateParams,
-                            CdpJsonContext.Default.RuntimeEvaluateResult,
-                            CancellationToken.None).ConfigureAwait(false);
-                    }
-                }
-            }
-
-            // Start video recording if configured
-            if (_options?.RecordVideo is { } videoOpts)
-            {
-                var size = videoOpts.Size ?? DeriveVideoSize(_options.Viewport);
-                var path = Path.Combine(videoOpts.Dir, $"video-{Guid.NewGuid():N}.avi");
-                var recorder = new VideoRecorder(page, path, size.Width, size.Height) { OwnedByContext = true };
-                await recorder.StartAsync(CancellationToken.None).ConfigureAwait(false);
-                page.SetVideoRecorder(recorder);
-            }
+            await ApplyContextStateToPageAsync(page).ConfigureAwait(false);
 
             lock (_pages)
                 _pages.Add(page);
@@ -299,25 +253,133 @@ internal sealed class BrowserContext : IBrowserContext
 
             throw;
         }
+        finally
+        {
+            // The claim is dropped only once the page is in the list, or once the target that
+            // could not be built is gone, so the target is never both unclaimed and unlisted.
+            if (targetId is not null)
+                _targetsBeingCreated.TryRemove(targetId, out _);
+        }
     }
 
     /// <summary>
-    /// Takes a page that was already open in the browser into this context, announcing it the
-    /// same way a page this context created is announced.
+    /// Gives a page everything the context carries: its emulation options, its extra headers, its
+    /// offline state, the storage state it was configured with, and a video recording when one was
+    /// asked for.
     /// </summary>
     /// <remarks>
-    /// No context options are applied. The viewport, locale, timezone and user agent of a tab
-    /// that was already open belong to whoever opened it, and overriding them would change a
-    /// browser Motus does not own.
+    /// Shared by a page opened by a call and a page opened by the page, because a tab that appears
+    /// on its own is expected to look like the tabs beside it: the same viewport, the same user
+    /// agent, and a recording if the rest of the context is being recorded. Storage state is
+    /// restored once per context, and the one-shot flag it sets is what makes a later call skip it.
     /// </remarks>
-    internal async Task AdoptPageAsync(Page page)
+    private async Task ApplyContextStateToPageAsync(Page page)
     {
+        // Apply context options (viewport, locale, timezone, etc.)
+        await ApplyContextOptionsToPageAsync(page).ConfigureAwait(false);
+
+        // Propagate context-level extra headers to the new page
+        Dictionary<string, string> extraHeaders;
+        lock (_extraHeaders)
+            extraHeaders = new Dictionary<string, string>(_extraHeaders);
+        if (extraHeaders.Count > 0)
+        {
+            await page.Session.SendAsync(
+                "Network.setExtraHTTPHeaders",
+                new NetworkSetExtraHttpHeadersParams(extraHeaders),
+                CdpJsonContext.Default.NetworkSetExtraHttpHeadersParams,
+                CdpJsonContext.Default.NetworkSetExtraHttpHeadersResult,
+                CancellationToken.None).ConfigureAwait(false);
+        }
+
+        // Propagate context-level offline state to the new page
+        if (_offline)
+        {
+            await page.Session.SendAsync(
+                "Network.emulateNetworkConditions",
+                new NetworkEmulateNetworkConditionsParams(
+                    Offline: true, Latency: 0,
+                    DownloadThroughput: -1, UploadThroughput: -1),
+                CdpJsonContext.Default.NetworkEmulateNetworkConditionsParams,
+                CdpJsonContext.Default.NetworkEmulateNetworkConditionsResult,
+                CancellationToken.None).ConfigureAwait(false);
+        }
+
+        // Restore storage state (one-time per context)
+        if (_options?.StorageState is not null && Interlocked.CompareExchange(ref _storageStateRestored, 1, 0) == 0)
+        {
+            var state = _options.StorageState;
+
+            if (state.Cookies.Count > 0)
+                await AddCookiesInternalAsync(page, state.Cookies).ConfigureAwait(false);
+
+            if (state.Origins.Count > 0)
+            {
+                foreach (var origin in state.Origins)
+                {
+                    if (origin.LocalStorage.Count == 0)
+                        continue;
+
+                    var script = string.Join("\n", origin.LocalStorage.Select(kv =>
+                        $"localStorage.setItem({System.Text.Json.JsonSerializer.Serialize(kv.Key)}, {System.Text.Json.JsonSerializer.Serialize(kv.Value)});"));
+
+                    await page.Session.SendAsync(
+                        "Runtime.evaluate",
+                        new RuntimeEvaluateParams(Expression: script, ReturnByValue: true),
+                        CdpJsonContext.Default.RuntimeEvaluateParams,
+                        CdpJsonContext.Default.RuntimeEvaluateResult,
+                        CancellationToken.None).ConfigureAwait(false);
+                }
+            }
+        }
+
+        // Start video recording if configured
+        if (_options?.RecordVideo is { } videoOpts)
+        {
+            var size = videoOpts.Size ?? DeriveVideoSize(_options.Viewport);
+            var path = Path.Combine(videoOpts.Dir, $"video-{Guid.NewGuid():N}.avi");
+            var recorder = new VideoRecorder(page, path, size.Width, size.Height) { OwnedByContext = true };
+            await recorder.StartAsync(CancellationToken.None).ConfigureAwait(false);
+            page.SetVideoRecorder(recorder);
+        }
+    }
+
+    /// <summary>
+    /// Takes a page this context did not open into it, announcing it the same way a page this
+    /// context created is announced, and telling the page that opened it that it did.
+    /// </summary>
+    /// <param name="page">The page to take in.</param>
+    /// <param name="openerTargetId">
+    /// The target of the page that opened this one, when the browser reported one. The opener is
+    /// told through <see cref="Abstractions.IPage.Popup"/>, which is what lets a caller act on a
+    /// tab it never asked for at the moment it appears.
+    /// </param>
+    /// <remarks>
+    /// A context that was already open in the browser gets no context options: the viewport,
+    /// locale, timezone and user agent of a tab that was already open belong to whoever opened it,
+    /// and overriding them would change a browser Motus does not own. A context Motus created is
+    /// the other case, and its own tabs are made to match the ones it opened itself.
+    /// </remarks>
+    internal async Task AdoptPageAsync(Page page, string? openerTargetId = null)
+    {
+        if (!_adopted)
+            await ApplyContextStateToPageAsync(page).ConfigureAwait(false);
+
         lock (_pages)
             _pages.Add(page);
 
         await _lifecycleHooks.FireOnPageCreatedAsync(page).ConfigureAwait(false);
         Page?.Invoke(this, page);
         GlobalPageCreated?.Invoke(page);
+
+        if (openerTargetId is null)
+            return;
+
+        Page? opener;
+        lock (_pages)
+            opener = _pages.FirstOrDefault(p => p.TargetId == openerTargetId);
+
+        opener?.RaisePopup(page);
     }
 
     /// <summary>
@@ -327,6 +389,36 @@ internal sealed class BrowserContext : IBrowserContext
     {
         lock (_pages)
             return _pages.Any(p => p.TargetId == targetId);
+    }
+
+    /// <summary>
+    /// Says whether a target the browser has just announced is this context's to wrap, which it is
+    /// unless the context already holds it or is in the middle of building it.
+    /// </summary>
+    /// <remarks>
+    /// The wait is what closes the race with a page being opened by a call: the browser can
+    /// announce a target before the call that asked for it has been told its id, so an answer
+    /// given without waiting would be given against a list that is one entry short.
+    /// </remarks>
+    internal async Task<bool> TryClaimDiscoveredTargetAsync(string targetId)
+    {
+        // A context that is closing has already let go of its pages, and a page added after that
+        // would be one nothing ever closes.
+        if (Volatile.Read(ref _closed) != 0)
+            return false;
+
+        await _targetClaimGate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (_targetsBeingCreated.ContainsKey(targetId))
+                return false;
+        }
+        finally
+        {
+            _targetClaimGate.Release();
+        }
+
+        return !HasPageForTarget(targetId);
     }
 
     /// <summary>

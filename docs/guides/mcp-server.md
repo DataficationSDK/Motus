@@ -133,6 +133,23 @@ Structured content has to be a JSON object, so an expression returning a bare nu
 
 Read the value at `result`. Wrapping the expression by hand, as `({ count: ... })`, is no longer necessary, though it remains harmless and simply nests one level deeper.
 
+### Dialogs
+
+A JavaScript dialog stops the browser answering anything until it is handled, including the command that opened it. So an action that raises one comes back at once, saying what opened:
+
+```
+click(e12)
+  -> The action opened an alert dialog: "Are you sure?". Call handle_dialog to accept or dismiss it.
+```
+
+Results from calls that follow carry a line of their own until the dialog is answered, and an action asked for while one is open is refused rather than sent into a page that cannot receive it:
+
+```
+A "confirm" dialog is open: "Delete this?". Handle it with handle_dialog before other actions.
+```
+
+`handle_dialog` takes `accept` and, for a prompt, the `text` to enter. Once it returns, the page carries on from where the dialog stopped it, so the work the action started finishes then rather than at the moment of the click. Reading the page is blocked in the same way, so `snapshot`, `screenshot` and `evaluate` report the dialog instead of waiting on it.
+
 ### Frames
 
 A page snapshot describes each `iframe` element but not what is inside it, and for a frame the browser renders in its own process the contents are not in the page's tree at all. Frames are addressed by selection, the same way tabs and contexts are:
@@ -155,11 +172,11 @@ By default the server starts a browser and ends it on shutdown. Pointed at a bro
 motus mcp --connect http://127.0.0.1:9222
 ```
 
-An agent can also attach at any point with `browser_attach`, which is what to reach for when the endpoint is not known at the time the MCP client is configured. `browser_status` reports which browser is being driven and whether the server started it. Attaching closes the browser the server started, if any, and drops snapshot refs, route rules, and captured console output, so take a fresh snapshot afterwards.
+An agent can also attach at any point with `browser_attach`, which is what to reach for when the endpoint is not known at the time the MCP client is configured. That tool refuses unless the server was started with `--allow-attach` or `--connect`: a browser that is already running may hold somebody's signed-in sessions, so which browser the session drives stays the operator's decision. `browser_status` reports which browser is being driven and whether the server started it. Attaching closes the browser the server started, if any, and drops snapshot refs, route rules, and captured console output, so take a fresh snapshot afterwards.
 
 Two consequences are worth knowing:
 
-- **Options that describe starting a browser have nothing to act on.** `--headless`, `--channel`, `--viewport`, `--record-video` and `--show-cursor` bind either at launch or at context creation, and an attached session does neither: it adopts the context the browser is already using. The server says so on startup rather than ignoring them silently. The `resize` tool still changes a page's viewport at runtime.
+- **Options that describe starting a browser have nothing to act on.** `--headless`, `--channel`, `--executable-path`, `--browser-arg`, `--user-data-dir`, `--viewport`, `--storage-state`, `--user-agent`, `--locale`, `--timezone`, the proxy options, `--record-video` and `--show-cursor` bind either at launch or at context creation, and an attached session does neither: it adopts the context the browser is already using. The server says so on startup rather than ignoring them silently. The `resize` tool still changes a page's viewport at runtime.
 - **`--http` with `--connect` means clients share one browser.** The HTTP transport otherwise gives each connected client its own isolated browser. Pointed at one endpoint, every session drives the same browser, and so shares its tabs and cookies.
 
 `tab_close` and `context_close` mean more against an attached browser: they discard somebody's working state rather than scratch state. An adopted context is never disposed by the server, so its windows survive even when the session lets go of it.
@@ -180,7 +197,7 @@ All coordinate input is dispatched as trusted browser-level events, exactly like
 
 ### Video recording
 
-`video_start` and `video_stop` record the active page to a video file, following the same start/stop convention as traces and HARs: stopping finalizes the file and returns its path, and an omitted path is auto-generated under the temporary directory. The capture runs at the viewport's resolution.
+`video_start` and `video_stop` record the active page to a video file, following the same start/stop convention as traces and HARs: stopping finalizes the file and returns its path, and an omitted path is auto-generated in the server's output directory. The capture runs at the viewport's resolution.
 
 Two characteristics are inherent to the browser's screencast and worth knowing before scripting a session around it: frames are paced by screen updates rather than a fixed clock, and no mouse cursor appears in the footage, so recordings show the interface changing without a visible pointer. This suits verification and failure-record footage well; for presentation-grade recordings, capture the headed browser with a screen recorder instead. Launch the server with `--show-cursor` to draw a pseudo-cursor that follows the synthetic pointer and flashes on each click, which makes the action legible in screenshots and recordings.
 
@@ -198,15 +215,31 @@ To record everything without per-page tool calls, launch the server with `--reco
 |---|---|---|
 | `--connect` | _(none)_ | Drive a browser that is already running instead of starting one. Takes the debugging endpoint it was started with (`http://127.0.0.1:9222`) or its CDP WebSocket URL. The browser is never closed by the server, and the options that describe starting one no longer apply. |
 | `--headless` | `true` | Run the browser without a visible window. Pass `--headless false` to watch the agent drive a real window. |
-| `--channel` | `chromium` | Browser to drive: `chromium`, `chrome`, `edge`, or `firefox`. |
+| `--channel` | `chromium` | Browser to drive: `chromium`, `chrome`, `edge`, or `firefox`. A channel named here has to be installed: the server stops with an error rather than starting a different browser in its place. Snapshot refs need a Chromium-based browser, because the accessibility tree they are built from is read over the Chrome DevTools Protocol; on Firefox the `snapshot` tool says so rather than describing the page, and the coordinate tools (`click_xy`, `hover_xy`, `drag`, `scroll_xy`) still work against a screenshot. |
+| `--executable-path` | _(none)_ | Start this browser binary instead of resolving one from `--channel`. Pins a session to an exact build, and is the way past a channel the server cannot find. |
+| `--browser-arg` | _(none)_ | An extra command-line argument for the browser. Attach the value with `=`, and repeat the flag for more than one: `--browser-arg=--no-sandbox --browser-arg=--disable-dev-shm-usage`. Chromium refuses to start as root, so a container usually needs `--no-sandbox`. |
+| `--user-data-dir` | _(none)_ | Browser profile directory. Cookies, history, and signed-in sessions persist in it between runs instead of every session starting clean. |
+| `--storage-state` | _(none)_ | Seed every context with the cookies and local storage saved in this file, as written by `IBrowserContext.StorageStateAsync`. |
 | `--viewport` | `1280x800` | Viewport size for every page, as `WIDTHxHEIGHT`. The `resize` tool changes it per page at runtime. |
+| `--user-agent` | _(browser default)_ | User agent string every page reports. |
+| `--locale` | _(browser default)_ | Locale every page formats dates, numbers, and sorted text with, such as `en-GB`. |
+| `--timezone` | _(machine default)_ | Time zone every page reports, such as `Europe/Berlin`. |
+| `--proxy-server` | _(none)_ | Send browser traffic through this proxy, such as `http://127.0.0.1:8080`. |
+| `--proxy-bypass` | _(none)_ | Comma-separated hosts that skip the proxy, such as `localhost,*.internal`. Needs `--proxy-server`. |
+| `--timeout` | _(framework default)_ | How long an element action waits for its target, in milliseconds. Applies to every ref-addressed tool. |
+| `--navigation-timeout` | _(framework default)_ | How long a navigation waits to finish, in milliseconds. Applies to `navigate`, `reload`, `go_back`, `go_forward`, and `tab_open`. |
+| `--dialogs` | `ask` | What becomes of a JavaScript dialog the page raises: `accept` answers it, `dismiss` cancels it, and `ask` leaves it pending for `handle_dialog`. |
 | `--record-video` | _(none)_ | Record a video of every page into this directory, one MJPEG AVI per page, finalized when the page closes. |
 | `--show-cursor` | `false` | Draw an on-screen pseudo-cursor in screenshots and recordings. It follows the element's CSS cursor style and shows a click effect. Enables `--natural-mouse` unless that is set explicitly. |
 | `--natural-mouse` | `--show-cursor` | Move the mouse along a curved, eased path instead of jumping to the target, so motion looks human and the page receives a realistic event stream. Pass `--natural-mouse false` to keep the cursor without it. Adds latency to every move. |
+| `--config` | _(none)_ | Read defaults from this `motus.config.json` file, which is how a suite's settings are reused instead of restated. It fills in `--headless`, `--channel`, `--executable-path`, `--viewport`, `--locale`, and `--timeout`; anything given on the command line wins over it. |
 | `--http` | `false` | Serve over Streamable HTTP for concurrent remote clients instead of stdio. |
 | `--host` | `127.0.0.1` | Interface to bind when `--http` is set. |
 | `--port` | `8931` | TCP port to listen on when `--http` is set. |
 | `--token` | _(none)_ | Bearer token required on every HTTP request. May also be supplied via the `MOTUS_MCP_TOKEN` environment variable. Required when binding a non-loopback host. |
+| `--output-dir` | _(a directory for this run under the temporary directory)_ | Directory that the tools writing a file resolve their paths inside. Printed to standard error at startup. |
+| `--allow-unrestricted-file-access` | `false` | Let tools read and write anywhere on the machine, and open `file://` URLs. |
+| `--allow-attach` | `false` | Let `browser_attach` point the session at a browser that is already running. Implied by `--connect`. |
 
 ---
 
@@ -233,6 +266,17 @@ motus mcp --http --host 0.0.0.0 --port 8931 --token "$MOTUS_MCP_TOKEN"
 Each connected client gets its own isolated browser session; sessions and the browsers they hold are reaped after a period of inactivity. Security stays deliberately minimal: the server binds the loopback interface by default, and binding any non-loopback host without a token is refused at startup. When a token is configured, every request is checked against it with a constant-time comparison.
 
 stdio inherits the trust of the local user that launched it and needs no token. HTTP does not, so treat the token as a credential and prefer loopback or a trusted network.
+
+### Security defaults
+
+An agent driving this server acts partly on instructions that came from the pages it visited, so the server keeps four boundaries whichever transport it is serving.
+
+- **Writes land in one directory.** `trace_stop`, `har_stop` and `video_start` resolve the path they are given inside the output directory, which is a directory for this run under the system temporary directory unless `--output-dir` names another. The directory is printed to standard error at startup, and every result that writes a file echoes the absolute path it wrote, so an artifact is always findable. An absolute path, a path that climbs out with `..`, and a path that follows a symbolic link out are each refused.
+- **Reads come from the client's roots.** `upload_files` reads a file only from inside one of the roots the MCP client reported for the session. A client that reports none leaves the server's own working directory and the output directory.
+- **`file://` is blocked.** `navigate`, `tab_open`, and the route tools refuse a `file:` URL, including one reached through a redirect a mock sets up. Without this, a page could talk an agent into reading the machine's files back through a snapshot.
+- **Attaching needs an option.** `browser_attach` refuses unless the server was started with `--allow-attach` or `--connect`. The tool stays listed either way, so an agent that needs it can say what to restart with rather than reporting a capability Motus does not have.
+
+`--allow-unrestricted-file-access` lifts the first three together. `--allow-attach` lifts the fourth.
 
 ---
 

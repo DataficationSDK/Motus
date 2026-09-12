@@ -28,8 +28,10 @@ public sealed class InteractionTools
         [Description("The option values to select.")] string[] values,
         ActivePageService pageService,
         CancellationToken cancellationToken)
-        => WithRefAsync(pageService, @ref, $"Selected {values.Length} option(s) in {@ref}",
-            locator => locator.SelectOptionAsync(values), cancellationToken);
+        => ToolArguments.Missing("values", values) is { } missing
+            ? Task.FromResult(missing)
+            : WithRefAsync(pageService, @ref, $"Selected {values.Length} option(s) in {@ref}",
+                locator => locator.SelectOptionAsync(values), cancellationToken);
 
     [McpServerTool(Name = "hover", Title = "Hover over element", Destructive = true)]
     [Description("Moves the pointer over the element addressed by a ref from the latest snapshot.")]
@@ -38,7 +40,7 @@ public sealed class InteractionTools
         ActivePageService pageService,
         CancellationToken cancellationToken)
         => WithRefAsync(pageService, @ref, $"Hovered {@ref}",
-            locator => locator.HoverAsync(), cancellationToken);
+            locator => locator.HoverAsync(pageService.ActionTimeout), cancellationToken);
 
     [McpServerTool(Name = "press", Title = "Press a key on element", Destructive = true)]
     [Description("Presses a key while the element addressed by a ref is focused, e.g. Enter, Tab, ArrowDown.")]
@@ -47,8 +49,10 @@ public sealed class InteractionTools
         [Description("The key to press, e.g. Enter, Tab, Escape, ArrowDown, or a single character.")] string key,
         ActivePageService pageService,
         CancellationToken cancellationToken)
-        => WithRefAsync(pageService, @ref, $"Pressed {key} on {@ref}",
-            locator => locator.PressAsync(key), cancellationToken);
+        => ToolArguments.Missing("key", key) is { } missing
+            ? Task.FromResult(missing)
+            : WithRefAsync(pageService, @ref, $"Pressed {key} on {@ref}",
+                locator => locator.PressAsync(key), cancellationToken);
 
     [McpServerTool(Name = "set_checked", Title = "Set checkbox state", Destructive = true)]
     [Description("Sets the checked state of a checkbox or radio button addressed by a ref.")]
@@ -58,7 +62,7 @@ public sealed class InteractionTools
         ActivePageService pageService,
         CancellationToken cancellationToken)
         => WithRefAsync(pageService, @ref, $"Set {@ref} checked={@checked}",
-            locator => locator.SetCheckedAsync(@checked), cancellationToken);
+            locator => locator.SetCheckedAsync(@checked, pageService.ActionTimeout), cancellationToken);
 
     [McpServerTool(Name = "clear", Title = "Clear input", Destructive = true)]
     [Description("Clears the value of the input or textarea addressed by a ref from the latest snapshot.")]
@@ -67,7 +71,7 @@ public sealed class InteractionTools
         ActivePageService pageService,
         CancellationToken cancellationToken)
         => WithRefAsync(pageService, @ref, $"Cleared {@ref}",
-            locator => locator.ClearAsync(), cancellationToken);
+            locator => locator.ClearAsync(pageService.ActionTimeout), cancellationToken);
 
     [McpServerTool(Name = "focus", Title = "Focus element", Destructive = true)]
     [Description("Focuses the element addressed by a ref from the latest snapshot.")]
@@ -76,7 +80,7 @@ public sealed class InteractionTools
         ActivePageService pageService,
         CancellationToken cancellationToken)
         => WithRefAsync(pageService, @ref, $"Focused {@ref}",
-            locator => locator.FocusAsync(), cancellationToken);
+            locator => locator.FocusAsync(pageService.ActionTimeout), cancellationToken);
 
     [McpServerTool(Name = "scroll_into_view", Title = "Scroll element into view", Destructive = true)]
     [Description("Scrolls the element addressed by a ref into the viewport if it is not already visible.")]
@@ -85,19 +89,33 @@ public sealed class InteractionTools
         ActivePageService pageService,
         CancellationToken cancellationToken)
         => WithRefAsync(pageService, @ref, $"Scrolled {@ref} into view",
-            locator => locator.ScrollIntoViewIfNeededAsync(), cancellationToken);
+            locator => locator.ScrollIntoViewIfNeededAsync(pageService.ActionTimeout), cancellationToken);
 
     [McpServerTool(Name = "upload_files", Title = "Upload files", Destructive = true)]
     [Description("Sets the files of a file input addressed by a ref, reading each from a local file path.")]
     public static async Task<CallToolResult> UploadFilesAsync(
         [Description("The element ref from the latest snapshot, e.g. e7.")] string @ref,
-        [Description("Local file paths to upload. Each is read from disk on the machine running the server.")] string[] paths,
+        [Description("Local file paths to upload. Each is read from disk on the machine running the server, "
+            + "and must sit inside a directory that server is allowed to read.")] string[] paths,
         ActivePageService pageService,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        McpServer? server = null,
+        SecurityPolicy? policy = null)
     {
+        // Both checked before any file is read: reporting a missing ref only after working through
+        // the disk would lead with whichever path happened to be unreadable.
+        if (ToolArguments.Missing("ref", @ref) is { } missingRef)
+            return missingRef;
+        if (ToolArguments.Missing("paths", paths) is { } missingPaths)
+            return missingPaths;
+
+        var boundary = policy ?? SecurityPolicy.Default;
         var payloads = new List<FilePayload>(paths.Length);
         foreach (var path in paths)
         {
+            if (await boundary.RefuseReadAsync(path, server, cancellationToken).ConfigureAwait(false) is { } refusal)
+                return ToolResultHelper.Error(refusal);
+
             byte[] bytes;
             try
             {
@@ -112,7 +130,7 @@ public sealed class InteractionTools
         }
 
         return await WithRefAsync(pageService, @ref, $"Uploaded {payloads.Count} file(s) to {@ref}",
-            locator => locator.SetInputFilesAsync(payloads), cancellationToken).ConfigureAwait(false);
+            locator => locator.SetInputFilesAsync(payloads, pageService.ActionTimeout), cancellationToken).ConfigureAwait(false);
     }
 
     [McpServerTool(Name = "press_key", Title = "Press a key", Destructive = true)]
@@ -123,11 +141,17 @@ public sealed class InteractionTools
         ActivePageService pageService,
         CancellationToken cancellationToken)
     {
+        if (ToolArguments.Missing("key", key) is { } missing)
+            return missing;
+
         try
         {
             var page = await pageService.GetOrCreateActivePageAsync(cancellationToken).ConfigureAwait(false);
-            await page.Keyboard.PressAsync(key).ConfigureAwait(false);
-            return ToolResultHelper.Text($"Pressed {key}");
+            return await ActionRunner.RunAsync(pageService.Dialogs, cancellationToken, async _ =>
+            {
+                await page.Keyboard.PressAsync(key).ConfigureAwait(false);
+                return ToolResultHelper.Text($"Pressed {key}");
+            }).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -143,12 +167,15 @@ public sealed class InteractionTools
         ActivePageService pageService,
         CancellationToken cancellationToken)
     {
+        if (ToolArguments.Missing("state", state) is { } missing)
+            return missing;
+
         if (!Enum.TryParse<ElementState>(state, ignoreCase: true, out var parsed))
             return ToolResultHelper.Error(
                 $"Unknown state '{state}'. Use one of: visible, hidden, attached, detached.");
 
         return await WithRefAsync(pageService, @ref, $"{@ref} reached state {parsed}",
-            locator => locator.WaitForAsync(parsed), cancellationToken).ConfigureAwait(false);
+            locator => locator.WaitForAsync(parsed, pageService.ActionTimeout), cancellationToken).ConfigureAwait(false);
     }
 
     [McpServerTool(Name = "wait_for", Title = "Wait for a page condition", Destructive = false, ReadOnly = true)]
@@ -180,9 +207,9 @@ public sealed class InteractionTools
             {
                 const string appeared = "(t) => !!document.body && document.body.innerText.includes(t)";
                 if (scope is null)
-                    await page.WaitForFunctionAsync<bool>(appeared, text).ConfigureAwait(false);
+                    await page.WaitForFunctionAsync<bool>(appeared, text, pageService.ActionTimeout).ConfigureAwait(false);
                 else
-                    await scope.WaitForFunctionAsync<bool>(appeared, text).ConfigureAwait(false);
+                    await scope.WaitForFunctionAsync<bool>(appeared, text, pageService.ActionTimeout).ConfigureAwait(false);
 
                 return ToolResultHelper.Text($"Text appeared: {text}");
             }
@@ -191,9 +218,9 @@ public sealed class InteractionTools
             {
                 const string gone = "(t) => !document.body || !document.body.innerText.includes(t)";
                 if (scope is null)
-                    await page.WaitForFunctionAsync<bool>(gone, text_gone).ConfigureAwait(false);
+                    await page.WaitForFunctionAsync<bool>(gone, text_gone, pageService.ActionTimeout).ConfigureAwait(false);
                 else
-                    await scope.WaitForFunctionAsync<bool>(gone, text_gone).ConfigureAwait(false);
+                    await scope.WaitForFunctionAsync<bool>(gone, text_gone, pageService.ActionTimeout).ConfigureAwait(false);
 
                 return ToolResultHelper.Text($"Text gone: {text_gone}");
             }
@@ -217,12 +244,18 @@ public sealed class InteractionTools
         Func<ILocator, Task> action,
         CancellationToken cancellationToken)
     {
+        if (ToolArguments.Missing("ref", @ref) is { } missing)
+            return missing;
+
         try
         {
             var page = await pageService.GetOrCreateActivePageAsync(cancellationToken).ConfigureAwait(false);
             var locator = pageService.GetSnapshotService(page).ResolveRef(@ref);
-            await action(locator).ConfigureAwait(false);
-            return ToolResultHelper.Text(okText);
+            return await ActionRunner.RunAsync(pageService.Dialogs, cancellationToken, async _ =>
+            {
+                await action(locator).ConfigureAwait(false);
+                return ToolResultHelper.Text(okText);
+            }).ConfigureAwait(false);
         }
         catch (SnapshotNotTakenException)
         {

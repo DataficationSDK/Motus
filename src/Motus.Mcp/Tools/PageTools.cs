@@ -27,11 +27,14 @@ public sealed class PageTools
         try
         {
             var page = await pageService.GetOrCreateActivePageAsync(cancellationToken).ConfigureAwait(false);
-            var response = await page.GoBackAsync().ConfigureAwait(false);
-            pageService.InvalidateSnapshot(page);
-            return ToolResultHelper.Text(response is null
-                ? "No previous history entry; the page did not change."
-                : $"Navigated back to {page.Url}");
+            return await ActionRunner.RunAsync(pageService.Dialogs, cancellationToken, async _ =>
+            {
+                var response = await page.GoBackAsync(pageService.Navigation).ConfigureAwait(false);
+                pageService.InvalidateSnapshot(page);
+                return ToolResultHelper.Text(response is null
+                    ? "No previous history entry; the page did not change."
+                    : $"Navigated back to {page.Url}");
+            }).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -48,11 +51,14 @@ public sealed class PageTools
         try
         {
             var page = await pageService.GetOrCreateActivePageAsync(cancellationToken).ConfigureAwait(false);
-            var response = await page.GoForwardAsync().ConfigureAwait(false);
-            pageService.InvalidateSnapshot(page);
-            return ToolResultHelper.Text(response is null
-                ? "No next history entry; the page did not change."
-                : $"Navigated forward to {page.Url}");
+            return await ActionRunner.RunAsync(pageService.Dialogs, cancellationToken, async _ =>
+            {
+                var response = await page.GoForwardAsync(pageService.Navigation).ConfigureAwait(false);
+                pageService.InvalidateSnapshot(page);
+                return ToolResultHelper.Text(response is null
+                    ? "No next history entry; the page did not change."
+                    : $"Navigated forward to {page.Url}");
+            }).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -69,9 +75,12 @@ public sealed class PageTools
         try
         {
             var page = await pageService.GetOrCreateActivePageAsync(cancellationToken).ConfigureAwait(false);
-            await page.ReloadAsync().ConfigureAwait(false);
-            pageService.InvalidateSnapshot(page);
-            return ToolResultHelper.Text($"Reloaded {page.Url}");
+            return await ActionRunner.RunAsync(pageService.Dialogs, cancellationToken, async _ =>
+            {
+                await page.ReloadAsync(pageService.Navigation).ConfigureAwait(false);
+                pageService.InvalidateSnapshot(page);
+                return ToolResultHelper.Text($"Reloaded {page.Url}");
+            }).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -122,25 +131,33 @@ public sealed class PageTools
         [Description("An element ref from the latest snapshot to evaluate against. Omit to evaluate in the page "
             + "or the scoped frame.")] string? @ref = null)
     {
+        if (ToolArguments.Missing("expression", expression) is { } missing)
+            return missing;
+
         try
         {
             var page = await pageService.GetOrCreateActivePageAsync(cancellationToken).ConfigureAwait(false);
 
-            if (string.IsNullOrEmpty(@ref))
+            // An expression runs in the page, so it can open a dialog like any click, and a page
+            // already stopped on one will not run it at all.
+            return await ActionRunner.RunAsync(pageService.Dialogs, cancellationToken, async _ =>
             {
-                // The frame's main world, not an isolated one: an agent evaluating here is reading
-                // what the application defined, and an isolated world is precisely where that is
-                // not visible.
-                var scope = pageService.GetActiveFrame();
-                var pageResult = scope is null
-                    ? await page.EvaluateAsync<JsonElement>(expression).ConfigureAwait(false)
-                    : await scope.EvaluateAsync<JsonElement>(expression).ConfigureAwait(false);
-                return EvaluationResult(pageResult);
-            }
+                if (string.IsNullOrEmpty(@ref))
+                {
+                    // The frame's main world, not an isolated one: an agent evaluating here is reading
+                    // what the application defined, and an isolated world is precisely where that is
+                    // not visible.
+                    var scope = pageService.GetActiveFrame();
+                    var pageResult = scope is null
+                        ? await page.EvaluateAsync<JsonElement>(expression).ConfigureAwait(false)
+                        : await scope.EvaluateAsync<JsonElement>(expression).ConfigureAwait(false);
+                    return EvaluationResult(pageResult);
+                }
 
-            var locator = pageService.GetSnapshotService(page).ResolveRef(@ref);
-            var elementResult = await locator.EvaluateWithElementAsync<JsonElement>(expression).ConfigureAwait(false);
-            return EvaluationResult(elementResult);
+                var locator = pageService.GetSnapshotService(page).ResolveRef(@ref);
+                var elementResult = await locator.EvaluateWithElementAsync<JsonElement>(expression).ConfigureAwait(false);
+                return EvaluationResult(elementResult);
+            }).ConfigureAwait(false);
         }
         catch (SnapshotNotTakenException)
         {

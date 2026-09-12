@@ -343,4 +343,33 @@ public class CoreToolsUnitTests
 
         Assert.AreEqual(true, page.ScreenshotFullPage);
     }
+
+    // --- navigate: the local filesystem ---
+
+    [TestMethod]
+    public async Task Navigate_ToAFileUrl_IsRefusedWithoutTouchingThePage()
+    {
+        var page = new FakeToolPage(Snapshot());
+        var service = new FakeActivePageService(page);
+
+        var result = await CoreTools.NavigateAsync("file:///etc/hosts", service, CancellationToken.None);
+
+        Assert.IsTrue(result.IsError);
+        StringAssert.Contains(TextOf(result), "file:// navigation is disabled");
+        Assert.IsNull(page.NavigatedUrl);
+    }
+
+    [TestMethod]
+    public async Task Navigate_ToAFileUrl_WithUnrestrictedFileAccess_IsAllowed()
+    {
+        var page = new FakeToolPage(Snapshot());
+        var service = new FakeActivePageService(page);
+        var unrestricted = new SecurityPolicy(new McpServerLaunchOptions { AllowUnrestrictedFileAccess = true });
+
+        var result = await CoreTools.NavigateAsync(
+            "file:///etc/hosts", service, CancellationToken.None, unrestricted);
+
+        Assert.IsFalse(result.IsError ?? false, TextOf(result));
+        Assert.AreEqual("file:///etc/hosts", page.NavigatedUrl);
+    }
 }

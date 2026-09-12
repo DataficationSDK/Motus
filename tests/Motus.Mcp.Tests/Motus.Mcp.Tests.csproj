@@ -37,4 +37,9 @@
              Link="Tools\CrossOriginFixtureServer.cs" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- The MCP bench page. Served by McpBenchFixtureServer from the test output directory. -->
+    <None Include="Fixtures\McpBench\*.html" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

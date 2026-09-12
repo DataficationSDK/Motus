@@ -45,12 +45,15 @@ public sealed class CoordinateTools
             var page = await pageService.GetOrCreateActivePageAsync(cancellationToken).ConfigureAwait(false);
             var options = new MouseButtonOptions(Button: parsedButton, Modifiers: parsedModifiers);
 
-            if (@double == true)
-                await page.Mouse.DblClickAsync(x, y, options).ConfigureAwait(false);
-            else
-                await page.Mouse.ClickAsync(x, y, options).ConfigureAwait(false);
+            return await ActionRunner.RunAsync(pageService.Dialogs, cancellationToken, async _ =>
+            {
+                if (@double == true)
+                    await page.Mouse.DblClickAsync(x, y, options).ConfigureAwait(false);
+                else
+                    await page.Mouse.ClickAsync(x, y, options).ConfigureAwait(false);
 
-            return ToolResultHelper.Text($"{(@double == true ? "Double-clicked" : "Clicked")} at ({x}, {y})");
+                return ToolResultHelper.Text($"{(@double == true ? "Double-clicked" : "Clicked")} at ({x}, {y})");
+            }).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -93,11 +96,14 @@ public sealed class CoordinateTools
         try
         {
             var page = await pageService.GetOrCreateActivePageAsync(cancellationToken).ConfigureAwait(false);
-            // The wheel event is dispatched at the current pointer position, so
-            // position the pointer first.
-            await page.Mouse.MoveAsync(x, y).ConfigureAwait(false);
-            await page.Mouse.WheelAsync(delta_x, delta_y).ConfigureAwait(false);
-            return ToolResultHelper.Text($"Scrolled ({delta_x}, {delta_y}) at ({x}, {y})");
+            return await ActionRunner.RunAsync(pageService.Dialogs, cancellationToken, async _ =>
+            {
+                // The wheel event is dispatched at the current pointer position, so
+                // position the pointer first.
+                await page.Mouse.MoveAsync(x, y).ConfigureAwait(false);
+                await page.Mouse.WheelAsync(delta_x, delta_y).ConfigureAwait(false);
+                return ToolResultHelper.Text($"Scrolled ({delta_x}, {delta_y}) at ({x}, {y})");
+            }).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -166,8 +172,8 @@ public sealed class CoordinateTools
             if (hasRefs)
             {
                 var snapshots = pageService.GetSnapshotService(page);
-                var start = await CenterOfAsync(snapshots, start_ref!).ConfigureAwait(false);
-                var end = await CenterOfAsync(snapshots, end_ref!).ConfigureAwait(false);
+                var start = await CenterOfAsync(snapshots, start_ref!, pageService.ActionTimeout).ConfigureAwait(false);
+                var end = await CenterOfAsync(snapshots, end_ref!, pageService.ActionTimeout).ConfigureAwait(false);
                 (sx, sy) = start;
                 (ex, ey) = end;
                 fromText = start_ref!;
@@ -183,16 +189,19 @@ public sealed class CoordinateTools
 
             var moveSteps = Math.Max(1, steps ?? 10);
 
-            await page.Mouse.MoveAsync(sx, sy).ConfigureAwait(false);
-            await page.Mouse.DownAsync().ConfigureAwait(false);
+            return await ActionRunner.RunAsync(pageService.Dialogs, cancellationToken, async token =>
+            {
+                await page.Mouse.MoveAsync(sx, sy).ConfigureAwait(false);
+                await page.Mouse.DownAsync().ConfigureAwait(false);
 
-            if (hold_ms is > 0)
-                await Task.Delay(hold_ms.Value, cancellationToken).ConfigureAwait(false);
+                if (hold_ms is > 0)
+                    await Task.Delay(hold_ms.Value, token).ConfigureAwait(false);
 
-            await page.Mouse.MoveAsync(ex, ey, new MouseMoveOptions(Steps: moveSteps)).ConfigureAwait(false);
-            await page.Mouse.UpAsync().ConfigureAwait(false);
+                await page.Mouse.MoveAsync(ex, ey, new MouseMoveOptions(Steps: moveSteps)).ConfigureAwait(false);
+                await page.Mouse.UpAsync().ConfigureAwait(false);
 
-            return ToolResultHelper.Text($"Dragged {fromText} to {toText}");
+                return ToolResultHelper.Text($"Dragged {fromText} to {toText}");
+            }).ConfigureAwait(false);
         }
         catch (SnapshotNotTakenException)
         {
@@ -214,8 +223,11 @@ public sealed class CoordinateTools
         try
         {
             var page = await pageService.GetOrCreateActivePageAsync(cancellationToken).ConfigureAwait(false);
-            await page.Mouse.MoveAsync(x, y).ConfigureAwait(false);
-            return ToolResultHelper.Text(okText);
+            return await ActionRunner.RunAsync(pageService.Dialogs, cancellationToken, async _ =>
+            {
+                await page.Mouse.MoveAsync(x, y).ConfigureAwait(false);
+                return ToolResultHelper.Text(okText);
+            }).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -223,10 +235,11 @@ public sealed class CoordinateTools
         }
     }
 
-    private static async Task<(double X, double Y)> CenterOfAsync(PageSnapshotService snapshots, string @ref)
+    private static async Task<(double X, double Y)> CenterOfAsync(
+        PageSnapshotService snapshots, string @ref, double? timeout)
     {
         var locator = snapshots.ResolveRef(@ref);
-        var box = await locator.BoundingBoxAsync().ConfigureAwait(false)
+        var box = await locator.BoundingBoxAsync(timeout).ConfigureAwait(false)
             ?? throw new InvalidOperationException($"Element {@ref} has no visible bounding box.");
         return (box.X + box.Width / 2, box.Y + box.Height / 2);
     }

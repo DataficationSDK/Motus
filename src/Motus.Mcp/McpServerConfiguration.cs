@@ -18,6 +18,12 @@ public static class McpServerConfiguration
     /// Registers every Motus tool class on the builder. Tools are listed explicitly (not by
     /// assembly scanning) so the schema is generated without runtime reflection and stays AOT-clean.
     /// </summary>
+    /// <remarks>
+    /// One filter is registered alongside them, so that a result from any tool says when a
+    /// JavaScript dialog is waiting to be answered. It belongs here rather than in the tools
+    /// because it is true of the session, not of any one call: while a dialog is up the browser
+    /// answers nothing, so whatever the agent tried next is not going to work either.
+    /// </remarks>
     public static IMcpServerBuilder AddMotusTools(this IMcpServerBuilder mcpBuilder)
     {
         ArgumentNullException.ThrowIfNull(mcpBuilder);
@@ -35,6 +41,13 @@ public static class McpServerConfiguration
         mcpBuilder.WithTools<PerformanceTools>(McpJsonUtilities.DefaultOptions);
         mcpBuilder.WithTools<RecordingTools>(McpJsonUtilities.DefaultOptions);
         mcpBuilder.WithTools<CodegenTools>(McpJsonUtilities.DefaultOptions);
+
+        mcpBuilder.WithRequestFilters(filters => filters.AddCallToolFilter(
+            next => async (context, cancellationToken) =>
+            {
+                var result = await next(context, cancellationToken).ConfigureAwait(false);
+                return DialogNotice.Prefix(context.Services?.GetService<DialogService>(), result);
+            }));
 
         return mcpBuilder;
     }

@@ -92,17 +92,25 @@ public sealed class PageSnapshotService
 
         var text = serialized.Text;
 
-        // A whole-page snapshot with nothing addressable usually means the app
-        // paints to a canvas or custom surface rather than the DOM. Say so, and
-        // point at the coordinate workflow, instead of letting the agent
-        // conclude the page is empty.
         if (rootRef is null && serialized.RefToBackendNodeId.Count == 0)
         {
-            text = text.TrimEnd('\n')
-                + "\n\nNote: no addressable elements were found. The page may render to a canvas or "
-                + "custom surface that the accessibility tree cannot describe. Take a screenshot to "
-                + "identify controls visually, then act on their positions with click_xy, drag, or "
-                + "scroll_xy.\n";
+            // The browser may be one that cannot produce an accessibility tree at all, in which
+            // case the snapshot says why rather than guessing at the page. Blaming the page for
+            // an empty tree that the browser was never going to fill sends the agent looking in
+            // the wrong place, and refs are unavailable for every element, not just the ones a
+            // canvas would hide.
+            //
+            // Otherwise a whole-page snapshot with nothing addressable usually does mean the app
+            // paints to a canvas or custom surface rather than the DOM. Say so, and point at the
+            // coordinate workflow, instead of letting the agent conclude the page is empty.
+            text = text.TrimEnd('\n') + "\n\nNote: " + (snapshot.DiagnosticMessage is { Length: > 0 } diagnostic
+                ? diagnostic
+                  + " Snapshots address elements by ref, so the tools that take a ref cannot be used "
+                  + "with this browser."
+                : "no addressable elements were found. The page may render to a canvas or custom "
+                  + "surface that the accessibility tree cannot describe.")
+                + " Take a screenshot to identify controls visually, then act on their positions "
+                + "with click_xy, drag, or scroll_xy.\n";
         }
 
         // A page snapshot stops at each iframe: its element is described, its contents are not, and
