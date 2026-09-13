@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using ModelContextProtocol.Protocol;
+using Motus.Abstractions;
 
 namespace Motus.Mcp;
 
@@ -15,6 +16,36 @@ namespace Motus.Mcp;
 /// </remarks>
 internal static class ActionRunner
 {
+    /// <summary>
+    /// Runs an action against the page it acts on, and returns its result with a short account of
+    /// what the action changed underneath it: where the page ended up, a tab it opened, errors it
+    /// logged, a dialog it left open, and whether the refs the agent holds still mean anything.
+    /// </summary>
+    /// <param name="pageService">The session's page layer, which owns the console and dialog watchers.</param>
+    /// <param name="page">The page the action runs against.</param>
+    /// <param name="cancellationToken">The tool call's token.</param>
+    /// <param name="action">The action, returning the line the tool reports.</param>
+    /// <param name="snapshot">Whether to append a fresh snapshot of the page after the report.</param>
+    /// <remarks>
+    /// Every action goes through this rather than each tool assembling its own account, because
+    /// what is worth saying about an action is the same whichever tool caused it, and because the
+    /// before-and-after states only exist around the call. Nothing is printed that did not change,
+    /// so an action on a page that does nothing surprising is still a single line.
+    /// </remarks>
+    public static async Task<CallToolResult> RunAsync(
+        ActivePageService pageService,
+        IPage page,
+        CancellationToken cancellationToken,
+        Func<CancellationToken, Task<CallToolResult>> action,
+        bool snapshot = false)
+    {
+        ArgumentNullException.ThrowIfNull(pageService);
+
+        using var report = await ActionReport.BeginAsync(pageService, page, cancellationToken).ConfigureAwait(false);
+        var result = await RunAsync(pageService.Dialogs, cancellationToken, action).ConfigureAwait(false);
+        return await report.AppendToAsync(result, snapshot, cancellationToken).ConfigureAwait(false);
+    }
+
     /// <summary>
     /// Runs <paramref name="action"/> against the dialog event, and returns whichever happens
     /// first: the action's own result, or a report that the action opened a dialog. An action

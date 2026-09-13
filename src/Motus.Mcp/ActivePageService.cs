@@ -57,6 +57,13 @@ public class ActivePageService
     public DialogService? Dialogs => _dialogService;
 
     /// <summary>
+    /// The console capture following the active page, or null when the session has none. Exposed
+    /// for the same reason as <see cref="Dialogs"/>: what an action says about the errors it
+    /// caused is read from the capture that follows the page it ran against.
+    /// </summary>
+    public ConsoleService? ConsoleLog => _consoleService;
+
+    /// <summary>
     /// How long an element action may take, in milliseconds, or null for the framework default.
     /// Neither a page nor a context holds a default for this, so every tool passes it on the call
     /// it makes, and reads it from here so there is one place it comes from.
@@ -70,6 +77,13 @@ public class ActivePageService
     public NavigationOptions? Navigation => _sessions.Options.NavigationTimeout is { } timeout
         ? new NavigationOptions { Timeout = timeout }
         : null;
+
+    /// <summary>
+    /// How long an action result waits for the page to show what the action did before it is
+    /// written: the configured settle time, or the default when none was given.
+    /// </summary>
+    public TimeSpan Settle => TimeSpan.FromMilliseconds(
+        _sessions.Options.SettleTimeout ?? McpServerLaunchOptions.DefaultSettleMilliseconds);
 
     /// <summary>
     /// Returns the active page, reusing the cached one while it is still open and
@@ -134,6 +148,21 @@ public class ActivePageService
     {
         ArgumentNullException.ThrowIfNull(page);
         return _snapshots.GetValue(page, static p => new PageSnapshotService(p));
+    }
+
+    /// <summary>
+    /// Whether a snapshot of this page has been taken and its refs are still being held. Asked
+    /// before an action so the result can say when the action has just made those refs point at a
+    /// document that is no longer there.
+    /// </summary>
+    /// <remarks>
+    /// This does not create a snapshot service the way <see cref="GetSnapshotService"/> does, so
+    /// asking the question never changes the answer.
+    /// </remarks>
+    public bool HasSnapshot(IPage page)
+    {
+        ArgumentNullException.ThrowIfNull(page);
+        return _snapshots.TryGetValue(page, out var service) && service.LastSnapshot is not null;
     }
 
     /// <summary>

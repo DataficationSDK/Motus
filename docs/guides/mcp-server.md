@@ -114,11 +114,15 @@ The server groups its tools by capability. Each tool returns structured content 
 | Browser | `browser_attach`, `browser_status` |
 | Scripting | `evaluate` |
 | Dialogs | `handle_dialog` |
-| Network | `route_fulfill`, `route_abort`, `route_continue`, `unroute`, `route_list`, `network_requests` |
+| Network | `route_fulfill`, `route_abort`, `route_continue`, `unroute`, `route_list`, `network_requests`, `network_request` |
 | Console | `console_messages` |
 | Recording and codegen | `generate_pom`, `trace_start`, `trace_stop`, `har_start`, `har_stop`, `video_start`, `video_stop` |
 
-Elements are addressed by the `ref` values returned in a snapshot rather than by CSS or XPath. Take a `snapshot`, then pass a node's `ref` to `click`, `type`, or another interaction tool. References are relative to the most recent snapshot, so take a fresh snapshot after the page changes.
+Elements are addressed by the `ref` values returned in a snapshot, or by a selector. Take a `snapshot`, then pass a node's `ref` to `click`, `type`, or another interaction tool. References are relative to the most recent snapshot, so take a fresh snapshot after the page changes.
+
+Anywhere a `ref` is accepted, a selector is accepted in its place: CSS by default (`#submit`, `button.primary`), or prefixed with `xpath=`, `text=`, `role=`, or `data-testid=`. A selector needs no snapshot at all, so it is what to reach for when the refs in hand have gone stale, or when you already know a stable selector for the element and would rather say it than look it up. Anything shaped like a ref (`e5`) is read as one, so a ref the latest snapshot no longer holds still comes back as a stale ref rather than as a selector that matched nothing. A selector is searched in the selected frame when one is selected, and in the page otherwise.
+
+`click` also takes `button` (`left`, `right`, or `middle`) and `modifiers` (any of `Alt`, `Control`, `Meta`, `Shift`), so a context menu or a ctrl-click is reachable on an element rather than only at a coordinate. Both run the same actionability checks as a plain click: the element has to be visible, enabled, settled, and receiving events first. A double-click is left-button only; use `click_xy` for a double-click with a button or modifiers.
 
 ### What a snapshot contains
 
@@ -126,7 +130,54 @@ A snapshot is one line per node, indented to show nesting: the role, the accessi
 
 Text is folded into the element it names, so `button "Submit"` is one line rather than an element, its text, and the text's layout. Text that says something more than the name is printed after a colon (`listitem: Item one`), and text that sits between elements gets a `text:` line of its own so the order survives. An unnamed wrapper with a single child steps aside for it. The result on a long article is about a third the size of the raw tree, with refs on a quarter of its nodes.
 
+A node the snapshot gave no ref is still reachable: pass a selector for it instead, which is also how to act on a page whose tree carries nothing addressable at all.
+
 `audit_accessibility` reports each violation with a `ref` when the snapshot gave the node one. A node the snapshot does not address, such as an image with no alt text or an empty landmark, has `ref` set to null and is identified by `nodeRole`, `nodeName`, `nodeText`, and a best-effort `selector` instead.
+
+### What an action reports
+
+An action returns one line saying what it did, and under it a short block naming anything it changed. Only the rows that apply are printed, so an action on a page that does nothing surprising stays a single line:
+
+```
+click(e10)
+  -> Clicked e10
+```
+
+A click that does more says so in the same result, which saves the snapshot, console read and tab listing it would otherwise take to find out:
+
+```
+click(e3)
+  -> Clicked e3
+     Page: https://example.com/checkout | Checkout
+     New tab opened: [1] https://example.com/terms
+     Console: 1 error, 1 page error. Read them with console_messages since=14.
+     Refs from the last snapshot no longer address this page: it navigated. Take a new snapshot.
+```
+
+The rows are the page and its title when either changed, a tab the page opened with the index `tab_select` takes, how many errors and uncaught page errors the action logged along with the cursor that reads exactly those, a dialog the action left open, and a note that the refs in hand no longer mean anything because the page navigated. An action that fails reports why it failed and nothing else.
+
+The browser accepts a click before it has followed the link the click was on, so the result waits briefly for the page to show what the action did: 500 ms by default, ending early when a tab appears. `--settle` changes the wait, and `--settle 0` writes the result the instant the action returns, which is right for a local page that reacts at once and wrong for one that navigates through a slow server.
+
+`click`, `type`, `press`, `select_option`, `set_checked`, `navigate`, `reload`, `go_back` and `go_forward` also take `snapshot: true`, which appends a fresh snapshot of the page after the report. It is off by default: most actions do not change enough of the page to be worth a tree, and the rows above usually say whether this one did.
+
+### Reading the console and network logs
+
+`console_messages` and `network_requests` each keep the most recent 250 entries of what the active tab has done, and reading them leaves them in place. Each read ends with a `next=N` line; pass that back as `since` to read only what has arrived since:
+
+```
+console_messages()
+  -> [error] Cannot read properties of null
+     [pageerror] Error: uncaught boom
+     next=3
+
+console_messages(since: 3)
+  -> No console messages have been logged since 3.
+     next=3
+```
+
+A read that never reaches the agent can therefore simply be made again, and an action result that counts errors gives the `since` value that returns exactly those. When a busy page has pushed entries out of the log before they were read, the read says how many it missed.
+
+`network_requests` prints a sequence number in front of each line. `network_request` takes one of those numbers and returns the request in full: its method, status, URL and resource type, the request and response headers, the request body, and the response body when the browser can still produce it. Bodies are fetched when they are asked for rather than captured with the entry, so a request belonging to a document the page has navigated away from reports that the browser no longer has it.
 
 ### Reading a value with `evaluate`
 
@@ -166,7 +217,7 @@ A page snapshot describes each `iframe` element but not what is inside it, and f
 2. `frame_select <index>` scopes the session to one of them. `frame_select 0` returns to the page.
 3. `snapshot` then describes that frame, and its refs address elements inside it.
 
-Scope covers `snapshot`, `evaluate`, and the `wait_for` text conditions. Every interaction tool is already covered through refs: a ref from a scoped snapshot keeps addressing the frame it came from, even after the scope moves on. Selection resets on navigation and on switching tab or context, since the frame it named is gone by then.
+Scope covers `snapshot`, `evaluate`, the `wait_for` text conditions, and any selector passed to an interaction tool, which is searched in the frame selected at the time of the call. Refs need no scope: a ref from a scoped snapshot keeps addressing the frame it came from, even after the scope moves on. Selection resets on navigation and on switching tab or context, since the frame it named is gone by then.
 
 The coordinate tools stay in page coordinates whatever is selected. Their input is dispatched at the page level and the browser decides which frame is under the point.
 
@@ -201,7 +252,7 @@ Some applications render their interface to a `<canvas>` or another custom surfa
 
 All coordinate input is dispatched as trusted browser-level events, exactly like the ref-based tools, so frameworks that ignore synthetic JavaScript events respond to it. The browser's own hit test decides the target at the point: an overlay with `pointer-events: none` is passed through automatically, while an overlay that accepts pointer events receives the event just as it would a real click.
 
-`drag` accepts either refs (`start_ref`/`end_ref`) or coordinates (`start_x`/`start_y`/`end_x`/`end_y`), one addressing mode per call, so it works on semantic DOM and canvas surfaces alike. Intermediate pointer moves are always emitted, with `steps` and `hold_ms` available for libraries that threshold or debounce drag starts.
+`drag` accepts either elements (`start_ref`/`end_ref`, each a ref or a selector) or coordinates (`start_x`/`start_y`/`end_x`/`end_y`), one addressing mode per call, so it works on semantic DOM and canvas surfaces alike. Intermediate pointer moves are always emitted, with `steps` and `hold_ms` available for libraries that threshold or debounce drag starts.
 
 ### Video recording
 
@@ -236,6 +287,7 @@ To record everything without per-page tool calls, launch the server with `--reco
 | `--proxy-bypass` | _(none)_ | Comma-separated hosts that skip the proxy, such as `localhost,*.internal`. Needs `--proxy-server`. |
 | `--timeout` | _(framework default)_ | How long an element action waits for its target, in milliseconds. Applies to every ref-addressed tool. |
 | `--navigation-timeout` | _(framework default)_ | How long a navigation waits to finish, in milliseconds. Applies to `navigate`, `reload`, `go_back`, `go_forward`, and `tab_open`. |
+| `--settle` | `500` | How long an action waits, after the browser accepts it, for the page to show what it did before the result is written, in milliseconds. Every action pays it, so keep it short; `0` describes the page the instant the action returns. |
 | `--dialogs` | `ask` | What becomes of a JavaScript dialog the page raises: `accept` answers it, `dismiss` cancels it, and `ask` leaves it pending for `handle_dialog`. |
 | `--record-video` | _(none)_ | Record a video of every page into this directory, one MJPEG AVI per page, finalized when the page closes. |
 | `--show-cursor` | `false` | Draw an on-screen pseudo-cursor in screenshots and recordings. It follows the element's CSS cursor style and shows a click effect. Enables `--natural-mouse` unless that is set explicitly. |

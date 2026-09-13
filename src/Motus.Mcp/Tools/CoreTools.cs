@@ -8,24 +8,28 @@ namespace Motus.Mcp;
 /// <summary>
 /// The core set of tools an agent uses to drive a page: read it, navigate it, act
 /// on it, and capture it. Each tool acts on the active context's active page and
-/// addresses elements by the refs a <c>snapshot</c> assigns.
+/// addresses elements either by the refs a <c>snapshot</c> assigns or by a selector.
 /// </summary>
 /// <remarks>
 /// Tools report failures as a result with <see cref="CallToolResult.IsError"/> set
 /// and a message the model can act on, rather than by throwing: a thrown exception
 /// becomes a protocol error and loses the guidance. Acting on a ref before any
 /// snapshot, or on a ref from a stale snapshot, returns a message telling the agent
-/// to snapshot again.
+/// to snapshot again; a selector carries its own description of the element, so it
+/// never needs one.
 /// </remarks>
 [McpServerToolType]
 public sealed class CoreTools
 {
     [McpServerTool(Name = "navigate", Title = "Navigate to URL", Destructive = true)]
-    [Description("Navigates the active page to a URL and waits for it to load.")]
+    [Description("Navigates the active page to a URL, waits for it to load, and reports the page it ended up on "
+        + "with its title. Refs from any earlier snapshot stop meaning anything here, so take a snapshot before "
+        + "addressing elements, or pass snapshot: true to get one with the result.")]
     public static async Task<CallToolResult> NavigateAsync(
         [Description("The URL to navigate to.")] string url,
         ActivePageService pageService,
         CancellationToken cancellationToken,
+        [Description("Append a snapshot of the page after the action.")] bool? snapshot = null,
         SecurityPolicy? policy = null)
     {
         if (ToolArguments.Missing("url", url) is { } missing)
@@ -37,12 +41,16 @@ public sealed class CoreTools
         try
         {
             var page = await pageService.GetOrCreateActivePageAsync(cancellationToken).ConfigureAwait(false);
-            return await ActionRunner.RunAsync(pageService.Dialogs, cancellationToken, async _ =>
+            return await ActionRunner.RunAsync(pageService, page, cancellationToken, async _ =>
             {
                 await page.GotoAsync(url, pageService.Navigation).ConfigureAwait(false);
                 pageService.InvalidateSnapshot(page);
-                return ToolResultHelper.Text($"Navigated to {url}");
-            }).ConfigureAwait(false);
+
+                // The title is what tells the agent whether the address it asked for was the page it
+                // wanted, and a redirect or a login wall is exactly where the two come apart.
+                var title = await PageDescription.TryTitleAsync(page).ConfigureAwait(false);
+                return ToolResultHelper.Text($"Navigated to {PageDescription.Of(url, title)}");
+            }, snapshot == true).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -53,7 +61,8 @@ public sealed class CoreTools
     [McpServerTool(Name = "snapshot", Title = "Accessibility snapshot", Destructive = false, ReadOnly = true)]
     [Description("Returns a compact indented accessibility tree of the active page, or of the scoped frame when "
         + "one is selected. Interactive, named, and focusable elements and iframes carry a ref (e1, e2, ...) "
-        + "that click and type use to address them; other nodes are printed for context without one. Text is "
+        + "that click and type use to address them, and those tools take a selector just as readily; other "
+        + "nodes are printed for context without a ref. Text is "
         + "printed inline on its element's line, headings show [level=N], links show [url=...], and form "
         + "controls show [value=\"...\"] and state flags. A page tree describes each iframe element but not "
         + "its contents; frame_select looks inside.")]
@@ -101,30 +110,52 @@ public sealed class CoreTools
     }
 
     [McpServerTool(Name = "click", Title = "Click element", Destructive = true)]
-    [Description("Clicks the element addressed by a ref from the latest snapshot.")]
+    [Description("Clicks the element addressed by a ref from the latest snapshot or by a selector. "
+        + "A right-click, a middle-click, and a click with modifier keys held all go through the "
+        + "same actionability checks as a plain one. The result names anything the click changed: "
+        + "where the page went, a tab it opened, errors it logged, a dialog it raised.")]
     public static async Task<CallToolResult> ClickAsync(
-        [Description("The element ref from the latest snapshot, e.g. e5.")] string @ref,
+        [Description("The element to click. " + ToolDescriptions.Target)] string @ref,
         ActivePageService pageService,
         CancellationToken cancellationToken,
-        [Description("Double-click instead of a single click.")] bool? @double = null)
+        [Description("Double-click instead of a single click.")] bool? @double = null,
+        [Description("The mouse button: left (default), right, or middle.")] string? button = null,
+        [Description("Modifier keys held during the click: Alt, Control, Meta, Shift.")] string[]? modifiers = null,
+        [Description("Append a snapshot of the page after the action.")] bool? snapshot = null)
     {
         if (ToolArguments.Missing("ref", @ref) is { } missing)
             return missing;
+        if (ToolArguments.Button(button, out var parsedButton) is { } unknownButton)
+            return unknownButton;
+        if (ToolArguments.Modifiers(modifiers, out var parsedModifiers) is { } unknownModifier)
+            return unknownModifier;
+
+        // A double-click dispatches its own pair of press and release events and takes no button or
+        // modifiers, so a caller asking for both is told rather than quietly given a plain
+        // double-click. click_xy double-clicks with a button and modifiers when that is wanted.
+        if (@double == true && (parsedButton is not MouseButton.Left || parsedModifiers is not KeyModifier.None))
+            return ToolResultHelper.Error(
+                "A double-click uses the left button with no modifiers. Drop double, or use click_xy "
+                + "with the element's coordinates for a modified double-click.");
 
         try
         {
             var page = await pageService.GetOrCreateActivePageAsync(cancellationToken).ConfigureAwait(false);
-            var locator = pageService.GetSnapshotService(page).ResolveRef(@ref);
+            var locator = pageService.GetSnapshotService(page).ResolveRef(@ref, pageService.GetActiveFrame());
 
-            return await ActionRunner.RunAsync(pageService.Dialogs, cancellationToken, async _ =>
+            return await ActionRunner.RunAsync(pageService, page, cancellationToken, async _ =>
             {
                 if (@double == true)
                     await locator.DblClickAsync(pageService.ActionTimeout).ConfigureAwait(false);
-                else
+                else if (parsedButton is MouseButton.Left && parsedModifiers is KeyModifier.None)
                     await locator.ClickAsync(pageService.ActionTimeout).ConfigureAwait(false);
+                else
+                    await locator.ClickAsync(
+                        new MouseButtonOptions(Button: parsedButton, Modifiers: parsedModifiers),
+                        pageService.ActionTimeout).ConfigureAwait(false);
 
                 return ToolResultHelper.Text($"Clicked {@ref}");
-            }).ConfigureAwait(false);
+            }, snapshot == true).ConfigureAwait(false);
         }
         catch (SnapshotNotTakenException)
         {
@@ -141,14 +172,15 @@ public sealed class CoreTools
     }
 
     [McpServerTool(Name = "type", Title = "Type into element", Destructive = true)]
-    [Description("Types text into the element addressed by a ref from the latest snapshot.")]
+    [Description("Types text into the element addressed by a ref from the latest snapshot or by a selector.")]
     public static async Task<CallToolResult> TypeAsync(
-        [Description("The element ref from the latest snapshot, e.g. e3.")] string @ref,
+        [Description("The element to type into. " + ToolDescriptions.Target)] string @ref,
         [Description("The text to enter.")] string text,
         ActivePageService pageService,
         CancellationToken cancellationToken,
         [Description("Press Enter after entering the text.")] bool? submit = null,
-        [Description("Type character by character instead of setting the value at once.")] bool? slowly = null)
+        [Description("Type character by character instead of setting the value at once.")] bool? slowly = null,
+        [Description("Append a snapshot of the page after the action.")] bool? snapshot = null)
     {
         if (ToolArguments.Missing("ref", @ref) is { } missingRef)
             return missingRef;
@@ -158,9 +190,9 @@ public sealed class CoreTools
         try
         {
             var page = await pageService.GetOrCreateActivePageAsync(cancellationToken).ConfigureAwait(false);
-            var locator = pageService.GetSnapshotService(page).ResolveRef(@ref);
+            var locator = pageService.GetSnapshotService(page).ResolveRef(@ref, pageService.GetActiveFrame());
 
-            return await ActionRunner.RunAsync(pageService.Dialogs, cancellationToken, async _ =>
+            return await ActionRunner.RunAsync(pageService, page, cancellationToken, async _ =>
             {
                 if (slowly == true)
                     await locator.TypeAsync(text).ConfigureAwait(false);
@@ -171,7 +203,7 @@ public sealed class CoreTools
                     await locator.PressAsync("Enter").ConfigureAwait(false);
 
                 return ToolResultHelper.Text($"Typed into {@ref}");
-            }).ConfigureAwait(false);
+            }, snapshot == true).ConfigureAwait(false);
         }
         catch (SnapshotNotTakenException)
         {

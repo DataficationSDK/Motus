@@ -682,7 +682,18 @@ internal sealed class Locator : ILocator
 
     // --- Action Methods ---
 
-    public async Task ClickAsync(double? timeout = null)
+    public Task ClickAsync(double? timeout = null) => ClickCoreAsync(options: null, timeout);
+
+    public Task ClickAsync(MouseButtonOptions options, double? timeout = null)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        return ClickCoreAsync(options, timeout);
+    }
+
+    // One path for both clicks: the button and the modifiers only change what the mouse is told to
+    // send, so the actionability checks and the center-of-the-box aim stay the same for a
+    // right-click or a modified click as for a plain one.
+    private async Task ClickCoreAsync(MouseButtonOptions? options, double? timeout)
     {
         using var cts = BuildActionCts(timeout);
         await RunWithHooksAsync("click", async () =>
@@ -692,7 +703,7 @@ internal sealed class Locator : ILocator
                 ActionabilityFlags.Visible | ActionabilityFlags.Enabled | ActionabilityFlags.Stable | ActionabilityFlags.ReceivesEvents,
                 _selector, cts.Token).ConfigureAwait(false);
             var box = await GetBoundingBoxOrThrowAsync(objectId, cts.Token).ConfigureAwait(false);
-            await _page.Mouse.ClickAsync(box.X + box.Width / 2, box.Y + box.Height / 2).ConfigureAwait(false);
+            await _page.Mouse.ClickAsync(box.X + box.Width / 2, box.Y + box.Height / 2, options).ConfigureAwait(false);
         }).ConfigureAwait(false);
     }
 

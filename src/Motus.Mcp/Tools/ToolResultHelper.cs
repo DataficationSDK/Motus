@@ -47,13 +47,20 @@ internal static class ToolResultHelper
     /// The guidance returned when a ref is used before any snapshot has been taken.
     /// Shared by every tool that addresses an element by ref.
     /// </summary>
+    /// <remarks>
+    /// The selector route is named here because it is the way out that needs nothing else first:
+    /// an agent that already knows a selector for the element can act on this call rather than
+    /// spending a snapshot to learn a name for something it can already describe.
+    /// </remarks>
     public static CallToolResult NoSnapshot()
-        => Error("No snapshot has been taken. Call snapshot first, then retry with a ref from it.");
+        => Error("No snapshot has been taken. Call snapshot first, then retry with a ref from it, "
+            + "or pass a selector instead.");
 
     /// <summary>
     /// The guidance returned when a ref is not in the latest snapshot. Shared by
     /// every tool that addresses an element by ref.
     /// </summary>
     public static CallToolResult Stale(StaleRefException ex)
-        => Error($"Ref '{ex.RefId}' is not in the latest snapshot. Call snapshot to refresh refs, then retry.");
+        => Error($"Ref '{ex.RefId}' is not in the latest snapshot. Call snapshot to refresh refs, "
+            + "then retry, or pass a selector instead.");
 }

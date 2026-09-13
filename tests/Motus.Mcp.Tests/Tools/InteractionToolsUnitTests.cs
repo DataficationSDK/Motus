@@ -346,4 +346,44 @@ public class InteractionToolsUnitTests
         Assert.IsTrue(result.IsError);
         StringAssert.Contains(TextOf(result), "e999");
     }
+
+    [TestMethod]
+    public async Task RefTool_WithASelector_ActsWithNoSnapshotTaken()
+    {
+        var page = new FakeToolPage(Snapshot(Node("button", "Go", 10)));
+        var service = new FakeActivePageService(page);
+
+        var result = await InteractionTools.HoverAsync("#submit", service, CancellationToken.None);
+
+        Assert.IsFalse(result.IsError ?? false, TextOf(result));
+        Assert.AreEqual(1, page.RecordingLocator.HoverCount);
+        Assert.AreEqual("#submit", page.ResolvedSelector);
+    }
+
+    [TestMethod]
+    public async Task EveryElementTool_TakesASelector()
+    {
+        // One tool proving the shared path is not enough: each of these has its own signature, and
+        // a tool added later that resolves its own target would not show up in the test above.
+        var page = new FakeToolPage(Snapshot(Node("button", "Go", 10)));
+        var service = new FakeActivePageService(page);
+        var ct = CancellationToken.None;
+
+        var results = new[]
+        {
+            await InteractionTools.HoverAsync("#a", service, ct),
+            await InteractionTools.FocusAsync("#b", service, ct),
+            await InteractionTools.ClearAsync("#c", service, ct),
+            await InteractionTools.ScrollIntoViewAsync("#d", service, ct),
+            await InteractionTools.SetCheckedAsync("#e", true, service, ct),
+            await InteractionTools.PressAsync("#f", "Enter", service, ct),
+            await InteractionTools.SelectOptionAsync("#g", ["pro"], service, ct),
+            await InteractionTools.WaitForElementAsync("#h", "visible", service, ct),
+        };
+
+        foreach (var result in results)
+            Assert.IsFalse(result.IsError ?? false, TextOf(result));
+
+        Assert.AreEqual("#h", page.ResolvedSelector);
+    }
 }

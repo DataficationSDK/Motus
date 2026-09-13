@@ -114,6 +114,23 @@ public sealed record McpServerLaunchOptions
     public int? NavigationTimeout { get; init; }
 
     /// <summary>
+    /// How long an action waits, in milliseconds, after the browser has accepted it, for the page
+    /// to show what the action did, so the result can name the page it landed on or the tab it
+    /// opened. Null means <see cref="DefaultSettleMilliseconds"/>; zero reports the page as it
+    /// stands the instant the action returns.
+    /// </summary>
+    /// <remarks>
+    /// The browser acknowledges a click before it has followed the link the click was on, so a
+    /// result written straight away would describe the page the agent has just left. The wait is
+    /// paid by every action, which is why it is short and why it is settable: a local page settles
+    /// in far less, and a slow one may need more.
+    /// </remarks>
+    public int? SettleTimeout { get; init; }
+
+    /// <summary>The settle wait used when <see cref="SettleTimeout"/> is not set.</summary>
+    public const int DefaultSettleMilliseconds = 500;
+
+    /// <summary>
     /// What becomes of a JavaScript dialog the page raises: <c>accept</c> answers it, <c>dismiss</c>
     /// cancels it, and <c>ask</c> leaves it pending for the agent to answer with a tool call.
     /// Defaults to <c>ask</c>.

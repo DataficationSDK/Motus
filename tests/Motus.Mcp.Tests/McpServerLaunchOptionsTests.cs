@@ -116,11 +116,13 @@ public class McpServerLaunchOptionsTests
         {
             ActionTimeout = 2_500,
             NavigationTimeout = 45_000,
+            SettleTimeout = 250,
         });
         var pages = new ActivePageService(sessions);
 
         Assert.AreEqual(2_500d, pages.ActionTimeout);
         Assert.AreEqual(45_000, pages.Navigation?.Timeout);
+        Assert.AreEqual(TimeSpan.FromMilliseconds(250), pages.Settle);
     }
 
     [TestMethod]
@@ -130,5 +132,6 @@ public class McpServerLaunchOptionsTests
 
         Assert.IsNull(pages.ActionTimeout);
         Assert.IsNull(pages.Navigation);
+        Assert.AreEqual(TimeSpan.FromMilliseconds(500), pages.Settle, "an action result waits half a second unless told otherwise.");
     }
 }

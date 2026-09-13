@@ -169,7 +169,7 @@ public class NetworkToolsUnitTests
     }
 
     [TestMethod]
-    public void NetworkRequests_RendersAndDrainsTheLog()
+    public void NetworkRequests_NumbersEachLine_AndRepeatsOnASecondRead()
     {
         var network = new NetworkService();
         var page = new FakeToolPage(new AccessibilitySnapshot([], 0, null));
@@ -178,9 +178,90 @@ public class NetworkToolsUnitTests
 
         var result = NetworkTools.NetworkRequests(network, Ct);
 
-        StringAssert.Contains(TextOf(result), "GET 200 https://api.test/x (fetch)");
-        // Draining clears, so a second read reports nothing.
-        StringAssert.Contains(TextOf(NetworkTools.NetworkRequests(network, Ct)), "No requests");
+        StringAssert.Contains(TextOf(result), "[1] GET 200 https://api.test/x (fetch)");
+        StringAssert.Contains(TextOf(result), "next=2");
+        // Reading no longer empties the log, so the same read can be made again.
+        StringAssert.Contains(TextOf(NetworkTools.NetworkRequests(network, Ct)), "[1] GET 200");
+    }
+
+    [TestMethod]
+    public void NetworkRequests_WithSince_ReturnsOnlyWhatFollowedTheCursor()
+    {
+        var network = new NetworkService();
+        var page = new FakeToolPage(new AccessibilitySnapshot([], 0, null));
+        network.SubscribePage(page);
+        page.RaiseResponse(new FakeResponse(new FakeRequest("GET", "https://api.test/first")));
+        page.RaiseResponse(new FakeResponse(new FakeRequest("GET", "https://api.test/second")));
+
+        var text = TextOf(NetworkTools.NetworkRequests(network, Ct, since: 2));
+
+        StringAssert.Contains(text, "/second");
+        Assert.IsFalse(text.Contains("/first", StringComparison.Ordinal), text);
+        StringAssert.Contains(TextOf(NetworkTools.NetworkRequests(network, Ct, since: 3)), "No requests");
+    }
+
+    [TestMethod]
+    public async Task NetworkRequest_ReportsHeadersBodyAndTheMissingSequence()
+    {
+        var network = new NetworkService();
+        var page = new FakeToolPage(new AccessibilitySnapshot([], 0, null));
+        network.SubscribePage(page);
+
+        var request = new FakeRequest("POST", "https://api.test/orders", "fetch")
+        {
+            PostData = "{\"id\":7}",
+            Headers = new FakeHeaders([new("accept", "application/json")]),
+        };
+        page.RaiseResponse(new FakeResponse(request, status: 201)
+        {
+            Headers = new FakeHeaders([new("content-type", "application/json")]),
+            Body = "{\"ok\":true}",
+        });
+
+        var text = TextOf(await NetworkTools.NetworkRequestAsync(1, network, Ct));
+
+        StringAssert.Contains(text, "[1] POST 201 https://api.test/orders (fetch)");
+        StringAssert.Contains(text, "  accept: application/json");
+        StringAssert.Contains(text, "  content-type: application/json");
+        StringAssert.Contains(text, "Request body:");
+        StringAssert.Contains(text, "{\"id\":7}");
+        StringAssert.Contains(text, "{\"ok\":true}");
+
+        var missing = await NetworkTools.NetworkRequestAsync(42, network, Ct);
+        Assert.IsTrue(missing.IsError ?? false);
+        StringAssert.Contains(TextOf(missing), "No request with sequence 42");
+    }
+
+    [TestMethod]
+    public async Task NetworkRequest_WhenTheBodyIsGone_SaysSoRatherThanFailing()
+    {
+        var network = new NetworkService();
+        var page = new FakeToolPage(new AccessibilitySnapshot([], 0, null));
+        network.SubscribePage(page);
+        page.RaiseResponse(new FakeResponse(new FakeRequest("GET", "https://api.test/x")));
+
+        var result = await NetworkTools.NetworkRequestAsync(1, network, Ct);
+
+        Assert.IsFalse(result.IsError ?? false, TextOf(result));
+        StringAssert.Contains(TextOf(result), "Response body: the browser no longer has it");
+    }
+
+    [TestMethod]
+    public async Task NetworkRequest_DoesNotFetchABodyItWouldNotPrint()
+    {
+        var network = new NetworkService();
+        var page = new FakeToolPage(new AccessibilitySnapshot([], 0, null));
+        network.SubscribePage(page);
+        page.RaiseResponse(new FakeResponse(new FakeRequest("GET", "https://cdn.test/logo.png", "image"))
+        {
+            Headers = new FakeHeaders([new("content-type", "image/png")]),
+            Body = "binary",
+        });
+
+        var text = TextOf(await NetworkTools.NetworkRequestAsync(1, network, Ct));
+
+        StringAssert.Contains(text, "Response body: not shown, because it is image/png.");
+        Assert.IsFalse(text.Contains("binary", StringComparison.Ordinal), text);
     }
 
     [TestMethod]

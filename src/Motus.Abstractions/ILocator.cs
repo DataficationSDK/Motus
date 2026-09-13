@@ -14,6 +14,19 @@ public interface ILocator
     Task ClickAsync(double? timeout = null);
 
     /// <summary>
+    /// Clicks the element with a specific mouse button, or with modifier keys held.
+    /// </summary>
+    /// <param name="options">The button to press, and the modifier keys the page sees held.</param>
+    /// <param name="timeout">Maximum time in milliseconds to wait.</param>
+    /// <remarks>
+    /// This runs the same actionability checks as <see cref="ClickAsync(double?)"/>: the element has
+    /// to be visible, enabled, settled, and receiving events before the button goes down. Assembling
+    /// the same click from a bounding box and <see cref="IMouse.ClickAsync"/> skips every one of
+    /// them, which is why a right-click or a modified click belongs here rather than at the caller.
+    /// </remarks>
+    Task ClickAsync(MouseButtonOptions options, double? timeout = null);
+
+    /// <summary>
     /// Double-clicks the element.
     /// </summary>
     /// <param name="timeout">Maximum time in milliseconds to wait.</param>

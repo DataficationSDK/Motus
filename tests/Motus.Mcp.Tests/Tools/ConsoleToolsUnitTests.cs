@@ -21,7 +21,7 @@ public class ConsoleToolsUnitTests
     }
 
     [TestMethod]
-    public void ConsoleMessages_RendersAndDrains()
+    public void ConsoleMessages_RendersEntries_AndRepeatsOnASecondRead()
     {
         var console = new ConsoleService();
         var page = new FakeToolPage(new AccessibilitySnapshot([], 0, null));
@@ -34,7 +34,25 @@ public class ConsoleToolsUnitTests
         var text = TextOf(result);
         StringAssert.Contains(text, "[error] boom");
         StringAssert.Contains(text, "[pageerror] Error: kaboom");
-        // Draining clears, so a second read reports nothing.
-        StringAssert.Contains(TextOf(ConsoleTools.ConsoleMessages(console, Ct)), "No console messages");
+        StringAssert.Contains(text, "next=3");
+        // Reading no longer empties the buffer, so a retry sees the same entries.
+        StringAssert.Contains(TextOf(ConsoleTools.ConsoleMessages(console, Ct)), "[error] boom");
+    }
+
+    [TestMethod]
+    public void ConsoleMessages_WithSince_ReturnsOnlyWhatFollowedTheCursor()
+    {
+        var console = new ConsoleService();
+        var page = new FakeToolPage(new AccessibilitySnapshot([], 0, null));
+        console.Subscribe(page);
+        page.RaiseConsole("log", "before");
+        page.RaiseConsole("error", "after");
+
+        var text = TextOf(ConsoleTools.ConsoleMessages(console, Ct, since: 2));
+
+        StringAssert.Contains(text, "[error] after");
+        Assert.IsFalse(text.Contains("before", StringComparison.Ordinal), text);
+        StringAssert.Contains(
+            TextOf(ConsoleTools.ConsoleMessages(console, Ct, since: 3)), "No console messages have been logged since 3.");
     }
 }

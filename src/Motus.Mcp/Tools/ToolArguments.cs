@@ -1,10 +1,11 @@
 using ModelContextProtocol.Protocol;
+using Motus.Abstractions;
 
 namespace Motus.Mcp;
 
 /// <summary>
-/// The check every tool runs on the arguments it cannot work without, before it touches the
-/// browser.
+/// The checks every tool runs on its arguments before it touches the browser: the ones it cannot
+/// work without, and the ones that have to spell a value the engine knows.
 /// </summary>
 /// <remarks>
 /// Without it a missing argument surfaces wherever it first happens to be used, which for a ref is
@@ -39,6 +40,61 @@ internal static class ToolArguments
     /// </summary>
     public static CallToolResult? Unset(string name, string? value)
         => value is null ? Required(name) : null;
+
+    /// <summary>
+    /// Reads a mouse button name, defaulting to the left button when the argument is absent.
+    /// Returns an error naming the value when it is none of the three, and null when it parsed.
+    /// </summary>
+    public static CallToolResult? Button(string? value, out MouseButton button)
+    {
+        switch (value?.ToLowerInvariant())
+        {
+            case null or "" or "left":
+                button = MouseButton.Left;
+                return null;
+            case "right":
+                button = MouseButton.Right;
+                return null;
+            case "middle":
+                button = MouseButton.Middle;
+                return null;
+            default:
+                button = MouseButton.Left;
+                return ToolResultHelper.Error($"Unknown button '{value}'. Use left, right, or middle.");
+        }
+    }
+
+    /// <summary>
+    /// Reads a list of modifier key names into the flags the engine holds them in. Returns an error
+    /// naming the first value it does not know, and null when every one of them parsed.
+    /// </summary>
+    /// <remarks>
+    /// <c>None</c> is refused along with anything unknown: a caller asking for it has misread the
+    /// argument as a list of every state rather than a list of keys to hold, and silently accepting
+    /// it would hide that.
+    /// </remarks>
+    public static CallToolResult? Modifiers(string[]? values, out KeyModifier modifiers)
+    {
+        modifiers = KeyModifier.None;
+        if (values is null)
+            return null;
+
+        foreach (var value in values)
+        {
+            if (!Enum.TryParse<KeyModifier>(value, ignoreCase: true, out var flag)
+                || flag is KeyModifier.None
+                || !Enum.IsDefined(flag))
+            {
+                modifiers = KeyModifier.None;
+                return ToolResultHelper.Error(
+                    $"Unknown modifier '{value}'. Use Alt, Control, Meta, or Shift.");
+            }
+
+            modifiers |= flag;
+        }
+
+        return null;
+    }
 
     private static CallToolResult Required(string name)
         => ToolResultHelper.Error($"The '{name}' argument is required.");

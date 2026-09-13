@@ -28,8 +28,14 @@
     <iframe src="/frame.html" title="Payment frame" width="300" height="80"></iframe>
   </main>
   <script>
-    const ctx = document.getElementById('c').getContext('2d');
+    const canvas = document.getElementById('c');
+    const ctx = canvas.getContext('2d');
     ctx.fillStyle = '#36c'; ctx.fillRect(20, 20, 80, 40);
+    // A right-click on a canvas leaves no trace of its own: the drawing does not change and the
+    // menu that would appear belongs to the browser, not the page. Counting the event gives a test
+    // something to read back, and preventing the default keeps a headed run from opening a menu.
+    window.contextMenuCount = 0;
+    canvas.addEventListener('contextmenu', (event) => { event.preventDefault(); window.contextMenuCount++; });
   </script>
 </body>
 </html>

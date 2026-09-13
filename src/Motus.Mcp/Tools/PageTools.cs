@@ -22,19 +22,20 @@ public sealed class PageTools
     [Description("Navigates the active tab back one entry in its history. Reports when there was no entry to go to.")]
     public static async Task<CallToolResult> GoBackAsync(
         ActivePageService pageService,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        [Description("Append a snapshot of the page after the action.")] bool? snapshot = null)
     {
         try
         {
             var page = await pageService.GetOrCreateActivePageAsync(cancellationToken).ConfigureAwait(false);
-            return await ActionRunner.RunAsync(pageService.Dialogs, cancellationToken, async _ =>
+            return await ActionRunner.RunAsync(pageService, page, cancellationToken, async _ =>
             {
                 var response = await page.GoBackAsync(pageService.Navigation).ConfigureAwait(false);
                 pageService.InvalidateSnapshot(page);
                 return ToolResultHelper.Text(response is null
                     ? "No previous history entry; the page did not change."
-                    : $"Navigated back to {page.Url}");
-            }).ConfigureAwait(false);
+                    : $"Navigated back to {await PageDescription.OfAsync(page).ConfigureAwait(false)}");
+            }, snapshot == true).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -46,19 +47,20 @@ public sealed class PageTools
     [Description("Navigates the active tab forward one entry in its history. Reports when there was no entry to go to.")]
     public static async Task<CallToolResult> GoForwardAsync(
         ActivePageService pageService,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        [Description("Append a snapshot of the page after the action.")] bool? snapshot = null)
     {
         try
         {
             var page = await pageService.GetOrCreateActivePageAsync(cancellationToken).ConfigureAwait(false);
-            return await ActionRunner.RunAsync(pageService.Dialogs, cancellationToken, async _ =>
+            return await ActionRunner.RunAsync(pageService, page, cancellationToken, async _ =>
             {
                 var response = await page.GoForwardAsync(pageService.Navigation).ConfigureAwait(false);
                 pageService.InvalidateSnapshot(page);
                 return ToolResultHelper.Text(response is null
                     ? "No next history entry; the page did not change."
-                    : $"Navigated forward to {page.Url}");
-            }).ConfigureAwait(false);
+                    : $"Navigated forward to {await PageDescription.OfAsync(page).ConfigureAwait(false)}");
+            }, snapshot == true).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -70,17 +72,18 @@ public sealed class PageTools
     [Description("Reloads the active tab and waits for it to finish loading.")]
     public static async Task<CallToolResult> ReloadAsync(
         ActivePageService pageService,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        [Description("Append a snapshot of the page after the action.")] bool? snapshot = null)
     {
         try
         {
             var page = await pageService.GetOrCreateActivePageAsync(cancellationToken).ConfigureAwait(false);
-            return await ActionRunner.RunAsync(pageService.Dialogs, cancellationToken, async _ =>
+            return await ActionRunner.RunAsync(pageService, page, cancellationToken, async _ =>
             {
                 await page.ReloadAsync(pageService.Navigation).ConfigureAwait(false);
                 pageService.InvalidateSnapshot(page);
                 return ToolResultHelper.Text($"Reloaded {page.Url}");
-            }).ConfigureAwait(false);
+            }, snapshot == true).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -121,15 +124,15 @@ public sealed class PageTools
     [McpServerTool(Name = "evaluate", Title = "Evaluate JavaScript", Destructive = true)]
     [Description("Evaluates a JavaScript expression and returns its result as structured JSON under a \"result\" "
         + "key, so an expression may return a value of any shape: a number, a string, an array, or an object. "
-        + "With no ref it runs in the page, or in the scoped frame when one is selected; with a ref it runs "
-        + "against that element, passed as the function's argument. Results that cannot be serialized "
+        + "With no ref it runs in the page, or in the scoped frame when one is selected; with a ref or a "
+        + "selector it runs against that element, passed as the function's argument. Results that cannot be serialized "
         + "(undefined, functions, DOM nodes) come back as null.")]
     public static async Task<CallToolResult> EvaluateAsync(
         [Description("The JavaScript expression to evaluate.")] string expression,
         ActivePageService pageService,
         CancellationToken cancellationToken,
-        [Description("An element ref from the latest snapshot to evaluate against. Omit to evaluate in the page "
-            + "or the scoped frame.")] string? @ref = null)
+        [Description("The element to evaluate against. Omit to evaluate in the page or the scoped frame. "
+            + ToolDescriptions.Target)] string? @ref = null)
     {
         if (ToolArguments.Missing("expression", expression) is { } missing)
             return missing;
@@ -154,7 +157,7 @@ public sealed class PageTools
                     return EvaluationResult(pageResult);
                 }
 
-                var locator = pageService.GetSnapshotService(page).ResolveRef(@ref);
+                var locator = pageService.GetSnapshotService(page).ResolveRef(@ref, pageService.GetActiveFrame());
                 var elementResult = await locator.EvaluateWithElementAsync<JsonElement>(expression).ConfigureAwait(false);
                 return EvaluationResult(elementResult);
             }).ConfigureAwait(false);

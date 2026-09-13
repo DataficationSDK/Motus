@@ -1,5 +1,6 @@
 using Motus.Abstractions;
 using Motus.Mcp;
+using Motus.Mcp.Tests.Tools;
 
 namespace Motus.Mcp.Tests.Snapshot;
 
@@ -31,6 +32,53 @@ public class PageSnapshotServiceTests
 
         var ex = Assert.ThrowsException<StaleRefException>(() => service.ResolveRef("e999"));
         Assert.AreEqual("e999", ex.RefId);
+    }
+
+    [TestMethod]
+    public void ResolveRef_WithASelector_NeedsNoSnapshot()
+    {
+        var page = new FakeAccessibilityPage(EmptySnapshot());
+        var service = new PageSnapshotService(page);
+
+        var locator = service.ResolveRef("#late-btn");
+
+        Assert.IsNotNull(locator, "a selector describes the element itself, so nothing has to be read first.");
+        Assert.AreEqual("#late-btn", page.ResolvedSelector);
+    }
+
+    [TestMethod]
+    public async Task ResolveRef_WithARefTheSnapshotDoesNotHold_IsStaleRatherThanASelector()
+    {
+        var snapshot = new AccessibilitySnapshot(
+            Roots:
+            [
+                new AccessibilityNode("1", "button", "Go", null, null,
+                    new Dictionary<string, string?>(), [], BackendDOMNodeId: 5),
+            ],
+            IgnoredCount: 0,
+            DiagnosticMessage: null);
+
+        var page = new FakeAccessibilityPage(snapshot);
+        var service = new PageSnapshotService(page);
+        await service.TakeSnapshotAsync();
+
+        // Running a ref as a selector would answer "no element matched e99", which sends the agent
+        // looking at the page rather than at the snapshot it took too long ago.
+        Assert.ThrowsException<StaleRefException>(() => service.ResolveRef("e99"));
+        Assert.IsNull(page.ResolvedSelector);
+    }
+
+    [TestMethod]
+    public async Task ResolveRef_WithAFrameScopedRefShape_IsReadAsARef()
+    {
+        var page = new FakeAccessibilityPage(EmptySnapshot());
+        var service = new PageSnapshotService(page);
+        await service.TakeSnapshotAsync();
+
+        // Refs that name the frame they came from are the next step for the snapshot, and a
+        // selector is never shaped like one, so they are claimed here before they are assigned.
+        Assert.ThrowsException<StaleRefException>(() => service.ResolveRef("f1e2"));
+        Assert.IsNull(page.ResolvedSelector);
     }
 
     [TestMethod]
@@ -200,6 +248,9 @@ public class PageSnapshotServiceTests
 
         public ILocator LocatorByBackendNodeId(long backendNodeId) => throw new NotImplementedException();
 
+        /// <summary>The last selector this page was asked to build a locator for.</summary>
+        public string? ResolvedSelector { get; private set; }
+
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 
 #pragma warning disable CS0067 // events are part of the interface but unused in tests
@@ -243,7 +294,12 @@ public class PageSnapshotServiceTests
         public Task<string> ContentAsync() => throw new NotImplementedException();
         public Task SetContentAsync(string html, NavigationOptions? options = null) => throw new NotImplementedException();
         public Task<string> TitleAsync() => throw new NotImplementedException();
-        public ILocator Locator(string selector, LocatorOptions? options = null) => throw new NotImplementedException();
+        public ILocator Locator(string selector, LocatorOptions? options = null)
+        {
+            ResolvedSelector = selector;
+            return new FakeToolLocator();
+        }
+
         public ILocator GetByRole(string role, string? name = null) => throw new NotImplementedException();
         public ILocator GetByText(string text, bool? exact = null) => throw new NotImplementedException();
         public ILocator GetByLabel(string text, bool? exact = null) => throw new NotImplementedException();

@@ -136,7 +136,7 @@ public class CoreToolsIntegrationTests
         await File.WriteAllTextAsync(file, "<title>local</title><h1>local</h1>", ct);
         try
         {
-            var result = await CoreTools.NavigateAsync(new Uri(file).AbsoluteUri, service, ct, unrestricted);
+            var result = await CoreTools.NavigateAsync(new Uri(file).AbsoluteUri, service, ct, policy: unrestricted);
 
             Assert.IsFalse(result.IsError ?? false, ((TextContentBlock)result.Content[0]).Text);
             var page = await service.GetOrCreateActivePageAsync(ct);

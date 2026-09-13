@@ -125,6 +125,16 @@ public static class McpCommand
         {
             Description = "How long a navigation waits to finish, in milliseconds",
         };
+        var settleOpt = new Option<int?>("--settle")
+        {
+            Description = "How long an action waits, after the browser accepts it, for the page to show what it "
+                + $"did before the result is written, in milliseconds (default {McpServerLaunchOptions.DefaultSettleMilliseconds})",
+        };
+        settleOpt.Validators.Add(result =>
+        {
+            if (result.GetValueOrDefault<int?>() is < 0)
+                result.AddError("--settle must be zero or more milliseconds.");
+        });
         var dialogsOpt = new Option<string>("--dialogs")
         {
             Description = "What becomes of a JavaScript dialog the page raises: accept, dismiss, or ask to "
@@ -188,6 +198,7 @@ public static class McpCommand
             timezoneOpt,
             timeoutOpt,
             navigationTimeoutOpt,
+            settleOpt,
             dialogsOpt,
             configOpt,
             outputDirOpt,
@@ -348,6 +359,7 @@ public static class McpCommand
                 TimezoneId = parseResult.GetValue(timezoneOpt),
                 ActionTimeout = actionTimeout,
                 NavigationTimeout = parseResult.GetValue(navigationTimeoutOpt),
+                SettleTimeout = parseResult.GetValue(settleOpt),
                 Dialogs = (parseResult.GetValue(dialogsOpt) ?? DefaultDialogPolicy).ToLowerInvariant(),
                 OutputDirectory = outputDirectory,
                 AllowUnrestrictedFileAccess = parseResult.GetValue(allowFileAccessOpt),

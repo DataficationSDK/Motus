@@ -3,9 +3,9 @@ using Motus.Abstractions;
 namespace Motus.Mcp;
 
 /// <summary>
-/// Holds the most recent accessibility snapshot for a single page and resolves
-/// the refs it assigned back to actionable locators. Refs are valid only for the
-/// latest snapshot; taking a new snapshot replaces the ref map.
+/// Holds the most recent accessibility snapshot for a single page and turns the targets a caller
+/// names into actionable locators: the refs it assigned, and selectors, which need no snapshot at
+/// all. Refs are valid only for the latest snapshot; taking a new snapshot replaces the ref map.
 /// </summary>
 public sealed class PageSnapshotService
 {
@@ -141,18 +141,50 @@ public sealed class PageSnapshotService
     }
 
     /// <summary>
-    /// Resolves a ref from the current snapshot to a locator. The element is
-    /// resolved lazily when an action runs on the returned locator; if it has since
-    /// detached from the document, that action fails.
+    /// Resolves a target to a locator: a ref from the current snapshot, or a selector.
+    /// The element is resolved lazily when an action runs on the returned locator; if it has
+    /// since detached from the document, that action fails.
     /// </summary>
     /// <remarks>
-    /// The locator is built against whatever the snapshot covered, not against whatever is selected
-    /// now, so a ref keeps addressing the element it named even if the scope has moved on.
+    /// A ref is built against whatever the snapshot covered, not against whatever is selected now,
+    /// so it keeps addressing the element it named even if the scope has moved on. Anything that is
+    /// not shaped like a ref is handed to the engine's selector strategies, which cost no snapshot
+    /// and are how a caller that already knows a stable selector says so. This overload searches a
+    /// selector in the frame the last snapshot covered; the overload below takes that frame from
+    /// the caller, which is what the tools do.
     /// </remarks>
-    /// <exception cref="SnapshotNotTakenException">No snapshot has been taken yet.</exception>
+    /// <exception cref="SnapshotNotTakenException">
+    /// A ref was given and no snapshot has been taken yet.
+    /// </exception>
     /// <exception cref="StaleRefException">The ref is not in the current snapshot.</exception>
-    public ILocator ResolveRef(string refId)
+    public ILocator ResolveRef(string refId) => Resolve(refId, selectorScope: _refFrame);
+
+    /// <summary>
+    /// Resolves a target as above, naming the frame a selector is searched in.
+    /// </summary>
+    /// <param name="refId">A ref from the current snapshot, or a selector.</param>
+    /// <param name="scope">
+    /// The frame selected now, or null for the page. A ref ignores it and keeps addressing the
+    /// document its own snapshot covered.
+    /// </param>
+    /// <remarks>
+    /// A selector describes an element rather than naming one, so it means whatever the session is
+    /// looking at now: the frame selected at the moment of the call, not the frame some earlier
+    /// snapshot happened to cover. A ref is the opposite, which is why the two read different
+    /// frames here. It also means a selector works straight after <c>frame_select</c>, with no
+    /// snapshot in between.
+    /// </remarks>
+    public ILocator ResolveRef(string refId, IFrame? scope) => Resolve(refId, selectorScope: scope);
+
+    private ILocator Resolve(string refId, IFrame? selectorScope)
     {
+        if (!IsRefShaped(refId))
+        {
+            return selectorScope is { } selectorFrame
+                ? selectorFrame.Locator(refId)
+                : _page.Locator(refId);
+        }
+
         if (_refToBackendNodeId is null)
             throw new SnapshotNotTakenException();
 
@@ -162,6 +194,47 @@ public sealed class PageSnapshotService
         return _refFrame is { } frame
             ? frame.LocatorByBackendNodeId(backendNodeId)
             : _page.LocatorByBackendNodeId(backendNodeId);
+    }
+
+    /// <summary>
+    /// Whether a target is shaped like a ref this service hands out (<c>e5</c>), rather than a
+    /// selector. An optional frame prefix (<c>f1e5</c>) is recognized here so that refs naming the
+    /// frame they came from read as refs the day they are assigned rather than run as selectors.
+    /// </summary>
+    /// <remarks>
+    /// The shape decides the answer, not the ref map, so a ref the latest snapshot no longer holds
+    /// is reported as stale instead of being sent to the browser as a selector that matches nothing.
+    /// The shape is narrow on purpose: no CSS selector is a lone letter followed by digits.
+    /// </remarks>
+    private static bool IsRefShaped(string? target)
+    {
+        if (string.IsNullOrEmpty(target))
+            return false;
+
+        var span = target.AsSpan();
+
+        if (span[0] == 'f')
+        {
+            var frameDigits = 1;
+            while (frameDigits < span.Length && char.IsAsciiDigit(span[frameDigits]))
+                frameDigits++;
+
+            if (frameDigits == 1)
+                return false;
+
+            span = span[frameDigits..];
+        }
+
+        if (span.Length < 2 || span[0] != 'e')
+            return false;
+
+        foreach (var character in span[1..])
+        {
+            if (!char.IsAsciiDigit(character))
+                return false;
+        }
+
+        return true;
     }
 
     /// <summary>

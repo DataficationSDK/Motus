@@ -9,92 +9,96 @@ namespace Motus.Mcp;
 /// Element-level interactions beyond click and type: selecting options, hovering,
 /// pressing keys, toggling checkboxes, clearing and focusing fields, scrolling an
 /// element into view, uploading files, and waiting for a condition. Element tools
-/// address their target by a ref from the latest <c>snapshot</c>, exactly as the
-/// core tools do.
+/// address their target by a ref from the latest <c>snapshot</c> or by a selector,
+/// exactly as the core tools do.
 /// </summary>
 /// <remarks>
 /// Like the core tools, every tool reports failure as a result with
 /// <see cref="CallToolResult.IsError"/> set and a message the model can act on,
 /// rather than by throwing. Using a ref before any snapshot, or one from a stale
-/// snapshot, returns guidance to snapshot again.
+/// snapshot, returns guidance to snapshot again; a selector is resolved on the spot
+/// and never asks for one.
 /// </remarks>
 [McpServerToolType]
 public sealed class InteractionTools
 {
     [McpServerTool(Name = "select_option", Title = "Select dropdown options", Destructive = true)]
-    [Description("Selects one or more options in a <select> element addressed by a ref, by their values.")]
+    [Description("Selects one or more options in a <select> element addressed by a ref or a selector, by their values.")]
     public static Task<CallToolResult> SelectOptionAsync(
-        [Description("The element ref from the latest snapshot, e.g. e7.")] string @ref,
+        [Description("The element to act on. " + ToolDescriptions.Target)] string @ref,
         [Description("The option values to select.")] string[] values,
         ActivePageService pageService,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        [Description("Append a snapshot of the page after the action.")] bool? snapshot = null)
         => ToolArguments.Missing("values", values) is { } missing
             ? Task.FromResult(missing)
             : WithRefAsync(pageService, @ref, $"Selected {values.Length} option(s) in {@ref}",
-                locator => locator.SelectOptionAsync(values), cancellationToken);
+                locator => locator.SelectOptionAsync(values), cancellationToken, snapshot == true);
 
     [McpServerTool(Name = "hover", Title = "Hover over element", Destructive = true)]
-    [Description("Moves the pointer over the element addressed by a ref from the latest snapshot.")]
+    [Description("Moves the pointer over the element addressed by a ref from the latest snapshot or by a selector.")]
     public static Task<CallToolResult> HoverAsync(
-        [Description("The element ref from the latest snapshot, e.g. e7.")] string @ref,
+        [Description("The element to act on. " + ToolDescriptions.Target)] string @ref,
         ActivePageService pageService,
         CancellationToken cancellationToken)
         => WithRefAsync(pageService, @ref, $"Hovered {@ref}",
             locator => locator.HoverAsync(pageService.ActionTimeout), cancellationToken);
 
     [McpServerTool(Name = "press", Title = "Press a key on element", Destructive = true)]
-    [Description("Presses a key while the element addressed by a ref is focused, e.g. Enter, Tab, ArrowDown.")]
+    [Description("Presses a key while the element addressed by a ref or a selector is focused, e.g. Enter, Tab, ArrowDown.")]
     public static Task<CallToolResult> PressAsync(
-        [Description("The element ref from the latest snapshot, e.g. e7.")] string @ref,
+        [Description("The element to act on. " + ToolDescriptions.Target)] string @ref,
         [Description("The key to press, e.g. Enter, Tab, Escape, ArrowDown, or a single character.")] string key,
         ActivePageService pageService,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        [Description("Append a snapshot of the page after the action.")] bool? snapshot = null)
         => ToolArguments.Missing("key", key) is { } missing
             ? Task.FromResult(missing)
             : WithRefAsync(pageService, @ref, $"Pressed {key} on {@ref}",
-                locator => locator.PressAsync(key), cancellationToken);
+                locator => locator.PressAsync(key), cancellationToken, snapshot == true);
 
     [McpServerTool(Name = "set_checked", Title = "Set checkbox state", Destructive = true)]
-    [Description("Sets the checked state of a checkbox or radio button addressed by a ref.")]
+    [Description("Sets the checked state of a checkbox or radio button addressed by a ref or a selector.")]
     public static Task<CallToolResult> SetCheckedAsync(
-        [Description("The element ref from the latest snapshot, e.g. e7.")] string @ref,
+        [Description("The element to act on. " + ToolDescriptions.Target)] string @ref,
         [Description("The desired state: true to check, false to uncheck.")] bool @checked,
         ActivePageService pageService,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        [Description("Append a snapshot of the page after the action.")] bool? snapshot = null)
         => WithRefAsync(pageService, @ref, $"Set {@ref} checked={@checked}",
-            locator => locator.SetCheckedAsync(@checked, pageService.ActionTimeout), cancellationToken);
+            locator => locator.SetCheckedAsync(@checked, pageService.ActionTimeout), cancellationToken, snapshot == true);
 
     [McpServerTool(Name = "clear", Title = "Clear input", Destructive = true)]
-    [Description("Clears the value of the input or textarea addressed by a ref from the latest snapshot.")]
+    [Description("Clears the value of the input or textarea addressed by a ref from the latest snapshot or by a selector.")]
     public static Task<CallToolResult> ClearAsync(
-        [Description("The element ref from the latest snapshot, e.g. e7.")] string @ref,
+        [Description("The element to act on. " + ToolDescriptions.Target)] string @ref,
         ActivePageService pageService,
         CancellationToken cancellationToken)
         => WithRefAsync(pageService, @ref, $"Cleared {@ref}",
             locator => locator.ClearAsync(pageService.ActionTimeout), cancellationToken);
 
     [McpServerTool(Name = "focus", Title = "Focus element", Destructive = true)]
-    [Description("Focuses the element addressed by a ref from the latest snapshot.")]
+    [Description("Focuses the element addressed by a ref from the latest snapshot or by a selector.")]
     public static Task<CallToolResult> FocusAsync(
-        [Description("The element ref from the latest snapshot, e.g. e7.")] string @ref,
+        [Description("The element to act on. " + ToolDescriptions.Target)] string @ref,
         ActivePageService pageService,
         CancellationToken cancellationToken)
         => WithRefAsync(pageService, @ref, $"Focused {@ref}",
             locator => locator.FocusAsync(pageService.ActionTimeout), cancellationToken);
 
     [McpServerTool(Name = "scroll_into_view", Title = "Scroll element into view", Destructive = true)]
-    [Description("Scrolls the element addressed by a ref into the viewport if it is not already visible.")]
+    [Description("Scrolls the element addressed by a ref or a selector into the viewport if it is not already visible.")]
     public static Task<CallToolResult> ScrollIntoViewAsync(
-        [Description("The element ref from the latest snapshot, e.g. e7.")] string @ref,
+        [Description("The element to act on. " + ToolDescriptions.Target)] string @ref,
         ActivePageService pageService,
         CancellationToken cancellationToken)
         => WithRefAsync(pageService, @ref, $"Scrolled {@ref} into view",
             locator => locator.ScrollIntoViewIfNeededAsync(pageService.ActionTimeout), cancellationToken);
 
     [McpServerTool(Name = "upload_files", Title = "Upload files", Destructive = true)]
-    [Description("Sets the files of a file input addressed by a ref, reading each from a local file path.")]
+    [Description("Sets the files of a file input addressed by a ref or a selector, reading each from a local file path.")]
     public static async Task<CallToolResult> UploadFilesAsync(
-        [Description("The element ref from the latest snapshot, e.g. e7.")] string @ref,
+        [Description("The file input to set. " + ToolDescriptions.Target)] string @ref,
         [Description("Local file paths to upload. Each is read from disk on the machine running the server, "
             + "and must sit inside a directory that server is allowed to read.")] string[] paths,
         ActivePageService pageService,
@@ -147,7 +151,7 @@ public sealed class InteractionTools
         try
         {
             var page = await pageService.GetOrCreateActivePageAsync(cancellationToken).ConfigureAwait(false);
-            return await ActionRunner.RunAsync(pageService.Dialogs, cancellationToken, async _ =>
+            return await ActionRunner.RunAsync(pageService, page, cancellationToken, async _ =>
             {
                 await page.Keyboard.PressAsync(key).ConfigureAwait(false);
                 return ToolResultHelper.Text($"Pressed {key}");
@@ -160,9 +164,10 @@ public sealed class InteractionTools
     }
 
     [McpServerTool(Name = "wait_for_element", Title = "Wait for element state", Destructive = false, ReadOnly = true)]
-    [Description("Waits until the element addressed by a ref reaches a state: visible, hidden, attached, or detached.")]
+    [Description("Waits until the element addressed by a ref or a selector reaches a state: visible, hidden, attached, "
+        + "or detached.")]
     public static async Task<CallToolResult> WaitForElementAsync(
-        [Description("The element ref from the latest snapshot, e.g. e7.")] string @ref,
+        [Description("The element to act on. " + ToolDescriptions.Target)] string @ref,
         [Description("The state to wait for: visible, hidden, attached, or detached.")] string state,
         ActivePageService pageService,
         CancellationToken cancellationToken)
@@ -234,15 +239,16 @@ public sealed class InteractionTools
     }
 
     /// <summary>
-    /// Resolves a ref to a locator, runs an action against it, and maps the snapshot
-    /// error contract to re-snapshot guidance. Shared by every ref-addressed tool.
+    /// Resolves a ref or a selector to a locator, runs an action against it, and maps the snapshot
+    /// error contract to re-snapshot guidance. Shared by every element-addressed tool.
     /// </summary>
     private static async Task<CallToolResult> WithRefAsync(
         ActivePageService pageService,
         string @ref,
         string okText,
         Func<ILocator, Task> action,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool snapshot = false)
     {
         if (ToolArguments.Missing("ref", @ref) is { } missing)
             return missing;
@@ -250,12 +256,12 @@ public sealed class InteractionTools
         try
         {
             var page = await pageService.GetOrCreateActivePageAsync(cancellationToken).ConfigureAwait(false);
-            var locator = pageService.GetSnapshotService(page).ResolveRef(@ref);
-            return await ActionRunner.RunAsync(pageService.Dialogs, cancellationToken, async _ =>
+            var locator = pageService.GetSnapshotService(page).ResolveRef(@ref, pageService.GetActiveFrame());
+            return await ActionRunner.RunAsync(pageService, page, cancellationToken, async _ =>
             {
                 await action(locator).ConfigureAwait(false);
                 return ToolResultHelper.Text(okText);
-            }).ConfigureAwait(false);
+            }, snapshot).ConfigureAwait(false);
         }
         catch (SnapshotNotTakenException)
         {

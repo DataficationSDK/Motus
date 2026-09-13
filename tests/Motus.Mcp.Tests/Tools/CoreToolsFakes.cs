@@ -34,6 +34,9 @@ internal sealed class FakeToolPage(AccessibilitySnapshot snapshot) : IPage
     /// <summary>The last backend node id resolved through <see cref="LocatorByBackendNodeId"/>.</summary>
     public long? ResolvedBackendNodeId { get; private set; }
 
+    /// <summary>The last selector resolved through <see cref="Locator"/>.</summary>
+    public string? ResolvedSelector { get; private set; }
+
     /// <summary>The <c>FullPage</c> flag of the last screenshot request.</summary>
     public bool? ScreenshotFullPage { get; private set; }
 
@@ -294,7 +297,12 @@ internal sealed class FakeToolPage(AccessibilitySnapshot snapshot) : IPage
     public Task<string> ContentAsync() => throw new NotImplementedException();
     public Task SetContentAsync(string html, NavigationOptions? options = null) => throw new NotImplementedException();
     public Task<string> TitleAsync() => Task.FromResult(PageTitle);
-    public ILocator Locator(string selector, LocatorOptions? options = null) => throw new NotImplementedException();
+    public ILocator Locator(string selector, LocatorOptions? options = null)
+    {
+        ResolvedSelector = selector;
+        return RecordingLocator;
+    }
+
     public ILocator GetByRole(string role, string? name = null) => throw new NotImplementedException();
     public ILocator GetByText(string text, bool? exact = null) => throw new NotImplementedException();
     public ILocator GetByLabel(string text, bool? exact = null) => throw new NotImplementedException();
@@ -380,9 +388,20 @@ internal sealed class FakeToolLocator : ILocator
     public string? EvaluatedElementExpression { get; private set; }
     public JsonElement ElementEvaluateReturn { get; set; }
 
+    /// <summary>The options of the last click, or null when it was a plain left click.</summary>
+    public MouseButtonOptions? ClickOptions { get; private set; }
+
     public Task ClickAsync(double? timeout = null)
     {
         ClickCount++;
+        ClickOptions = null;
+        return Task.CompletedTask;
+    }
+
+    public Task ClickAsync(MouseButtonOptions options, double? timeout = null)
+    {
+        ClickCount++;
+        ClickOptions = options;
         return Task.CompletedTask;
     }
 
@@ -751,10 +770,15 @@ internal sealed class FakeRequest(string method = "GET", string url = "https://e
     public string Url { get; } = url;
     public string Method { get; } = method;
     public string ResourceType { get; } = resourceType;
-    public string? PostData => null;
+
+    /// <summary>The request body, which the log captures when there is one.</summary>
+    public string? PostData { get; init; }
+
+    /// <summary>The headers the log copies; empty unless a test sets them.</summary>
+    public IHeaderCollection Headers { get; init; } = new FakeHeaders();
+
     public bool IsNavigationRequest => false;
     public IResponse? Response => null;
-    public IHeaderCollection Headers => throw new NotImplementedException();
     public IFrame Frame => throw new NotImplementedException();
 }
 
@@ -766,11 +790,44 @@ internal sealed class FakeResponse(IRequest request, int status = 200, string? u
     public IRequest Request { get; } = request;
     public string StatusText => "OK";
     public bool Ok => Status is >= 200 and <= 299;
-    public IHeaderCollection Headers => throw new NotImplementedException();
+
+    /// <summary>The headers the log copies; empty unless a test sets them.</summary>
+    public IHeaderCollection Headers { get; init; } = new FakeHeaders();
+
+    /// <summary>The body <see cref="TextAsync"/> hands back, or null to model one the browser has dropped.</summary>
+    public string? Body { get; init; }
+
     public IFrame Frame => throw new NotImplementedException();
     public Task<byte[]> BodyAsync(CancellationToken ct = default) => throw new NotImplementedException();
-    public Task<string> TextAsync(CancellationToken ct = default) => throw new NotImplementedException();
+
+    public Task<string> TextAsync(CancellationToken ct = default)
+        => Body is null
+            ? Task.FromException<string>(new InvalidOperationException("No resource with given identifier found"))
+            : Task.FromResult(Body);
+
     public Task<T> JsonAsync<T>(CancellationToken ct = default) => throw new NotImplementedException();
+}
+
+/// <summary>A fixed set of headers, as the request log reads them off a request or a response.</summary>
+internal sealed class FakeHeaders(KeyValuePair<string, string>[]? entries = null) : IHeaderCollection
+{
+    public string this[string name] => GetAll(name).FirstOrDefault() ?? string.Empty;
+
+    private readonly KeyValuePair<string, string>[] _headers = entries ?? [];
+
+    public IReadOnlyList<string> GetAll(string name)
+        => _headers.Where(h => string.Equals(h.Key, name, StringComparison.OrdinalIgnoreCase))
+            .Select(h => h.Value)
+            .ToArray();
+
+    public bool Contains(string name) => GetAll(name).Count > 0;
+
+    public IEnumerator<KeyValuePair<string, IReadOnlyList<string>>> GetEnumerator()
+        => _headers
+            .Select(h => new KeyValuePair<string, IReadOnlyList<string>>(h.Key, [h.Value]))
+            .GetEnumerator();
+
+    System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
 }
 
 /// <summary>
@@ -881,6 +938,9 @@ internal sealed class FakeToolFrame(FakeToolPage page, string url, FakeToolFrame
     /// <summary>The last backend node id addressed through this frame.</summary>
     public long? ResolvedBackendNodeId { get; private set; }
 
+    /// <summary>The last selector resolved through this frame.</summary>
+    public string? ResolvedSelector { get; private set; }
+
     /// <summary>The expressions evaluated in this frame.</summary>
     public List<string> Evaluated { get; } = [];
 
@@ -926,7 +986,12 @@ internal sealed class FakeToolFrame(FakeToolPage page, string url, FakeToolFrame
         return Task.FromResult(default(T)!);
     }
 
-    public ILocator Locator(string selector, LocatorOptions? options = null) => page.RecordingLocator;
+    public ILocator Locator(string selector, LocatorOptions? options = null)
+    {
+        ResolvedSelector = selector;
+        return page.RecordingLocator;
+    }
+
     public ILocator GetByRole(string role, string? name = null) => page.RecordingLocator;
     public ILocator GetByText(string text, bool? exact = null) => page.RecordingLocator;
     public ILocator GetByLabel(string text, bool? exact = null) => page.RecordingLocator;

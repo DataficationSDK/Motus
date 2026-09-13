@@ -26,7 +26,7 @@ public class McpCommandTests
             "--executable-path /opt/browser --browser-arg=--no-sandbox --user-data-dir /tmp/profile "
             + "--storage-state state.json --proxy-server http://127.0.0.1:8080 --proxy-bypass localhost "
             + "--user-agent Agent/1.0 --locale en-GB --timezone Europe/Berlin --timeout 5000 "
-            + "--navigation-timeout 20000 --dialogs accept --config motus.config.json");
+            + "--navigation-timeout 20000 --settle 250 --dialogs accept --config motus.config.json");
 
         Assert.AreEqual(0, result.Errors.Count, string.Join("; ", result.Errors.Select(e => e.Message)));
     }
@@ -64,8 +64,17 @@ public class McpCommandTests
     [TestMethod]
     public void Parse_TimeoutsAreNumbers()
     {
-        Assert.AreEqual(0, Cmd.Parse("--timeout 5000 --navigation-timeout 20000").Errors.Count);
+        Assert.AreEqual(0, Cmd.Parse("--timeout 5000 --navigation-timeout 20000 --settle 0").Errors.Count);
         Assert.IsTrue(Cmd.Parse("--timeout soon").Errors.Count > 0);
+    }
+
+    [TestMethod]
+    public void Parse_NegativeSettle_HasError()
+    {
+        var result = Cmd.Parse("--settle -1");
+
+        Assert.AreEqual(1, result.Errors.Count);
+        StringAssert.Contains(result.Errors[0].Message, "--settle");
     }
 
     [TestMethod]
