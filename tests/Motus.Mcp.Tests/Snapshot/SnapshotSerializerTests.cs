@@ -43,10 +43,10 @@ public class SnapshotSerializerTests
 
         var result = SnapshotSerializer.Serialize(snapshot);
 
-        Assert.AreEqual(10, result.RefToBackendNodeId["e1"]);
-        Assert.AreEqual(11, result.RefToBackendNodeId["e2"]);
-        Assert.AreEqual(12, result.RefToBackendNodeId["e3"]);
-        Assert.AreEqual(3, result.RefToBackendNodeId.Count);
+        Assert.AreEqual(10, result.Refs["e1"].BackendNodeId);
+        Assert.AreEqual(11, result.Refs["e2"].BackendNodeId);
+        Assert.AreEqual(12, result.Refs["e3"].BackendNodeId);
+        Assert.AreEqual(3, result.Refs.Count);
     }
 
     [TestMethod]
@@ -61,8 +61,8 @@ public class SnapshotSerializerTests
 
         StringAssert.Contains(result.Text, "- form \"Login\"");
         Assert.IsFalse(result.Text.Split('\n')[0].Contains("[ref="), "Root form must not carry a ref.");
-        Assert.AreEqual(1, result.RefToBackendNodeId.Count, "Only the node with a backend id is refed.");
-        Assert.AreEqual(10, result.RefToBackendNodeId["e1"]);
+        Assert.AreEqual(1, result.Refs.Count, "Only the node with a backend id is refed.");
+        Assert.AreEqual(10, result.Refs["e1"].BackendNodeId);
     }
 
     [TestMethod]
@@ -129,8 +129,8 @@ public class SnapshotSerializerTests
 
         Assert.AreEqual(first.Text, second.Text);
         CollectionAssert.AreEquivalent(
-            first.RefToBackendNodeId.ToList(),
-            second.RefToBackendNodeId.ToList());
+            first.Refs.ToList(),
+            second.Refs.ToList());
     }
 
     // --- compaction, one rule per test ---
@@ -150,7 +150,7 @@ public class SnapshotSerializerTests
         var result = SnapshotSerializer.Serialize(snapshot);
 
         Assert.IsFalse(result.Text.Contains("InlineTextBox"), result.Text);
-        Assert.AreEqual(0, result.RefToBackendNodeId.Count, "layout nodes never take a ref");
+        Assert.AreEqual(0, result.Refs.Count, "layout nodes never take a ref");
     }
 
     [TestMethod]
@@ -171,7 +171,7 @@ public class SnapshotSerializerTests
         var result = SnapshotSerializer.Serialize(snapshot);
 
         Assert.AreEqual("- button \"Hide contents\" [ref=e1]: hide\n", result.Text);
-        Assert.AreEqual(1, result.RefToBackendNodeId.Count, "text never takes a ref of its own");
+        Assert.AreEqual(1, result.Refs.Count, "text never takes a ref of its own");
     }
 
     [TestMethod]
@@ -237,7 +237,7 @@ public class SnapshotSerializerTests
         var result = SnapshotSerializer.Serialize(snapshot);
 
         Assert.AreEqual("- listitem: Item one\n", result.Text);
-        Assert.AreEqual(0, result.RefToBackendNodeId.Count);
+        Assert.AreEqual(0, result.Refs.Count);
     }
 
     [TestMethod]
@@ -310,10 +310,10 @@ public class SnapshotSerializerTests
             "  - region [ref=e4]\n" +
             "  - paragraph: Plain words\n";
         Assert.AreEqual(expected, result.Text);
-        Assert.AreEqual(2, result.RefToBackendNodeId["e1"]);
-        Assert.AreEqual(4, result.RefToBackendNodeId["e2"]);
-        Assert.AreEqual(5, result.RefToBackendNodeId["e3"]);
-        Assert.AreEqual(8, result.RefToBackendNodeId["e4"]);
+        Assert.AreEqual(2, result.Refs["e1"].BackendNodeId);
+        Assert.AreEqual(4, result.Refs["e2"].BackendNodeId);
+        Assert.AreEqual(5, result.Refs["e3"].BackendNodeId);
+        Assert.AreEqual(8, result.Refs["e4"].BackendNodeId);
     }
 
     [TestMethod]

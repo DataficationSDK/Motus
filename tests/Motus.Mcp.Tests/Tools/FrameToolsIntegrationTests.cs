@@ -103,17 +103,81 @@ public class FrameToolsIntegrationTests
     }
 
     [TestMethod]
-    public async Task PageSnapshot_DoesNotContainTheFramesContent_ButSaysWhereToFindIt()
+    public async Task PageSnapshot_ContainsTheContentOfAFrameInItsOwnProcess()
     {
-        var text = TextOf(await CoreTools.SnapshotAsync(
+        var remote = await IndexOfAsync("/middle.html");
+
+        var text = TextOf(await SnapshotAsync());
+
+        // "Go" is the accessible name of the button inside that frame and appears nowhere in the
+        // page's own document, so matching it says the frame's own tree was read and printed.
+        StringAssert.Contains(text, "button \"Go\"");
+        StringAssert.Contains(text, $"[ref=f{remote}e",
+            "an element inside frame " + remote + " is addressed through it");
+    }
+
+    [TestMethod]
+    public async Task PageSnapshot_ReachesAFrameNestedInsideAFrameInItsOwnProcess()
+    {
+        var remote = await IndexOfAsync("/middle.html");
+        var deep = await IndexOfAsync("/deep.html");
+
+        var text = TextOf(await SnapshotAsync());
+
+        var remoteLine = LineWith(text, $"[ref=f{remote}e");
+        var deepLine = LineWith(text, $"[ref=f{deep}e");
+
+        StringAssert.Contains(deepLine, "\"deep\"");
+        Assert.IsTrue(
+            Indent(deepLine) > Indent(remoteLine),
+            "the second frame is printed inside the first, not beside it:\n" + text);
+    }
+
+    [TestMethod]
+    public async Task ARefFromThePageSnapshot_ClicksInsideAFrameTwoProcessesDeep()
+    {
+        var deep = await IndexOfAsync("/deep.html");
+        var text = TextOf(await SnapshotAsync());
+        var refId = RefOn(LineWith(text, $"[ref=f{deep}e"));
+
+        var clicked = await CoreTools.ClickAsync(
+            @ref: refId,
+            pageService: _pages!,
+            cancellationToken: CancellationToken.None,
+            @double: null);
+        Assert.IsFalse(clicked.IsError ?? false, TextOf(clicked));
+
+        var frames = await _pages!.ListFramesAsync();
+        Assert.AreEqual(1, await frames[deep].Frame.EvaluateAsync<int>("window.clicks"));
+    }
+
+    private Task<CallToolResult> SnapshotAsync()
+        => CoreTools.SnapshotAsync(
             pageService: _pages!,
             cancellationToken: CancellationToken.None,
             root_ref: null,
-            max_depth: null));
+            max_depth: null,
+            max_frames: null);
 
-        Assert.IsFalse(text.Contains("middle", StringComparison.Ordinal),
-            "the content of a frame in its own process is not in the page's tree");
-        StringAssert.Contains(text, "frame_select");
+    /// <summary>The first line of the snapshot containing the marker.</summary>
+    private static string LineWith(string text, string marker)
+    {
+        foreach (var line in text.Split('\n'))
+        {
+            if (line.Contains(marker, StringComparison.Ordinal))
+                return line;
+        }
+
+        Assert.Fail($"No line of the snapshot contains '{marker}'. Snapshot:\n{text}");
+        return string.Empty;
+    }
+
+    private static int Indent(string line) => line.Length - line.TrimStart(' ').Length;
+
+    private static string RefOn(string line)
+    {
+        var start = line.IndexOf("[ref=", StringComparison.Ordinal) + 5;
+        return line[start..line.IndexOf(']', start)];
     }
 
     [TestMethod]
@@ -121,11 +185,7 @@ public class FrameToolsIntegrationTests
     {
         await FrameTools.FrameSelectAsync(await IndexOfAsync("/middle.html"), _pages!, CancellationToken.None);
 
-        var text = TextOf(await CoreTools.SnapshotAsync(
-            pageService: _pages!,
-            cancellationToken: CancellationToken.None,
-            root_ref: null,
-            max_depth: null));
+        var text = TextOf(await SnapshotAsync());
 
         // "Go" is the accessible name of the button inside this frame and appears nowhere in the
         // page's own tree, so matching it says the tree really came from the frame.
@@ -138,11 +198,7 @@ public class FrameToolsIntegrationTests
     {
         var index = await IndexOfAsync("/middle.html");
         await FrameTools.FrameSelectAsync(index, _pages!, CancellationToken.None);
-        await CoreTools.SnapshotAsync(
-            pageService: _pages!,
-            cancellationToken: CancellationToken.None,
-            root_ref: null,
-            max_depth: null);
+        await SnapshotAsync();
 
         var refId = await FindRefAsync("button");
         var clicked = await CoreTools.ClickAsync(
@@ -192,11 +248,7 @@ public class FrameToolsIntegrationTests
         await FrameTools.FrameSelectAsync(await IndexOfAsync("/middle.html"), _pages!, CancellationToken.None);
         await FrameTools.FrameSelectAsync(0, _pages!, CancellationToken.None);
 
-        var text = TextOf(await CoreTools.SnapshotAsync(
-            pageService: _pages!,
-            cancellationToken: CancellationToken.None,
-            root_ref: null,
-            max_depth: null));
+        var text = TextOf(await SnapshotAsync());
 
         StringAssert.Contains(text, "main");
         Assert.IsFalse(text.Contains("Scoped to frame", StringComparison.Ordinal));

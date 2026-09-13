@@ -120,13 +120,13 @@ The server groups its tools by capability. Each tool returns structured content 
 
 Elements are addressed by the `ref` values returned in a snapshot, or by a selector. Take a `snapshot`, then pass a node's `ref` to `click`, `type`, or another interaction tool. References are relative to the most recent snapshot, so take a fresh snapshot after the page changes.
 
-Anywhere a `ref` is accepted, a selector is accepted in its place: CSS by default (`#submit`, `button.primary`), or prefixed with `xpath=`, `text=`, `role=`, or `data-testid=`. A selector needs no snapshot at all, so it is what to reach for when the refs in hand have gone stale, or when you already know a stable selector for the element and would rather say it than look it up. Anything shaped like a ref (`e5`) is read as one, so a ref the latest snapshot no longer holds still comes back as a stale ref rather than as a selector that matched nothing. A selector is searched in the selected frame when one is selected, and in the page otherwise.
+Anywhere a `ref` is accepted, a selector is accepted in its place: CSS by default (`#submit`, `button.primary`), or prefixed with `xpath=`, `text=`, `role=`, or `data-testid=`. A selector needs no snapshot at all, so it is what to reach for when the refs in hand have gone stale, or when you already know a stable selector for the element and would rather say it than look it up. Anything shaped like a ref (`e5`, or `f1e5` for an element inside a frame) is read as one, so a ref the latest snapshot no longer holds still comes back as a stale ref rather than as a selector that matched nothing. A selector is searched in the selected frame when one is selected, and in the page otherwise.
 
 `click` also takes `button` (`left`, `right`, or `middle`) and `modifiers` (any of `Alt`, `Control`, `Meta`, `Shift`), so a context menu or a ctrl-click is reachable on an element rather than only at a coordinate. Both run the same actionability checks as a plain click: the element has to be visible, enabled, settled, and receiving events first. A double-click is left-button only; use `click_xy` for a double-click with a button or modifiers.
 
 ### What a snapshot contains
 
-A snapshot is one line per node, indented to show nesting: the role, the accessible name in quotes, and then attributes in square brackets. A ref (`e1`, `e2`, ...) is attached to every node an agent might act on: interactive roles such as `button`, `link`, `textbox`, `combobox`, `checkbox`, `option`, `tab`, `menuitem`, `row`, and `cell`; any node with a name; anything focusable; and each `Iframe`. Wrappers, labels, and text carry no ref and are there for context. The attributes printed are `[level=N]` on headings, `[url=...]` on links, `[value="..."]` on form controls, and the state flags `[disabled]`, `[readonly]`, `[required]`, `[checked]`, `[selected]`, `[expanded]`, and `[pressed]` when set.
+A snapshot is one line per node, indented to show nesting: the role, the accessible name in quotes, and then attributes in square brackets. A ref (`e1`, `e2`, ...) is attached to every node an agent might act on: interactive roles such as `button`, `link`, `textbox`, `combobox`, `checkbox`, `option`, `tab`, `menuitem`, `row`, and `cell`; any node with a name; anything focusable; and each `Iframe`. Wrappers, labels, and text carry no ref and are there for context. The attributes printed are `[level=N]` on headings, `[url=...]` on links, `[value="..."]` on form controls, `[frame=N]` on an `iframe` whose content follows underneath, and the state flags `[disabled]`, `[readonly]`, `[required]`, `[checked]`, `[selected]`, `[expanded]`, and `[pressed]` when set.
 
 Text is folded into the element it names, so `button "Submit"` is one line rather than an element, its text, and the text's layout. Text that says something more than the name is printed after a colon (`listitem: Item one`), and text that sits between elements gets a `text:` line of its own so the order survives. An unnamed wrapper with a single child steps aside for it. The result on a long article is about a third the size of the raw tree, with refs on a quarter of its nodes.
 
@@ -154,7 +154,7 @@ click(e3)
      Refs from the last snapshot no longer address this page: it navigated. Take a new snapshot.
 ```
 
-The rows are the page and its title when either changed, a tab the page opened with the index `tab_select` takes, how many errors and uncaught page errors the action logged along with the cursor that reads exactly those, a dialog the action left open, and a note that the refs in hand no longer mean anything because the page navigated. An action that fails reports why it failed and nothing else.
+The rows are the page and its title when either changed, a tab the page opened with the index `tab_select` takes, how many errors and uncaught page errors the action logged along with the cursor that reads exactly those, a dialog the action left open, and a note that the refs in hand no longer mean anything because the page navigated. A frame that navigated on its own is reported the same way, by the index its refs carry, since the page's own address would show nothing. An action that fails reports why it failed and nothing else.
 
 The browser accepts a click before it has followed the link the click was on, so the result waits briefly for the page to show what the action did: 500 ms by default, ending early when a tab appears. `--settle` changes the wait, and `--settle 0` writes the result the instant the action returns, which is right for a local page that reacts at once and wrong for one that navigates through a slow server.
 
@@ -211,17 +211,30 @@ A "confirm" dialog is open: "Delete this?". Handle it with handle_dialog before 
 
 ### Frames
 
-A page snapshot describes each `iframe` element but not what is inside it, and for a frame the browser renders in its own process the contents are not in the page's tree at all. Frames are addressed by selection, the same way tabs and contexts are:
+A page snapshot contains the frames the page hosts. Each frame's content is printed inside the `iframe` element that holds it, so a payment form in a frame reads like the rest of the page and a click inside it takes no more calls than a click outside it:
 
-1. `frame_list` lists the frames in document order with their nesting depth. Index 0 is the page itself.
-2. `frame_select <index>` scopes the session to one of them. `frame_select 0` returns to the page.
-3. `snapshot` then describes that frame, and its refs address elements inside it.
+```
+- main
+  - heading "Checkout" [ref=e4] [level=1]
+  - Iframe "Payment frame" [ref=e14] [frame=1]
+    - textbox "Card number" [ref=f1e1]
+    - button "Pay now" [ref=f1e2]
+```
 
-Scope covers `snapshot`, `evaluate`, the `wait_for` text conditions, and any selector passed to an interaction tool, which is searched in the frame selected at the time of the call. Refs need no scope: a ref from a scoped snapshot keeps addressing the frame it came from, even after the scope moves on. Selection resets on navigation and on switching tab or context, since the frame it named is gone by then.
+The `[frame=N]` on the `iframe` line is the frame's index, and it is the prefix on every ref inside: `f1e2` is the second addressable element of frame 1. Pass that ref to `click` or `type` like any other and it acts inside the frame, with no frame selected and nothing else to set up. A frame nested inside a frame is printed inside its own parent, as deep as the page nests them, and its refs carry its own index.
 
-The coordinate tools stay in page coordinates whatever is selected. Their input is dispatched at the page level and the browser decides which frame is under the point.
+The browser does not hand frames over with the page, so each one is read separately and stitched in. Ten of them are read by default, which covers ordinary pages; `max_frames` on `snapshot` raises or lowers that. Past the limit, and for a frame whose element is hidden or whose content could not be read, the snapshot says how many frames were left out and points at the tools below. `max_depth` counts a frame's content as levels of the tree like anything else, so a shallow snapshot stops at the `iframe` line.
 
-A page snapshot says how many frames its tree does not describe, so an agent that finds an `iframe` with nothing under it is pointed at `frame_list` rather than left to conclude the content is missing. See [Frames and iframes](frames-and-iframes.md).
+Two tools remain for the things a ref cannot do:
+
+1. `frame_list` lists the frames in document order with their nesting depth. Index 0 is the page itself, and each index is the one the snapshot printed as `[frame=N]`.
+2. `frame_select <index>` scopes the session to one frame. `frame_select 0` returns to the page.
+
+Scope is what `evaluate` and the `wait_for` text conditions need, since those name no element and so have no frame of their own to work from. It also narrows `snapshot`, which then describes that one frame on its own with plain `e1`, `e2` refs, and it decides where a selector is searched. Refs need no scope either way: a ref keeps addressing the document it was read from, even after the scope moves on. Selection resets on navigation and on switching tab or context, since the frame it named is gone by then.
+
+A frame can navigate on its own without the page moving at all, which leaves the refs inside it addressing a document that is no longer there. When that happens, the next action says so by frame index, the same way it reports a page that navigated.
+
+The coordinate tools stay in page coordinates whatever is selected. Their input is dispatched at the page level and the browser decides which frame is under the point. See [Frames and iframes](frames-and-iframes.md).
 
 ### Driving a browser that is already running
 

@@ -3,14 +3,25 @@ using Motus.Abstractions;
 namespace Motus.Mcp;
 
 /// <summary>
+/// A frame a page snapshot printed inside itself: the index the frame tools address it by, the
+/// frame, and the address it held when its tree was read.
+/// </summary>
+public sealed record SnapshotFrame(int Index, IFrame Frame, string Url);
+
+/// <summary>
 /// Holds the most recent accessibility snapshot for a single page and turns the targets a caller
 /// names into actionable locators: the refs it assigned, and selectors, which need no snapshot at
 /// all. Refs are valid only for the latest snapshot; taking a new snapshot replaces the ref map.
 /// </summary>
+/// <remarks>
+/// A page snapshot prints the frames the page hosts inside it, so a ref can name an element in any
+/// of them. Such a ref carries the frame it came from (<c>f1e2</c> is the second element of frame
+/// one) and is resolved through that frame whatever the session is scoped to at the time.
+/// </remarks>
 public sealed class PageSnapshotService
 {
     private readonly IPage _page;
-    private IReadOnlyDictionary<string, long>? _refToBackendNodeId;
+    private IReadOnlyDictionary<string, RefTarget>? _refs;
     private IReadOnlyDictionary<long, string>? _backendNodeIdToRef;
     private IReadOnlyList<AccessibilityNode>? _roots;
     private IFrame? _refFrame;
@@ -23,6 +34,24 @@ public sealed class PageSnapshotService
 
     /// <summary>The text of the most recent snapshot, or null if none has been taken.</summary>
     public string? LastSnapshot { get; private set; }
+
+    /// <summary>
+    /// The frames the most recent snapshot printed inside the page, each with the address it held
+    /// when it was read. Empty when the snapshot covered no frames.
+    /// </summary>
+    /// <remarks>
+    /// Kept so that an action can say when a frame has navigated out from under the refs the agent
+    /// is holding. A frame can go somewhere else without the page moving at all, and nothing in the
+    /// page's own address would show it.
+    /// </remarks>
+    public IReadOnlyList<SnapshotFrame> InlinedFrames { get; private set; } = [];
+
+    /// <summary>
+    /// The frame the most recent snapshot described, or null when it described the page. A snapshot
+    /// rooted at a ref inside a frame ends up scoped to that frame, so this is not always the frame
+    /// the caller asked for.
+    /// </summary>
+    public IFrame? Scope => _refFrame;
 
     /// <summary>
     /// Fetches a fresh accessibility snapshot, assigns refs in document order, and
@@ -51,50 +80,79 @@ public sealed class PageSnapshotService
     /// Fetches a fresh snapshot of one frame, or of the whole page when <paramref name="scope"/> is
     /// null, and renders it as above.
     /// </summary>
+    public Task<string> TakeSnapshotAsync(
+        IFrame? scope, string? rootRef, int? maxDepth, CancellationToken ct = default)
+        => TakeSnapshotAsync(scope, rootRef, maxDepth, maxFrames: null, ct);
+
+    /// <summary>
+    /// Fetches a fresh snapshot and renders it as above, printing the frames the page hosts inside
+    /// it up to <paramref name="maxFrames"/> of them.
+    /// </summary>
+    /// <param name="scope">The frame to describe, or null for the whole page.</param>
+    /// <param name="rootRef">A ref from the previous snapshot to root this one at, or null.</param>
+    /// <param name="maxDepth">How many levels of the tree to render, or null for all of it.</param>
+    /// <param name="maxFrames">How many frames to print inside the page, or null for the default.</param>
+    /// <param name="ct">Cancellation token.</param>
     /// <remarks>
-    /// The frame is remembered alongside the ref map, because a ref only means anything to the
-    /// session that produced it. Resolving against whatever frame happens to be selected later
+    /// The frame a ref came from is remembered alongside it, because a ref only means anything to
+    /// the document that produced it. Resolving against whatever frame happens to be selected later
     /// would silently address a different document, or nothing at all.
+    /// <para>
+    /// A snapshot of one frame describes that frame and stops there, so its refs read as plain
+    /// numbers exactly as they did before frames were printed inline. Only a snapshot of the page
+    /// reaches into frames, and the refs it hands out there name the frame they came from.
+    /// </para>
     /// </remarks>
     public async Task<string> TakeSnapshotAsync(
-        IFrame? scope, string? rootRef, int? maxDepth, CancellationToken ct = default)
+        IFrame? scope, string? rootRef, int? maxDepth, int? maxFrames, CancellationToken ct = default)
     {
-        long? rootBackendNodeId = null;
+        RefTarget? root = null;
         if (rootRef is not null)
         {
-            if (_refToBackendNodeId is null)
+            if (_refs is null)
                 throw new SnapshotNotTakenException();
 
-            if (!_refToBackendNodeId.TryGetValue(rootRef, out var backendNodeId))
+            if (!_refs.TryGetValue(rootRef, out var target))
                 throw new StaleRefException(rootRef);
 
-            rootBackendNodeId = backendNodeId;
+            root = target;
         }
+
+        // A ref that named an element inside a frame roots the snapshot in that frame's document,
+        // which is also what scopes it: the tree that comes back is the frame's, so the refs handed
+        // out for it are the frame's own and carry no prefix.
+        scope = root?.Frame ?? scope;
 
         var snapshot = scope is null
             ? await _page.AccessibilitySnapshotAsync(ct).ConfigureAwait(false)
             : await scope.AccessibilitySnapshotAsync(ct).ConfigureAwait(false);
 
-        SerializedSnapshot serialized;
-        if (rootBackendNodeId is { } id)
+        var roots = snapshot.Roots;
+        if (root is { } target2)
         {
-            var rootNode = SnapshotSerializer.FindByBackendId(snapshot.Roots, id)
-                ?? throw new StaleRefException(rootRef!);
-            serialized = SnapshotSerializer.Serialize([rootNode], maxDepth);
-        }
-        else
-        {
-            serialized = SnapshotSerializer.Serialize(snapshot.Roots, maxDepth);
+            roots = [SnapshotSerializer.FindByBackendId(snapshot.Roots, target2.BackendNodeId)
+                ?? throw new StaleRefException(rootRef!)];
         }
 
-        _refToBackendNodeId = serialized.RefToBackendNodeId;
-        _backendNodeIdToRef = BuildReverseMap(serialized.RefToBackendNodeId);
+        // Only a page snapshot reaches into frames. Inside one frame the caller has already said
+        // which document it is looking at, and a second level of prefixed refs there would name
+        // frames by an index the printout never showed.
+        var frames = scope is null
+            ? await FrameCollector.CollectAsync(
+                _page, roots, maxFrames ?? FrameCollector.DefaultMaxFrames, ct).ConfigureAwait(false)
+            : null;
+
+        var serialized = SnapshotSerializer.Serialize(roots, maxDepth, frames);
+
+        _refs = serialized.Refs;
+        _backendNodeIdToRef = BuildReverseMap(serialized.Refs);
         _roots = snapshot.Roots;
         _refFrame = scope;
+        InlinedFrames = [.. serialized.Frames.Select(f => new SnapshotFrame(f.Index, f.Frame, f.Frame.Url))];
 
         var text = serialized.Text;
 
-        if (rootRef is null && serialized.RefToBackendNodeId.Count == 0)
+        if (rootRef is null && serialized.Refs.Count == 0)
         {
             // The browser may be one that cannot produce an accessibility tree at all, in which
             // case the snapshot says why rather than guessing at the page. Blaming the page for
@@ -115,28 +173,34 @@ public sealed class PageSnapshotService
                 + "with click_xy, drag, or scroll_xy.\n";
         }
 
-        // A page snapshot stops at each iframe: its element is described, its contents are not, and
-        // for a frame the browser renders in its own process they are not in this tree at all. Say
-        // so, or the agent reads an empty-looking iframe and concludes the content is missing.
-        if (scope is null && rootRef is null && _page.Frames.Count > 1)
+        // A frame left out of the tree is one the agent cannot see at all, so say how many and
+        // where to look. A frame is left out when the page has more of them than this snapshot
+        // prints, when its element is hidden and so is not in the page's tree to print it under,
+        // or when its own tree could not be read.
+        var missing = _page.Frames.Count - 1 - serialized.Frames.Count;
+        if (scope is null && missing > 0)
         {
-            var others = _page.Frames.Count - 1;
             text = text.TrimEnd('\n')
-                + $"\n\nNote: this page has {others} frame{(others == 1 ? "" : "s")} whose contents are not "
-                + "in this tree. Use frame_list to see them and frame_select to look inside one.\n";
+                + $"\n\nNote: this page has {missing} more frame{(missing == 1 ? "" : "s")} whose contents are "
+                + "not in this tree. Use frame_list to see them and frame_select to look inside one.\n";
         }
 
         LastSnapshot = text;
         return text;
     }
 
-    private static Dictionary<long, string> BuildReverseMap(IReadOnlyDictionary<string, long> forward)
+    private static Dictionary<long, string> BuildReverseMap(IReadOnlyDictionary<string, RefTarget> forward)
     {
-        // The forward map is 1:1 (each ref maps to a distinct backend node), so a
-        // straight inversion is unambiguous.
+        // Only the refs of the document the snapshot was asked for are inverted. The audit reads
+        // this map to put a ref on a violation, and it audits that one document, so a node
+        // identifier from a frame could only collide with one of its own.
         var reverse = new Dictionary<long, string>(forward.Count);
-        foreach (var (refId, backendNodeId) in forward)
-            reverse[backendNodeId] = refId;
+        foreach (var (refId, target) in forward)
+        {
+            if (target.Frame is null)
+                reverse[target.BackendNodeId] = refId;
+        }
+
         return reverse;
     }
 
@@ -185,15 +249,19 @@ public sealed class PageSnapshotService
                 : _page.Locator(refId);
         }
 
-        if (_refToBackendNodeId is null)
+        if (_refs is null)
             throw new SnapshotNotTakenException();
 
-        if (!_refToBackendNodeId.TryGetValue(refId, out var backendNodeId))
+        if (!_refs.TryGetValue(refId, out var target))
             throw new StaleRefException(refId);
 
-        return _refFrame is { } frame
-            ? frame.LocatorByBackendNodeId(backendNodeId)
-            : _page.LocatorByBackendNodeId(backendNodeId);
+        // A ref that named an element inside a frame carries that frame, and is resolved through it
+        // whatever the session is scoped to now. Everything else belongs to the document the
+        // snapshot covered.
+        var owner = target.Frame ?? _refFrame;
+        return owner is { } frame
+            ? frame.LocatorByBackendNodeId(target.BackendNodeId)
+            : _page.LocatorByBackendNodeId(target.BackendNodeId);
     }
 
     /// <summary>

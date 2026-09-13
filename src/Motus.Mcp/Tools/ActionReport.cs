@@ -61,6 +61,7 @@ internal sealed class ActionReport : IDisposable
     private readonly string? _title;
     private readonly long _consoleCursor;
     private readonly bool _hadSnapshot;
+    private readonly IReadOnlyList<SnapshotFrame> _framesBefore;
     private readonly IReadOnlyList<IPage>? _tabsBefore;
 
     private bool _subscribed;
@@ -72,6 +73,7 @@ internal sealed class ActionReport : IDisposable
         string? title,
         long consoleCursor,
         bool hadSnapshot,
+        IReadOnlyList<SnapshotFrame> framesBefore,
         IReadOnlyList<IPage>? tabsBefore)
     {
         _pageService = pageService;
@@ -80,6 +82,7 @@ internal sealed class ActionReport : IDisposable
         _title = title;
         _consoleCursor = consoleCursor;
         _hadSnapshot = hadSnapshot;
+        _framesBefore = framesBefore;
         _tabsBefore = tabsBefore;
 
         _page.Popup += OnPopup;
@@ -104,6 +107,7 @@ internal sealed class ActionReport : IDisposable
             blocked ? null : await PageDescription.TryTitleAsync(page).ConfigureAwait(false),
             pageService.ConsoleLog?.NextSequence ?? 0,
             pageService.HasSnapshot(page),
+            pageService.SnapshotFrames(page),
             await TryListTabsAsync(pageService, cancellationToken).ConfigureAwait(false));
     }
 
@@ -199,8 +203,40 @@ internal sealed class ActionReport : IDisposable
 
         if (moved && _hadSnapshot)
             rows.Add("Refs from the last snapshot no longer address this page: it navigated. Take a new snapshot.");
+        else if (MovedFrames() is { Count: > 0 } movedFrames)
+            rows.Add(FrameRefRow(movedFrames));
 
         return rows;
+    }
+
+    /// <summary>
+    /// The frames the last snapshot printed that have since gone somewhere else, by their index.
+    /// </summary>
+    /// <remarks>
+    /// A frame can navigate or detach while the page it sits in stays exactly where it was, and the
+    /// page's own address would show nothing, so the refs inside that frame would quietly stop
+    /// meaning anything. Only the frames the snapshot actually printed are checked, because only
+    /// those handed out refs. Nothing here touches the browser.
+    /// </remarks>
+    private List<int> MovedFrames()
+    {
+        var moved = new List<int>();
+        foreach (var frame in _framesBefore)
+        {
+            if (frame.Frame.IsDetached || !string.Equals(frame.Frame.Url, frame.Url, StringComparison.Ordinal))
+                moved.Add(frame.Index);
+        }
+
+        return moved;
+    }
+
+    private static string FrameRefRow(List<int> moved)
+    {
+        var which = moved.Count == 1
+            ? $"frame {moved[0]}"
+            : "frames " + string.Join(", ", moved);
+
+        return $"Refs inside {which} no longer address anything: the frame navigated. Take a new snapshot.";
     }
 
     /// <summary>

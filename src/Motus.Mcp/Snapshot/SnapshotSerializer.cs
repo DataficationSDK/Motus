@@ -4,13 +4,26 @@ using Motus.Abstractions;
 namespace Motus.Mcp;
 
 /// <summary>
+/// Where a ref points: a backend DOM node, and the frame whose document holds it. A null frame
+/// means the document the snapshot itself covered, which is the page unless the snapshot was
+/// scoped.
+/// </summary>
+/// <remarks>
+/// A node identifier only means anything to the document it was read from, so a ref that names an
+/// element inside a frame has to carry that frame with it. Otherwise the same number would address
+/// a different element, or nothing, as soon as the session looked somewhere else.
+/// </remarks>
+internal sealed record RefTarget(long BackendNodeId, IFrame? Frame = null);
+
+/// <summary>
 /// The serialized form of an accessibility snapshot: the indented text the agent
-/// reads, paired with the map from each assigned ref to the backend DOM node it
-/// addresses.
+/// reads, the map from each assigned ref to the element it addresses, and the
+/// frames that were printed inside it.
 /// </summary>
 internal sealed record SerializedSnapshot(
     string Text,
-    IReadOnlyDictionary<string, long> RefToBackendNodeId);
+    IReadOnlyDictionary<string, RefTarget> Refs,
+    IReadOnlyList<FrameTree> Frames);
 
 /// <summary>
 /// Renders an <see cref="AccessibilitySnapshot"/> into a compact, indented ARIA
@@ -69,11 +82,20 @@ internal static class SnapshotSerializer
     /// A wrapper that collapses into its child takes no level of its own. Refs are
     /// assigned only to nodes that are rendered.
     /// </summary>
-    public static SerializedSnapshot Serialize(IReadOnlyList<AccessibilityNode> roots, int? maxDepth)
+    /// <param name="roots">The roots of the document to render.</param>
+    /// <param name="maxDepth">How many printed levels below each root to render, or null for all.</param>
+    /// <param name="frames">
+    /// The frame documents to print inside this one, found by the element that hosts each. Null
+    /// prints each frame element as a leaf, which is what a snapshot already scoped to one frame
+    /// wants. A frame counts as a level of the tree like anything else, so a depth limit stops at a
+    /// frame boundary just as it stops anywhere else.
+    /// </param>
+    public static SerializedSnapshot Serialize(
+        IReadOnlyList<AccessibilityNode> roots, int? maxDepth, InlineFrames? frames = null)
     {
         ArgumentNullException.ThrowIfNull(roots);
 
-        var writer = new Writer(maxDepth);
+        var writer = new Writer(maxDepth, frames);
         foreach (var root in roots)
         {
             if (writer.Resolve(root) is { } node)
@@ -181,6 +203,9 @@ internal static class SnapshotSerializer
     private static bool IsStaticText(AccessibilityNode node)
         => string.Equals(node.Role, "StaticText", StringComparison.OrdinalIgnoreCase);
 
+    private static bool IsDocument(AccessibilityNode node)
+        => string.Equals(node.Role, "RootWebArea", StringComparison.OrdinalIgnoreCase);
+
     private static bool IsGeneric(AccessibilityNode node)
         => string.IsNullOrEmpty(node.Role)
             || string.Equals(node.Role, "generic", StringComparison.OrdinalIgnoreCase)
@@ -239,15 +264,23 @@ internal static class SnapshotSerializer
     /// after dropping and collapsing, so a wrapper chain is resolved once rather than once per
     /// level it is looked at from.
     /// </summary>
-    private sealed class Writer(int? maxDepth)
+    private sealed class Writer(int? maxDepth, InlineFrames? frames)
     {
         private readonly StringBuilder _text = new();
-        private readonly Dictionary<string, long> _refs = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, RefTarget> _refs = new(StringComparer.Ordinal);
         private readonly Dictionary<AccessibilityNode, IReadOnlyList<AccessibilityNode>> _children =
             new(ReferenceEqualityComparer.Instance);
         private int _nextRef = 1;
 
-        public SerializedSnapshot Finish() => new(_text.ToString(), _refs);
+        // The document being written, and the prefix its refs carry. The document the snapshot was
+        // asked for is unprefixed and needs no frame recorded against its refs; each frame printed
+        // inside it numbers its own refs from one behind its index, so f1e2 inside the page reads
+        // the same as e2 does in a snapshot scoped to frame 1.
+        private IFrame? _frame;
+        private string _prefix = "";
+        private readonly List<FrameTree> _frames = [];
+
+        public SerializedSnapshot Finish() => new(_text.ToString(), _refs, _frames);
 
         /// <summary>
         /// The node as it will be printed: the node itself, the one child an unnamed wrapper
@@ -293,10 +326,17 @@ internal static class SnapshotSerializer
 
             if (TakesRef(node))
             {
-                var refId = $"e{_nextRef++}";
-                _refs[refId] = node.BackendDOMNodeId!.Value;
+                var refId = $"{_prefix}e{_nextRef++}";
+                _refs[refId] = new RefTarget(node.BackendDOMNodeId!.Value, _frame);
                 _text.Append(" [ref=").Append(refId).Append(']');
             }
+
+            // A frame element is the one place where the printed tree crosses into another
+            // document, so it names the index the frame tools use for it. That index is also the
+            // prefix on every ref inside, which is how an agent reads f1e2 back to a frame.
+            var inner = FrameUnder(node);
+            if (inner is not null)
+                _text.Append(" [frame=").Append(inner.Index).Append(']');
 
             // List items carry a level too, but it says how deep the list is nested, which the
             // indentation already shows. A heading's level is its outline rank, which nothing
@@ -338,7 +378,7 @@ internal static class SnapshotSerializer
                 remaining.Add(child);
             }
 
-            if (remaining.Count > 0 && remaining.TrueForAll(IsStaticText))
+            if (inner is null && remaining.Count > 0 && remaining.TrueForAll(IsStaticText))
             {
                 var joined = string.Join(" ", remaining.Select(child => Normalize(child.Name)));
                 if (joined != name)
@@ -350,6 +390,57 @@ internal static class SnapshotSerializer
             _text.Append('\n');
             foreach (var child in remaining)
                 Write(child, depth + 1);
+
+            if (inner is not null)
+                WriteFrame(inner, depth + 1);
+        }
+
+        /// <summary>
+        /// The frame document the given element hosts, or null when it hosts none that was
+        /// gathered: a frame past the cap, one whose tree could not be read, or any element at all
+        /// when the caller asked for no frames.
+        /// </summary>
+        private FrameTree? FrameUnder(AccessibilityNode node)
+            => frames is not null && node.BackendDOMNodeId is { } id ? frames.Find(_frame, id) : null;
+
+        /// <summary>
+        /// Writes a frame's document where the element that hosts it stands, numbering its refs
+        /// from one again behind the frame's own prefix.
+        /// </summary>
+        private void WriteFrame(FrameTree tree, int depth)
+        {
+            if (maxDepth is { } limit && depth > limit)
+                return;
+
+            var outerFrame = _frame;
+            var outerPrefix = _prefix;
+            var outerNextRef = _nextRef;
+
+            _frame = tree.Frame;
+            _prefix = "f" + tree.Index;
+            _nextRef = 1;
+            _frames.Add(tree);
+
+            // The frame's document node is dropped: that a second document starts here is what the
+            // element hosting it has just said, and repeating it would cost a line and a level of
+            // indentation on every frame on the page.
+            if (tree.Roots.Count == 1 && IsDocument(tree.Roots[0]))
+            {
+                foreach (var child in ChildrenOf(tree.Roots[0]))
+                    Write(child, depth);
+            }
+            else
+            {
+                foreach (var root in tree.Roots)
+                {
+                    if (Resolve(root) is { } node)
+                        Write(node, depth);
+                }
+            }
+
+            _frame = outerFrame;
+            _prefix = outerPrefix;
+            _nextRef = outerNextRef;
         }
 
         private IReadOnlyList<AccessibilityNode> ChildrenOf(AccessibilityNode node)

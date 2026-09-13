@@ -166,6 +166,21 @@ public class ActivePageService
     }
 
     /// <summary>
+    /// The frames the page's last snapshot printed inside itself, with the address each held at the
+    /// time, or an empty list when there is no snapshot to speak of.
+    /// </summary>
+    /// <remarks>
+    /// Asked before an action so the result can say when a frame has gone somewhere else under the
+    /// refs the agent is holding. Like <see cref="HasSnapshot"/>, this does not create a snapshot
+    /// service, so asking never changes the answer.
+    /// </remarks>
+    public IReadOnlyList<SnapshotFrame> SnapshotFrames(IPage page)
+    {
+        ArgumentNullException.ThrowIfNull(page);
+        return _snapshots.TryGetValue(page, out var service) ? service.InlinedFrames : [];
+    }
+
+    /// <summary>
     /// Drops a page's snapshot service so the refs from its last snapshot no longer
     /// resolve. Called after a navigation, which invalidates those refs; a
     /// subsequent ref-addressed call then reports that a fresh snapshot is needed.

@@ -16,6 +16,7 @@ internal static class ToolDescriptions
     /// registers a selector strategy for; anything without a prefix is read as CSS.
     /// </summary>
     public const string Target =
-        "A ref from the latest snapshot (e5), or a selector: CSS by default, or prefixed with "
-        + "xpath=, text=, role=, or data-testid=. A selector needs no snapshot.";
+        "A ref from the latest snapshot (e5, or f1e5 for an element inside frame 1), or a selector: "
+        + "CSS by default, or prefixed with xpath=, text=, role=, or data-testid=. A selector needs "
+        + "no snapshot.";
 }

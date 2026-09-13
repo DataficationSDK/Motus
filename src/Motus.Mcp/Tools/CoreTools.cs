@@ -64,13 +64,18 @@ public sealed class CoreTools
         + "that click and type use to address them, and those tools take a selector just as readily; other "
         + "nodes are printed for context without a ref. Text is "
         + "printed inline on its element's line, headings show [level=N], links show [url=...], and form "
-        + "controls show [value=\"...\"] and state flags. A page tree describes each iframe element but not "
-        + "its contents; frame_select looks inside.")]
+        + "controls show [value=\"...\"] and state flags. A page tree contains the frames the page hosts, "
+        + "printed inside the iframe element that holds each and marked [frame=N]; refs inside frame 1 read "
+        + "f1e2 and act on that frame without selecting it first.")]
     public static async Task<CallToolResult> SnapshotAsync(
         ActivePageService pageService,
         CancellationToken cancellationToken,
-        [Description("Root the snapshot at the subtree of this ref from the previous snapshot.")] string? root_ref = null,
-        [Description("Limit how many levels deep the tree is rendered; 0 renders only the root.")] int? max_depth = null)
+        [Description("Root the snapshot at the subtree of this ref from the previous snapshot. A ref inside a "
+            + "frame (f1e2) roots it in that frame.")] string? root_ref = null,
+        [Description("Limit how many levels deep the tree is rendered; 0 renders only the root. A frame's "
+            + "contents count as levels of the tree like anything else.")] int? max_depth = null,
+        [Description("Limit how many frames are printed inside the page; 10 by default. Frames past the limit "
+            + "are named by frame_list and read with frame_select.")] int? max_frames = null)
     {
         try
         {
@@ -81,15 +86,18 @@ public sealed class CoreTools
             // runner too: a page stopped on a dialog cannot answer it either.
             return await ActionRunner.RunAsync(pageService.Dialogs, cancellationToken, async token =>
             {
-                var text = await pageService.GetSnapshotService(page)
-                    .TakeSnapshotAsync(frame, root_ref, max_depth, token)
+                var snapshots = pageService.GetSnapshotService(page);
+                var text = await snapshots
+                    .TakeSnapshotAsync(frame, root_ref, max_depth, max_frames, token)
                     .ConfigureAwait(false);
 
                 // Said on every scoped snapshot rather than only on the frame_select that set the
                 // scope, because the two are often several calls apart and a tree that silently
-                // describes a different document than the agent expects is hard to notice.
-                if (frame is not null)
-                    text = $"Scoped to frame {frame.Url}\n\n{text}";
+                // describes a different document than the agent expects is hard to notice. The
+                // scope is read back rather than assumed, since rooting at a ref inside a frame
+                // scopes the snapshot to that frame whether or not one was selected.
+                if (snapshots.Scope is { } scoped)
+                    text = $"Scoped to frame {scoped.Url}\n\n{text}";
 
                 return ToolResultHelper.Text(text);
             }).ConfigureAwait(false);

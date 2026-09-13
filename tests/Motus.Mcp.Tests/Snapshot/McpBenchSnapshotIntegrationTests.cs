@@ -100,10 +100,11 @@ public class McpBenchSnapshotIntegrationTests
         StringAssert.Contains(text, "- heading \"Checkout\" [ref=e4] [level=1]\n");
         StringAssert.Contains(text, $"- link \"Other page\" [ref=e2] [url={_server.OtherUrl}]\n");
         StringAssert.Contains(text, "- combobox \"Plan\" [ref=e6] [value=\"Free\"]\n");
-        StringAssert.Contains(text, "- Iframe \"Payment frame\" [ref=e14]\n");
+        StringAssert.Contains(text, "- Iframe \"Payment frame\" [ref=e14] [frame=1]\n");
 
-        // Refs go to controls, named nodes, and frames; wrappers and labels get none.
-        Assert.AreEqual(14, service.LastSnapshot!.Split("[ref=").Length - 1, text);
+        // Refs go to controls, named nodes, and frames; wrappers and labels get none. Fourteen in
+        // the page itself, and one for the only control inside the frame it hosts.
+        Assert.AreEqual(15, service.LastSnapshot!.Split("[ref=").Length - 1, text);
         Assert.IsFalse(text.Contains("- form ["), "an unnamed form is not a target: " + text);
         Assert.IsFalse(text.Contains("- LabelText ["), "a label is not a target: " + text);
     }
