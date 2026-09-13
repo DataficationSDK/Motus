@@ -51,9 +51,12 @@ public sealed class CoreTools
     }
 
     [McpServerTool(Name = "snapshot", Title = "Accessibility snapshot", Destructive = false, ReadOnly = true)]
-    [Description("Returns an indented accessibility tree of the active page, or of the scoped frame when one is "
-        + "selected. Each addressable element is tagged with a ref (e1, e2, ...) that click and type use to "
-        + "address it. A page tree describes each iframe element but not its contents; frame_select looks inside.")]
+    [Description("Returns a compact indented accessibility tree of the active page, or of the scoped frame when "
+        + "one is selected. Interactive, named, and focusable elements and iframes carry a ref (e1, e2, ...) "
+        + "that click and type use to address them; other nodes are printed for context without one. Text is "
+        + "printed inline on its element's line, headings show [level=N], links show [url=...], and form "
+        + "controls show [value=\"...\"] and state flags. A page tree describes each iframe element but not "
+        + "its contents; frame_select looks inside.")]
     public static async Task<CallToolResult> SnapshotAsync(
         ActivePageService pageService,
         CancellationToken cancellationToken,

@@ -17,9 +17,10 @@ public sealed class AccessibilityTools
 {
     [McpServerTool(Name = "audit_accessibility", Title = "Audit accessibility", Destructive = false, ReadOnly = true)]
     [Description("Runs WCAG 2.1 A and AA accessibility checks against the active page and returns the "
-        + "violations found, each with a rule id, severity, message, and (when the element is addressable) "
-        + "a ref usable with click, type, and other tools. A fresh snapshot is taken as part of the audit, "
-        + "so refs from an earlier snapshot are replaced.")]
+        + "violations found, each with a rule id, severity, message, the node's role, name, and text, a "
+        + "best-effort CSS selector, and (when the snapshot gave the element a ref) a ref usable with click, "
+        + "type, and other tools. A fresh snapshot is taken as part of the audit, so refs from an earlier "
+        + "snapshot are replaced.")]
     public static async Task<CallToolResult> AuditAccessibilityAsync(
         ActivePageService pageService,
         CancellationToken cancellationToken,
@@ -63,8 +64,16 @@ public sealed class AccessibilityTools
             var array = new JsonArray();
             foreach (var violation in violations)
             {
+                // The snapshot gives refs only to nodes worth targeting, and a violation often
+                // sits on one that is not: an image with no alt text, a landmark with no name.
+                // Such a violation has no ref, and its role, name, text, and selector are what
+                // identify it. Printing extra refs for the audit's sake would undo the compaction
+                // on exactly the pages that need it most.
                 var refId = violation.BackendDOMNodeId is long nodeId
                     ? snapshots.GetRefForNodeId(nodeId)
+                    : null;
+                var nodeText = violation.BackendDOMNodeId is long textNodeId
+                    ? snapshots.GetTextForNodeId(textNodeId)
                     : null;
 
                 array.Add(new JsonObject
@@ -74,6 +83,8 @@ public sealed class AccessibilityTools
                     ["message"] = violation.Message,
                     ["nodeRole"] = violation.NodeRole,
                     ["nodeName"] = violation.NodeName,
+                    ["nodeText"] = nodeText,
+                    ["selector"] = violation.Selector,
                     ["ref"] = refId,
                 });
             }

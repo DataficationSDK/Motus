@@ -95,7 +95,7 @@ printf '%s\n' \
   | motus mcp
 ```
 
-The server responds with an `initialize` result identifying itself as `motus`, followed by a `tools/list` result enumerating every available tool. A navigate-then-snapshot exchange exercises a live browser end to end: send a `tools/call` for `navigate` with a `url`, wait for the browser to launch, then a `tools/call` for `snapshot`. The snapshot result is an indented accessibility tree with a `[ref=...]` on each node, which is what an agent uses to target elements.
+The server responds with an `initialize` result identifying itself as `motus`, followed by a `tools/list` result enumerating every available tool. A navigate-then-snapshot exchange exercises a live browser end to end: send a `tools/call` for `navigate` with a `url`, wait for the browser to launch, then a `tools/call` for `snapshot`. The snapshot result is an indented accessibility tree with a `[ref=...]` on each addressable node, which is what an agent uses to target elements.
 
 ---
 
@@ -119,6 +119,14 @@ The server groups its tools by capability. Each tool returns structured content 
 | Recording and codegen | `generate_pom`, `trace_start`, `trace_stop`, `har_start`, `har_stop`, `video_start`, `video_stop` |
 
 Elements are addressed by the `ref` values returned in a snapshot rather than by CSS or XPath. Take a `snapshot`, then pass a node's `ref` to `click`, `type`, or another interaction tool. References are relative to the most recent snapshot, so take a fresh snapshot after the page changes.
+
+### What a snapshot contains
+
+A snapshot is one line per node, indented to show nesting: the role, the accessible name in quotes, and then attributes in square brackets. A ref (`e1`, `e2`, ...) is attached to every node an agent might act on: interactive roles such as `button`, `link`, `textbox`, `combobox`, `checkbox`, `option`, `tab`, `menuitem`, `row`, and `cell`; any node with a name; anything focusable; and each `Iframe`. Wrappers, labels, and text carry no ref and are there for context. The attributes printed are `[level=N]` on headings, `[url=...]` on links, `[value="..."]` on form controls, and the state flags `[disabled]`, `[readonly]`, `[required]`, `[checked]`, `[selected]`, `[expanded]`, and `[pressed]` when set.
+
+Text is folded into the element it names, so `button "Submit"` is one line rather than an element, its text, and the text's layout. Text that says something more than the name is printed after a colon (`listitem: Item one`), and text that sits between elements gets a `text:` line of its own so the order survives. An unnamed wrapper with a single child steps aside for it. The result on a long article is about a third the size of the raw tree, with refs on a quarter of its nodes.
+
+`audit_accessibility` reports each violation with a `ref` when the snapshot gave the node one. A node the snapshot does not address, such as an image with no alt text or an empty landmark, has `ref` set to null and is identified by `nodeRole`, `nodeName`, `nodeText`, and a best-effort `selector` instead.
 
 ### Reading a value with `evaluate`
 

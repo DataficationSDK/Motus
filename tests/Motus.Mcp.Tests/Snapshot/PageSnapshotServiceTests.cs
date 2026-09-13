@@ -67,7 +67,7 @@ public class PageSnapshotServiceTests
         var snapshot = new AccessibilitySnapshot(
             Roots:
             [
-                new AccessibilityNode("1", "img", "", null, null,
+                new AccessibilityNode("1", "img", "Logo", null, null,
                     new Dictionary<string, string?>(), [], BackendDOMNodeId: 5),
                 new AccessibilityNode("2", "button", "Go", null, null,
                     new Dictionary<string, string?>(), [], BackendDOMNodeId: 7),
@@ -82,6 +82,41 @@ public class PageSnapshotServiceTests
         Assert.AreEqual("e1", service.GetRefForNodeId(5));
         Assert.AreEqual("e2", service.GetRefForNodeId(7));
         Assert.IsNull(service.GetRefForNodeId(999));
+    }
+
+    [TestMethod]
+    public async Task GetRefForNodeId_ForANodeTheSnapshotDidNotAddress_ReturnsNull_AndItsTextInstead()
+    {
+        // An unnamed image is in the tree but not worth a ref; a paragraph is not worth one either
+        // but carries text that says which one it is.
+        var snapshot = new AccessibilitySnapshot(
+            Roots:
+            [
+                new AccessibilityNode("1", "img", "", null, null,
+                    new Dictionary<string, string?>(), [], BackendDOMNodeId: 5),
+                new AccessibilityNode("2", "paragraph", "", null, null,
+                    new Dictionary<string, string?>(),
+                    [
+                        new AccessibilityNode("3", "StaticText", "Terms apply.", null, null,
+                            new Dictionary<string, string?>(), [], BackendDOMNodeId: 6),
+                    ],
+                    BackendDOMNodeId: 7),
+                new AccessibilityNode("4", "button", "Go", null, null,
+                    new Dictionary<string, string?>(), [], BackendDOMNodeId: 8),
+            ],
+            IgnoredCount: 0,
+            DiagnosticMessage: null);
+
+        var service = new PageSnapshotService(new FakeAccessibilityPage(snapshot));
+        Assert.IsNull(service.GetTextForNodeId(7), "no snapshot has been taken yet");
+
+        await service.TakeSnapshotAsync();
+
+        Assert.IsNull(service.GetRefForNodeId(5));
+        Assert.IsNull(service.GetTextForNodeId(5));
+        Assert.IsNull(service.GetRefForNodeId(7));
+        Assert.AreEqual("Terms apply.", service.GetTextForNodeId(7));
+        Assert.AreEqual("e1", service.GetRefForNodeId(8));
     }
 
     [TestMethod]

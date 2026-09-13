@@ -12,6 +12,7 @@ public sealed class PageSnapshotService
     private readonly IPage _page;
     private IReadOnlyDictionary<string, long>? _refToBackendNodeId;
     private IReadOnlyDictionary<long, string>? _backendNodeIdToRef;
+    private IReadOnlyList<AccessibilityNode>? _roots;
     private IFrame? _refFrame;
 
     public PageSnapshotService(IPage page)
@@ -88,6 +89,7 @@ public sealed class PageSnapshotService
 
         _refToBackendNodeId = serialized.RefToBackendNodeId;
         _backendNodeIdToRef = BuildReverseMap(serialized.RefToBackendNodeId);
+        _roots = snapshot.Roots;
         _refFrame = scope;
 
         var text = serialized.Text;
@@ -164,12 +166,24 @@ public sealed class PageSnapshotService
 
     /// <summary>
     /// Returns the ref the current snapshot assigned to the given backend DOM node,
-    /// or null when no snapshot has been taken or the node was not assigned a ref
-    /// (for example, a node the snapshot does not address).
+    /// or null when no snapshot has been taken or the node was not assigned a ref.
+    /// Refs go only to nodes worth targeting (interactive, named, focusable, or a
+    /// frame), so an unnamed image or an empty landmark has none even though it is
+    /// in the tree; <see cref="GetTextForNodeId"/> describes such a node instead.
     /// </summary>
     public string? GetRefForNodeId(long backendNodeId)
         => _backendNodeIdToRef is not null
             && _backendNodeIdToRef.TryGetValue(backendNodeId, out var refId)
             ? refId
+            : null;
+
+    /// <summary>
+    /// Returns the text the current snapshot holds under the given backend DOM node,
+    /// as the snapshot prints it, or null when no snapshot has been taken, the node
+    /// is not in it, or it contains no text.
+    /// </summary>
+    public string? GetTextForNodeId(long backendNodeId)
+        => _roots is not null && SnapshotSerializer.FindByBackendId(_roots, backendNodeId) is { } node
+            ? SnapshotSerializer.InlineText(node)
             : null;
 }

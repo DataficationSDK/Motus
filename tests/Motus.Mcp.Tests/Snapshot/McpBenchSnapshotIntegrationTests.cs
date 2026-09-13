@@ -81,6 +81,33 @@ public class McpBenchSnapshotIntegrationTests
             "a page full of controls should not carry the degraded note");
     }
 
+    [TestMethod]
+    public async Task Snapshot_BenchPage_IsCompact_AndCarriesTheUsefulAttributes()
+    {
+        var page = await _browser!.NewPageAsync();
+        await page.GotoAsync(_server!.IndexUrl);
+
+        var service = new PageSnapshotService(page);
+        var text = await service.TakeSnapshotAsync();
+
+        // Text is folded into the element it names or printed inline, never as layout nodes.
+        Assert.IsFalse(text.Contains("InlineTextBox"), text);
+        Assert.IsFalse(text.Contains("StaticText"), text);
+        Assert.IsFalse(text.Contains("ListMarker"), text);
+        StringAssert.Contains(text, "- listitem: Item one\n");
+        StringAssert.Contains(text, "- LabelText: Email\n");
+
+        StringAssert.Contains(text, "- heading \"Checkout\" [ref=e4] [level=1]\n");
+        StringAssert.Contains(text, $"- link \"Other page\" [ref=e2] [url={_server.OtherUrl}]\n");
+        StringAssert.Contains(text, "- combobox \"Plan\" [ref=e6] [value=\"Free\"]\n");
+        StringAssert.Contains(text, "- Iframe \"Payment frame\" [ref=e14]\n");
+
+        // Refs go to controls, named nodes, and frames; wrappers and labels get none.
+        Assert.AreEqual(14, service.LastSnapshot!.Split("[ref=").Length - 1, text);
+        Assert.IsFalse(text.Contains("- form ["), "an unnamed form is not a target: " + text);
+        Assert.IsFalse(text.Contains("- LabelText ["), "a label is not a target: " + text);
+    }
+
     private static string Describe(AccessibilityNode node)
         => string.IsNullOrEmpty(node.Name) ? node.Role ?? "generic" : $"{node.Role} \"{node.Name}\"";
 
