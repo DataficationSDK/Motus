@@ -10,8 +10,8 @@ namespace Motus.Mcp;
 /// </summary>
 /// <remarks>
 /// The action is taken as a delegate over a cancellation token, not as a finished task, so the
-/// runner owns the token the action runs under and can cut the action short. Today that is used
-/// for one thing: a dialog that opens mid-action ends the call immediately instead of leaving it
+/// runner owns the token the action runs under and can stop waiting on it. Today that is used for
+/// one thing: a dialog that opens mid-action ends the call immediately instead of leaving it
 /// waiting on a page the browser has stopped answering for.
 /// </remarks>
 internal static class ActionRunner
@@ -58,12 +58,12 @@ internal static class ActionRunner
     /// <param name="cancellationToken">The tool call's token. The action's token is linked to it.</param>
     /// <param name="action">The action, returning the result the tool reports when it wins.</param>
     /// <remarks>
-    /// Cancelling the action's token stops everything downstream that takes a token. It does not
-    /// reach the input command already sitting in the browser: that one is answered the moment the
-    /// dialog is, which is the very next call an agent makes, and gives up on its own if it is not.
-    /// What matters is that the tool call itself no longer waits for it. The abandoned task is
-    /// still awaited in the background so its eventual failure is observed rather than raised at
-    /// some unrelated point later.
+    /// Cancelling the action's token reaches the waiting an action does before it commits, such as
+    /// waiting for an element to be actionable. It does not reach an input command already sitting
+    /// in the browser: that one is answered the moment the dialog is, which is the very next call
+    /// an agent makes, and gives up on its own if it is not. What matters is that the tool call
+    /// itself no longer waits for it. The abandoned task is still awaited in the background so its
+    /// eventual failure is observed rather than raised at some unrelated point later.
     /// </remarks>
     public static async Task<CallToolResult> RunAsync(
         DialogService? dialogService,

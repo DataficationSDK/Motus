@@ -12,6 +12,12 @@ namespace Motus.Mcp.Tests.Tools;
 /// unanswered and the tool call that would report the dialog is the one stuck behind it. This is
 /// the test that the call comes back instead, and says what happened.
 /// </summary>
+/// <remarks>
+/// The stranded command is answered when the dialog is, which finishes the click on the page after
+/// the tool call has already returned. So the page counts the clicks it sees, and both cases here
+/// end with exactly one: a dialog raised from a click handler, and one raised from a mousedown
+/// handler, where the mouse-up and therefore the click event itself are what waited.
+/// </remarks>
 [TestClass]
 [TestCategory("Integration")]
 public class DialogIntegrationTests
@@ -38,7 +44,7 @@ public class DialogIntegrationTests
         try
         {
             var page = await _pages.GetOrCreateActivePageAsync();
-            await page.GotoAsync(_server.IndexUrl);
+            await page.GotoAsync(_server.DialogsUrl);
         }
         catch (FileNotFoundException)
         {
@@ -101,6 +107,53 @@ public class DialogIntegrationTests
         Assert.IsFalse(TextOf(freed).Contains("dialog is open", StringComparison.Ordinal),
             "no dialog is open any more, so nothing should say one is.");
         StringAssert.Contains(TextOf(freed), "after alert");
+
+        // The command that dispatched the click was left unanswered while the dialog was up and is
+        // answered when the dialog is. That must finish the click the agent asked for and not
+        // produce a second one.
+        await Task.Delay(500);
+        Assert.AreEqual(1, await CountAsync("alertClicks"),
+            "the page should have seen exactly one click.");
+    }
+
+    /// <summary>
+    /// A dialog raised from a mousedown handler is the case where the page is not finished with the
+    /// click when the tool call returns: the mouse-up waits on the dialog, so the click event lands
+    /// afterwards. It still has to be one click.
+    /// </summary>
+    [TestMethod]
+    public async Task Click_OnAButtonWhoseMousedownOpensAnAlert_LandsOneClickAfterTheDialogIsAnswered()
+    {
+        var pages = _pages!;
+        var ct = CancellationToken.None;
+
+        var archiveRef = RefForLineContaining(await SnapshotTextAsync(), "Archive account");
+
+        var stopwatch = Stopwatch.StartNew();
+        var click = await CoreTools.ClickAsync(archiveRef, pages, ct, @double: null);
+        stopwatch.Stop();
+
+        Assert.IsTrue(
+            stopwatch.Elapsed < ReturnsPromptly,
+            $"the click took {stopwatch.Elapsed.TotalSeconds:F1} s; it should not wait on a blocked page.");
+        StringAssert.Contains(TextOf(click), "alert dialog");
+        StringAssert.Contains(TextOf(click), "handle_dialog");
+
+        // Nothing reads the page while the dialog is up, so when the click arrived is recorded by
+        // the page itself and read back afterwards.
+        var handled = await PageTools.HandleDialogAsync(accept: true, _dialogs!, ct, text: null);
+        Assert.IsFalse(handled.IsError ?? false, TextOf(handled));
+
+        Assert.IsTrue(await WaitForCountAsync("downClicks", 1),
+            "the click never landed after the dialog was answered. " + await DumpAsync());
+
+        var page = await _pages!.GetOrCreateActivePageAsync();
+        Assert.IsTrue(await page.EvaluateAsync<bool>("window.downClickCameAfterTheDialog === true"),
+            "the click should have reached the page only once the dialog was answered.");
+
+        // Long enough for a second click to have arrived if answering the dialog had produced one.
+        await Task.Delay(500);
+        Assert.AreEqual(1, await CountAsync("downClicks"), "the page saw the click twice.");
     }
 
     [TestMethod]
@@ -139,11 +192,39 @@ public class DialogIntegrationTests
     private async Task<bool> WaitForStatusAsync(string expected)
     {
         var page = await _pages!.GetOrCreateActivePageAsync();
-        for (var attempt = 0; attempt < 40; attempt++)
+        for (var attempt = 0; attempt < 100; attempt++)
         {
             var status = await page.EvaluateAsync<string>(
                 "document.getElementById('status').textContent");
             if (status == expected)
+                return true;
+
+            await Task.Delay(50);
+        }
+
+        return false;
+    }
+
+    private async Task<string> DumpAsync()
+    {
+        var page = await _pages!.GetOrCreateActivePageAsync();
+        return await page.EvaluateAsync<string>(
+            "JSON.stringify({ clicks: window.downClicks, answered: window.dialogAnswered, "
+            + "after: window.downClickCameAfterTheDialog, status: document.getElementById('status').textContent })");
+    }
+
+    /// <summary>How many click events the page has counted against the named counter.</summary>
+    private async Task<int> CountAsync(string counter)
+    {
+        var page = await _pages!.GetOrCreateActivePageAsync();
+        return await page.EvaluateAsync<int>($"window.{counter}");
+    }
+
+    private async Task<bool> WaitForCountAsync(string counter, int expected)
+    {
+        for (var attempt = 0; attempt < 100; attempt++)
+        {
+            if (await CountAsync(counter) == expected)
                 return true;
 
             await Task.Delay(50);

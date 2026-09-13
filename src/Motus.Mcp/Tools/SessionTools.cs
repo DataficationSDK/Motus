@@ -6,9 +6,9 @@ using ModelContextProtocol.Server;
 namespace Motus.Mcp;
 
 /// <summary>
-/// Tools for the tabs of the active browser context, and for saying which browser the session
-/// is driving. The tools that read or act on a page always target the active context's active
-/// tab, so these are how the agent moves between the pages a session has open.
+/// Tools for the tabs a session has open, and for saying which browser the session is driving. The
+/// tools that read or act on a page always target the active tab, so these are how the agent moves
+/// between the pages a session has open.
 /// </summary>
 /// <remarks>
 /// Like the other tools, failures are returned as a result with
@@ -20,24 +20,35 @@ namespace Motus.Mcp;
 public sealed class SessionTools
 {
     [McpServerTool(Name = "tab_list", Title = "List tabs", Destructive = false, ReadOnly = true, Idempotent = true)]
-    [Description("Lists the open tabs of the active context, each with its zero-based index, URL, and title.")]
+    [Description("Lists every open tab this session has, across all its contexts, each with its zero-based index, "
+        + "URL, and title. The context a tab belongs to is named when more than one is open. The index is the one "
+        + "tab_select and tab_close take, and selecting a tab in another context switches to that context.")]
     public static async Task<CallToolResult> TabListAsync(
         ActivePageService pageService,
         CancellationToken cancellationToken)
     {
         try
         {
-            var pages = await pageService.ListTabsAsync(cancellationToken).ConfigureAwait(false);
-            if (pages.Count == 0)
+            var tabs = await pageService.ListTabsAsync(cancellationToken).ConfigureAwait(false);
+            if (tabs.Count == 0)
                 return ToolResultHelper.Text("No tabs are open.");
 
+            // Naming the context on every row of a session that only ever has one would be a column
+            // of the same word, so it is printed only once there is a choice to make.
+            var named = pageService.GetContextNames().Count > 1;
+
             var builder = new StringBuilder();
-            for (var i = 0; i < pages.Count; i++)
+            for (var i = 0; i < tabs.Count; i++)
             {
-                var title = await pages[i].TitleAsync().ConfigureAwait(false);
-                builder.Append('[').Append(i).Append("] ").Append(pages[i].Url);
+                // A tab that will not say what it is called is listed by its address. A tab still
+                // opening, or one whose renderer is busy, must not take the whole listing down with
+                // it: the listing is how an agent finds the tab it wants in the first place.
+                var title = await PageDescription.TryTitleAsync(tabs[i].Page).ConfigureAwait(false);
+                builder.Append('[').Append(i).Append("] ").Append(tabs[i].Page.Url);
                 if (!string.IsNullOrEmpty(title))
                     builder.Append(" | ").Append(title);
+                if (named)
+                    builder.Append(" | context: ").Append(tabs[i].ContextName);
                 builder.AppendLine();
             }
 
@@ -77,8 +88,9 @@ public sealed class SessionTools
     }
 
     [McpServerTool(Name = "tab_select", Title = "Select a tab", Destructive = false)]
-    [Description("Makes the tab at the given zero-based index active. Indices come from tab_list; call it first "
-        + "if you are unsure of the current order.")]
+    [Description("Makes the tab at the given zero-based index active. A tab in another context switches the "
+        + "session to that context as well. Indices come from tab_list; call it first if you are unsure of the "
+        + "current order.")]
     public static async Task<CallToolResult> TabSelectAsync(
         [Description("Zero-based index of the tab to activate.")] int index,
         ActivePageService pageService,
@@ -97,8 +109,8 @@ public sealed class SessionTools
     }
 
     [McpServerTool(Name = "tab_close", Title = "Close a tab", Destructive = true)]
-    [Description("Closes the tab at the given zero-based index, or the active tab when no index is given. The "
-        + "next available tab becomes active.")]
+    [Description("Closes the tab at the given zero-based index, in whichever context it is open, or the active "
+        + "tab when no index is given. The next available tab becomes active.")]
     public static async Task<CallToolResult> TabCloseAsync(
         ActivePageService pageService,
         CancellationToken cancellationToken,

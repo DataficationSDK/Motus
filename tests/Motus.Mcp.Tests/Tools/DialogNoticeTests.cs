@@ -102,13 +102,13 @@ public class DialogNoticeTests
     public void Interrupted_NamesTheDialogTypeAndMessage()
     {
         Assert.AreEqual(
-            "The action opened an alert dialog: \"Are you sure?\". Call handle_dialog to accept or dismiss it.",
+            "The action opened an alert dialog: \"Are you sure?\". Call handle_dialog to accept or dismiss it. The page finishes the action once the dialog is answered, so a dialog opened from a mousedown handler means the click lands after this call returned.",
             DialogNotice.Interrupted(new FakeDialog(DialogType.Alert, "Are you sure?")));
         Assert.AreEqual(
-            "The action opened a confirm dialog: \"Delete this?\". Call handle_dialog to accept or dismiss it.",
+            "The action opened a confirm dialog: \"Delete this?\". Call handle_dialog to accept or dismiss it. The page finishes the action once the dialog is answered, so a dialog opened from a mousedown handler means the click lands after this call returned.",
             DialogNotice.Interrupted(new FakeDialog(DialogType.Confirm, "Delete this?")));
         Assert.AreEqual(
-            "The action opened a beforeunload dialog: \"\". Call handle_dialog to accept or dismiss it.",
+            "The action opened a beforeunload dialog: \"\". Call handle_dialog to accept or dismiss it. The page finishes the action once the dialog is answered, so a dialog opened from a mousedown handler means the click lands after this call returned.",
             DialogNotice.Interrupted(new FakeDialog(DialogType.BeforeUnload, "")));
     }
 }

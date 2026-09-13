@@ -56,6 +56,7 @@ namespace Motus;
 [JsonSerializable(typeof(PageFrameNavigatedEvent))]
 [JsonSerializable(typeof(PageFrameAttachedEvent))]
 [JsonSerializable(typeof(PageFrameDetachedEvent))]
+[JsonSerializable(typeof(JsonElement))]
 [JsonSerializable(typeof(PageFrameStoppedLoadingEvent))]
 [JsonSerializable(typeof(PageJavascriptDialogOpeningEvent))]
 [JsonSerializable(typeof(PageDownloadWillBeginEvent))]

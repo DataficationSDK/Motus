@@ -321,7 +321,7 @@ public class ChromiumArgsTests
     {
         var options = new LaunchOptions { Headless = true };
 
-        var args = ChromiumArgs.Build(options, 9222, "/tmp/profile");
+        var args = ChromiumArgs.Build(options, "/tmp/profile", 9222);
 
         CollectionAssert.Contains(args, "--headless=new");
     }
@@ -331,20 +331,34 @@ public class ChromiumArgsTests
     {
         var options = new LaunchOptions { Headless = false };
 
-        var args = ChromiumArgs.Build(options, 9222, "/tmp/profile");
+        var args = ChromiumArgs.Build(options, "/tmp/profile", 9222);
 
         CollectionAssert.DoesNotContain(args, "--headless=new");
         CollectionAssert.Contains(args, "--disable-blink-features=AutomationControlled");
     }
 
     [TestMethod]
-    public void Build_AlwaysIncludesDebuggingPort()
+    public void Build_WithAPort_OpensTheDebuggingPort()
     {
         var options = new LaunchOptions();
 
-        var args = ChromiumArgs.Build(options, 9222, "/tmp/profile");
+        var args = ChromiumArgs.Build(options, "/tmp/profile", 9222);
 
         Assert.IsTrue(args.Any(a => a == "--remote-debugging-port=9222"));
+        CollectionAssert.DoesNotContain(args, "--remote-debugging-pipe");
+    }
+
+    [TestMethod]
+    public void Build_WithoutAPort_AsksForThePipeInstead()
+    {
+        var options = new LaunchOptions();
+
+        var args = ChromiumArgs.Build(options, "/tmp/profile");
+
+        CollectionAssert.Contains(args, "--remote-debugging-pipe");
+        Assert.IsFalse(
+            args.Any(a => a.StartsWith("--remote-debugging-port", StringComparison.Ordinal)),
+            "a browser driven over a pipe should not also be opening a port");
     }
 
     [TestMethod]
@@ -352,7 +366,7 @@ public class ChromiumArgsTests
     {
         var options = new LaunchOptions();
 
-        var args = ChromiumArgs.Build(options, 9222, "/tmp/profile");
+        var args = ChromiumArgs.Build(options, "/tmp/profile", 9222);
 
         Assert.IsTrue(args.Any(a => a == "--user-data-dir=/tmp/profile"));
     }
@@ -365,7 +379,7 @@ public class ChromiumArgsTests
             IgnoreDefaultArgs = ["--disable-sync", "--no-first-run"]
         };
 
-        var args = ChromiumArgs.Build(options, 9222, "/tmp/profile");
+        var args = ChromiumArgs.Build(options, "/tmp/profile", 9222);
 
         CollectionAssert.DoesNotContain(args, "--disable-sync");
         CollectionAssert.DoesNotContain(args, "--no-first-run");
@@ -380,7 +394,7 @@ public class ChromiumArgsTests
             Args = ["--custom-flag", "--another=value"]
         };
 
-        var args = ChromiumArgs.Build(options, 9222, "/tmp/profile");
+        var args = ChromiumArgs.Build(options, "/tmp/profile", 9222);
 
         CollectionAssert.Contains(args, "--custom-flag");
         CollectionAssert.Contains(args, "--another=value");
@@ -391,7 +405,7 @@ public class ChromiumArgsTests
     {
         var options = new LaunchOptions { DownloadsPath = "/tmp/downloads" };
 
-        var args = ChromiumArgs.Build(options, 9222, "/tmp/profile");
+        var args = ChromiumArgs.Build(options, "/tmp/profile", 9222);
 
         Assert.IsTrue(args.Any(a => a.Contains("/tmp/downloads")));
     }

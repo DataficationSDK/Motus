@@ -45,7 +45,7 @@ public sealed class BrowserTools
             var builder = new StringBuilder();
             builder.Append("Attached to the browser at ").Append(endpoint).AppendLine(".");
             builder.Append("It has ").Append(tabs.Count).Append(tabs.Count == 1 ? " tab" : " tabs").Append(" open");
-            builder.AppendLine(tabs.Count > 0 ? $", starting with {tabs[0].Url}." : ".");
+            builder.AppendLine(tabs.Count > 0 ? $", starting with {tabs[0].Page.Url}." : ".");
             builder.Append("This browser was not started here and will keep running when this session ends. ")
                 .Append("Its tabs and contexts belong to whoever was using it, so tab_close and context_close ")
                 .Append("discard their work rather than scratch state.");

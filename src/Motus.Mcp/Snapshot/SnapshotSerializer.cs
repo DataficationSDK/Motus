@@ -60,10 +60,11 @@ internal static class SnapshotSerializer
     };
 
     // Layout detail with nothing to say. An inline text box is the line-broken layout of the
-    // static text above it, and a list marker is implied by the list item it decorates.
+    // static text above it, a list marker is implied by the list item it decorates, and a line
+    // break is where the text around it wraps rather than anything an agent can act on.
     private static readonly HashSet<string> DroppedRoles = new(StringComparer.OrdinalIgnoreCase)
     {
-        "InlineTextBox", "ListMarker",
+        "InlineTextBox", "ListMarker", "LineBreak",
     };
 
     // The longest inline text the audit reports for a node before it is cut short.

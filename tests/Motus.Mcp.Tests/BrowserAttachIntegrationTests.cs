@@ -44,7 +44,7 @@ public class BrowserAttachIntegrationTests
         // this pins.
         var tabs = await bundle.Pages.ListTabsAsync();
         Assert.AreEqual(1, tabs.Count, "attaching should adopt the open tab rather than add one");
-        Assert.AreSame(page, tabs[0]);
+        Assert.AreSame(page, tabs[0].Page);
     }
 
     [TestMethod]

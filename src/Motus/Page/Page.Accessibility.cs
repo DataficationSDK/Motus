@@ -23,8 +23,8 @@ internal sealed partial class Page
     /// <remarks>
     /// Both halves matter. The tree is read on the session that owns the frame, because a frame in
     /// its own process is not described by the page's session at all; and the frame is named in the
-    /// request, because a session asked for its root document answers with everything it hosts,
-    /// which for a same-process frame would be the whole page.
+    /// request, because a session asked for its root document answers with that document alone,
+    /// with the element that hosts a frame as a leaf and none of the frame's content beneath it.
     /// </remarks>
     internal async Task<AccessibilitySnapshot> AccessibilitySnapshotAsync(IFrame? frame, CancellationToken ct)
     {

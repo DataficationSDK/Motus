@@ -33,7 +33,8 @@ public sealed class InteractionTools
         => ToolArguments.Missing("values", values) is { } missing
             ? Task.FromResult(missing)
             : WithRefAsync(pageService, @ref, $"Selected {values.Length} option(s) in {@ref}",
-                locator => locator.SelectOptionAsync(values), cancellationToken, snapshot == true);
+                locator => locator.SelectOptionAsync(values, pageService.ActionTimeout),
+                cancellationToken, snapshot == true);
 
     [McpServerTool(Name = "hover", Title = "Hover over element", Destructive = true)]
     [Description("Moves the pointer over the element addressed by a ref from the latest snapshot or by a selector.")]
@@ -55,7 +56,8 @@ public sealed class InteractionTools
         => ToolArguments.Missing("key", key) is { } missing
             ? Task.FromResult(missing)
             : WithRefAsync(pageService, @ref, $"Pressed {key} on {@ref}",
-                locator => locator.PressAsync(key), cancellationToken, snapshot == true);
+                locator => locator.PressAsync(key, new KeyboardPressOptions(Timeout: pageService.ActionTimeout)),
+                cancellationToken, snapshot == true);
 
     [McpServerTool(Name = "set_checked", Title = "Set checkbox state", Destructive = true)]
     [Description("Sets the checked state of a checkbox or radio button addressed by a ref or a selector.")]
@@ -114,10 +116,17 @@ public sealed class InteractionTools
             return missingPaths;
 
         var boundary = policy ?? SecurityPolicy.Default;
+
+        // The roots are read once for the whole call, so an upload of several files asks the client
+        // where it is working once rather than once per path.
+        IReadOnlyList<string> roots = boundary.AllowUnrestrictedFileAccess
+            ? []
+            : await boundary.ReadRootsAsync(server, cancellationToken).ConfigureAwait(false);
+
         var payloads = new List<FilePayload>(paths.Length);
         foreach (var path in paths)
         {
-            if (await boundary.RefuseReadAsync(path, server, cancellationToken).ConfigureAwait(false) is { } refusal)
+            if (boundary.RefuseRead(path, roots) is { } refusal)
                 return ToolResultHelper.Error(refusal);
 
             byte[] bytes;

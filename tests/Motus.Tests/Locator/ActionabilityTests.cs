@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Motus.Abstractions;
 using Motus.Tests.Transport;
 
@@ -207,5 +208,82 @@ public class ActionabilityTests
         _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""undefined""}}}}}}");
 
         await locator.FocusAsync();
+    }
+
+    // --- the timeout a caller asks for ---
+
+    /// <summary>
+    /// Queues enough empty resolutions for an element that never turns up, so the wait ends on the
+    /// timeout rather than on an answer.
+    /// </summary>
+    private void QueueNeverResolves()
+    {
+        for (int i = 0; i < 40; i += 2)
+        {
+            _socket.QueueResponse($@"{{""id"": {9 + i}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""object"", ""objectId"": ""arr-empty-{i}""}}}}}}");
+            _socket.QueueResponse($@"{{""id"": {10 + i}, ""sessionId"": ""session-1"", ""result"": {{""result"": []}}}}");
+        }
+    }
+
+    /// <summary>
+    /// Runs an action that cannot succeed and asserts it gave up on the short timeout it was given
+    /// rather than on the thirty second default.
+    /// </summary>
+    private static async Task AssertGivesUpQuicklyAsync(Func<Task> action)
+    {
+        var started = Stopwatch.StartNew();
+        await Assert.ThrowsExceptionAsync<ActionTimeoutException>(() => action());
+        started.Stop();
+
+        Assert.IsTrue(
+            started.Elapsed < TimeSpan.FromSeconds(5),
+            $"the call waited {started.ElapsedMilliseconds} ms, so the timeout it was given was ignored.");
+    }
+
+    [TestMethod]
+    public async Task TypeAsync_HonoursTheTimeoutInItsOptions()
+    {
+        var page = await CreatePageAsync();
+        var locator = page.Locator("#never-exists");
+        QueueNeverResolves();
+
+        await AssertGivesUpQuicklyAsync(
+            () => locator.TypeAsync("hello", new KeyboardTypeOptions(Timeout: 200)));
+    }
+
+    [TestMethod]
+    public async Task PressAsync_HonoursTheTimeoutInItsOptions()
+    {
+        var page = await CreatePageAsync();
+        var locator = page.Locator("#never-exists");
+        QueueNeverResolves();
+
+        await AssertGivesUpQuicklyAsync(
+            () => locator.PressAsync("Enter", new KeyboardPressOptions(Timeout: 200)));
+    }
+
+    [TestMethod]
+    public async Task SelectOptionAsync_HonoursTheTimeoutItIsGiven()
+    {
+        var page = await CreatePageAsync();
+        var locator = page.Locator("#never-exists");
+        QueueNeverResolves();
+
+        await AssertGivesUpQuicklyAsync(
+            () => locator.SelectOptionAsync(["us"], timeout: 200));
+    }
+
+    /// <summary>
+    /// A timeout given to <see cref="ILocator.Filter"/> survives onto the locator it returns, the
+    /// same way it does when a child locator is built with options.
+    /// </summary>
+    [TestMethod]
+    public async Task Filter_CarriesTheTimeoutItWasGiven()
+    {
+        var page = await CreatePageAsync();
+        var locator = page.Locator("#never-exists").Filter(new LocatorOptions { Timeout = 200 });
+        QueueNeverResolves();
+
+        await AssertGivesUpQuicklyAsync(() => locator.ClickAsync());
     }
 }

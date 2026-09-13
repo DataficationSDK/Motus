@@ -22,10 +22,12 @@ internal sealed class AccessibilityTreeQuery
     /// </summary>
     /// <param name="ct">Cancellation token.</param>
     /// <param name="frameId">
-    /// The frame whose document to read. Omitted, the session's own root document is read, which
-    /// for a page session includes every frame it hosts. Naming a frame is what narrows the tree to
-    /// that frame alone, and it is required rather than optional for a frame in its own process,
-    /// whose nodes are not in the page's tree at all.
+    /// The frame whose document to read. Omitted, the session's own root document is read, and a
+    /// page session answers with the page's document by itself: the element that hosts a frame is
+    /// in that tree as a leaf, with none of the frame's own content underneath it. Naming a frame
+    /// reads that frame's document instead, which is how the content behind one of those leaves is
+    /// reached at all. A frame the browser renders in its own process is read through that frame's
+    /// session, because the page's session does not describe it.
     /// </param>
     internal async Task<AccessibilityTreeResult> GetTreeAsync(CancellationToken ct, string? frameId = null)
     {

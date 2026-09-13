@@ -9,7 +9,7 @@ namespace Motus.Mcp;
 /// Tools for the isolated browser contexts a session can hold. Each context has its own
 /// cookies and storage, so separate contexts model separate users, or a signed-in and a
 /// signed-out state side by side. The tools that read or act on a page always target the
-/// active context's active tab.
+/// active tab, which is a tab of the active context.
 /// </summary>
 /// <remarks>
 /// Like the other tools, failures are returned as a result with
@@ -61,7 +61,8 @@ public sealed class ContextTools
     }
 
     [McpServerTool(Name = "context_select", Title = "Select a context", Destructive = false)]
-    [Description("Makes an existing context active. The tabs and page tools that follow act on its tabs.")]
+    [Description("Makes an existing context active, so the page tools that follow act on one of its tabs. "
+        + "tab_list shows every context's tabs either way, and selecting one of them switches context on its own.")]
     public static CallToolResult ContextSelect(
         [Description("Name of the context to activate.")] string name,
         ActivePageService pageService,
@@ -82,8 +83,8 @@ public sealed class ContextTools
     }
 
     [McpServerTool(Name = "context_close", Title = "Close a context", Destructive = true)]
-    [Description("Closes the named context and all its tabs. If the active context is closed, the default context "
-        + "becomes active.")]
+    [Description("Closes the named context and all its tabs, which drops them from tab_list. If the active "
+        + "context is closed, the default context becomes active.")]
     public static async Task<CallToolResult> ContextCloseAsync(
         [Description("Name of the context to close.")] string name,
         ActivePageService pageService,

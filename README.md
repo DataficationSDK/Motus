@@ -14,7 +14,7 @@ Every .NET browser automation framework either wraps a JavaScript tool behind a 
 
 Motus started from a premise proven by the architecture of [Verso](https://github.com/DataficationSDK/Verso): if the framework's own features are built on the same public plugin interfaces available to third-party authors, the architecture stays honest. Every built-in selector strategy, lifecycle hook, wait condition, and reporter is registered through the same `IPluginContext` that any consumer can use. There are no internal shortcuts.
 
-The result is a framework that talks directly to Chromium and Firefox over WebSocket (CDP and WebDriver BiDi), ships source-generated protocol bindings for NativeAOT, and gives you compile-time diagnostics for common automation mistakes before your tests ever run.
+The result is a framework that talks directly to Chromium and Firefox (CDP and WebDriver BiDi), ships source-generated protocol bindings for NativeAOT, and gives you compile-time diagnostics for common automation mistakes before your tests ever run.
 
 ## Getting Started
 
@@ -259,7 +259,9 @@ See [MCP Server](docs/guides/mcp-server.md) for the full registration story, the
 
 ## How It Works
 
-Motus communicates directly with the browser over WebSocket. For Chromium-based browsers, it speaks the Chrome DevTools Protocol (CDP). For Firefox, it uses WebDriver BiDi. There is no Node.js sidecar, no driver binary, and no process boundary between your test code and the protocol layer.
+Motus communicates directly with the browser. For Chromium-based browsers, it speaks the Chrome DevTools Protocol (CDP). For Firefox, it uses WebDriver BiDi. There is no Node.js sidecar, no driver binary, and no process boundary between your test code and the protocol layer.
+
+A Chromium browser Motus starts on macOS or Linux is driven over a pipe rather than a debugging port, so the browser exits when the process that started it does, even if that process is killed outright. Everything else, including a browser you attach to, uses a WebSocket.
 
 All CDP types are source-generated at build time from the protocol JSON schema. Serialization uses `System.Text.Json` source generators for zero-reflection, NativeAOT-compatible marshalling.
 

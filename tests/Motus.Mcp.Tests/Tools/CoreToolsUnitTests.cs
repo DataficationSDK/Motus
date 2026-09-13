@@ -467,6 +467,34 @@ public class CoreToolsUnitTests
         CollectionAssert.AreEqual(new[] { "Enter" }, page.RecordingLocator.PressedKeys);
     }
 
+    /// <summary>
+    /// Typing slowly and the Enter that follows a submit both carry the configured action timeout,
+    /// so a session started with <c>--timeout</c> is not left on the framework default for them.
+    /// </summary>
+    [TestMethod]
+    public async Task Type_SlowlyAndSubmit_CarryTheConfiguredTimeout()
+    {
+        var page = new FakeToolPage(Snapshot(Node("textbox", "Name", 10)));
+        var service = new FakeActivePageService(
+            page, options: new McpServerLaunchOptions { ActionTimeout = 2_500 });
+
+        await CoreTools.SnapshotAsync(
+            pageService: service,
+            cancellationToken: CancellationToken.None,
+            root_ref: null,
+            max_depth: null);
+        await CoreTools.TypeAsync(
+            @ref: "e1",
+            text: "hello",
+            pageService: service,
+            cancellationToken: CancellationToken.None,
+            submit: true,
+            slowly: true);
+
+        Assert.AreEqual(2_500d, page.RecordingLocator.TypeTimeout);
+        Assert.AreEqual(2_500d, page.RecordingLocator.PressTimeout);
+    }
+
     // --- screenshot ---
 
     [TestMethod]

@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Dialogs</title>
+  <style>
+    /*
+      The status line keeps its height whether or not it says anything. Filling it in from a
+      handler must not move the buttons: a mouse-up that lands somewhere other than the element
+      the mouse went down on gives the click event a different target, and the button would never
+      see the click it was pressed for.
+    */
+    #status { min-height: 1.5em; margin: 0 0 8px; }
+    button { display: block; margin: 0 0 8px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Account</h1>
+    <p id="status" role="status"></p>
+    <button id="alert-btn">Delete account</button>
+    <button id="down-btn">Archive account</button>
+  </main>
+  <script>
+    // The page counts the click events it sees, so a test can ask what reached the page rather
+    // than infer it from what the tool call reported.
+    window.alertClicks = 0;
+    window.downClicks = 0;
+
+    // Whether the dialog had been answered by the time the click arrived. Recorded here rather
+    // than read from outside, because nothing can read the page while the dialog is up.
+    window.dialogAnswered = false;
+    window.downClickCameAfterTheDialog = null;
+
+    const status = document.getElementById('status');
+
+    // The ordinary case: the dialog goes up while the click event is being handled.
+    document.getElementById('alert-btn').addEventListener('click', () => {
+      window.alertClicks++;
+      alert('Are you sure?');
+      status.textContent = 'after alert';
+    });
+
+    // The dialog goes up on mousedown, so the mouse-up waits on it and the page sees no click at
+    // all until the dialog is answered.
+    const down = document.getElementById('down-btn');
+    down.addEventListener('mousedown', () => {
+      alert('Are you sure?');
+      window.dialogAnswered = true;
+      status.textContent = 'after alert';
+    });
+    down.addEventListener('click', () => {
+      window.downClicks++;
+      window.downClickCameAfterTheDialog = window.dialogAnswered;
+    });
+  </script>
+</body>
+</html>

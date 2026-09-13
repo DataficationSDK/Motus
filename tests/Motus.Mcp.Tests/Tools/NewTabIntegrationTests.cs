@@ -72,6 +72,43 @@ public class NewTabIntegrationTests
     }
 
     /// <summary>
+    /// The tabs are numbered across every context the session holds, so the index the report prints
+    /// for a tab opened in a second context is only right if the diff reads the same list the
+    /// listing does.
+    /// </summary>
+    [TestMethod]
+    public async Task ATabOpenedInASecondContext_IsListedAndReportedAcrossBothContexts()
+    {
+        var service = _pages!;
+        var ct = CancellationToken.None;
+
+        // The default context keeps the tab the session started with, so the new tab lands at an
+        // index no listing of one context on its own would ever produce.
+        await service.CreateContextAsync("work", ct);
+
+        var navigated = await CoreTools.NavigateAsync(_server!.IndexUrl, service, ct);
+        Assert.IsFalse(navigated.IsError ?? false, TextOf(navigated));
+
+        var snapshot = await CoreTools.SnapshotAsync(
+            pageService: service, cancellationToken: ct, root_ref: null, max_depth: null);
+
+        var clicked = await CoreTools.ClickAsync(
+            RefForLineContaining(TextOf(snapshot), "Open in new tab"), service, ct);
+        Assert.IsFalse(clicked.IsError ?? false, TextOf(clicked));
+
+        StringAssert.Contains(TextOf(clicked), "New tab opened: [2] " + _server.OtherUrl);
+
+        var listing = await WaitForTabsAsync(service, "other.html");
+        var lines = listing.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+
+        Assert.AreEqual(3, lines.Length, $"Both contexts' tabs should be listed. Listing was:\n{listing}");
+        StringAssert.Contains(lines[0], "context: default");
+        StringAssert.Contains(lines[1], "context: work");
+        StringAssert.StartsWith(lines[2], "[2] " + _server.OtherUrl);
+        StringAssert.Contains(lines[2], "context: work");
+    }
+
+    /// <summary>
     /// The tab is listed as soon as the browser opens it, which is before the document it was
     /// opened for has arrived, so the URL is what is waited on rather than the count.
     /// </summary>

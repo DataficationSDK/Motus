@@ -203,12 +203,14 @@ public sealed class CoreTools
             return await ActionRunner.RunAsync(pageService, page, cancellationToken, async _ =>
             {
                 if (slowly == true)
-                    await locator.TypeAsync(text).ConfigureAwait(false);
+                    await locator.TypeAsync(text, new KeyboardTypeOptions(Timeout: pageService.ActionTimeout))
+                        .ConfigureAwait(false);
                 else
                     await locator.FillAsync(text, pageService.ActionTimeout).ConfigureAwait(false);
 
                 if (submit == true)
-                    await locator.PressAsync("Enter").ConfigureAwait(false);
+                    await locator.PressAsync("Enter", new KeyboardPressOptions(Timeout: pageService.ActionTimeout))
+                        .ConfigureAwait(false);
 
                 return ToolResultHelper.Text($"Typed into {@ref}");
             }, snapshot == true).ConfigureAwait(false);

@@ -133,6 +133,17 @@ internal sealed class CdpSession : IMotusSession
         return DeserializeEvents(channel.Reader, eventTypeInfo, ct);
     }
 
+    /// <summary>
+    /// Subscribes to several events on one channel, so they come out in the order the browser sent
+    /// them.
+    /// </summary>
+    public IAsyncEnumerable<RawCdpEvent> SubscribeAsync(IReadOnlyList<string> eventKeys, CancellationToken ct)
+    {
+        var sessionId = SessionId ?? string.Empty;
+        var keys = eventKeys.Select(key => $"{key}|{sessionId}").ToArray();
+        return _transport.ShareEventChannel(keys).ReadAllAsync(ct);
+    }
+
     /// <inheritdoc />
     public void CleanupChannels()
     {

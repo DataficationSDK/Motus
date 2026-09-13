@@ -178,4 +178,51 @@ public class InlineFrameIntegrationTests
 
         StringAssert.Contains(TextOf(clicked), "Refs inside frame 1 no longer address anything");
     }
+
+    /// <summary>
+    /// A snapshot rooted at a ref inside a frame describes that frame and prints no frames of its
+    /// own, so the frame it described is the only thing that can go stale under its refs.
+    /// </summary>
+    [TestMethod]
+    public async Task AFrameThatNavigatesAfterASnapshotRootedInIt_IsReportedByTheNextAction()
+    {
+        await SnapshotAsync();
+        await CoreTools.SnapshotAsync(
+            pageService: _pages!,
+            cancellationToken: CancellationToken.None,
+            root_ref: "f1e1",
+            max_depth: null,
+            max_frames: null);
+
+        var frames = await _pages!.ListFramesAsync();
+        await frames[1].Frame.GotoAsync(_server!.OtherUrl);
+
+        var clicked = await CoreTools.ClickAsync(
+            @ref: "#late-btn",
+            pageService: _pages!,
+            cancellationToken: CancellationToken.None,
+            @double: null);
+
+        StringAssert.Contains(
+            TextOf(clicked),
+            "Refs from the last snapshot no longer address anything: the frame it described navigated.");
+    }
+
+    [TestMethod]
+    public async Task AFrameThatNavigatesAfterItWasSelected_IsReportedByTheNextAction()
+    {
+        await FrameTools.FrameSelectAsync(1, _pages!, CancellationToken.None);
+        await SnapshotAsync();
+
+        var frames = await _pages!.ListFramesAsync();
+        await frames[1].Frame.GotoAsync(_server!.OtherUrl);
+
+        // A key on the page rather than an element inside the frame, so the row comes from the
+        // frame having moved rather than from the action failing to find anything.
+        var pressed = await InteractionTools.PressKeyAsync("Escape", _pages!, CancellationToken.None);
+
+        StringAssert.Contains(
+            TextOf(pressed),
+            "Refs from the last snapshot no longer address anything: the frame it described navigated.");
+    }
 }

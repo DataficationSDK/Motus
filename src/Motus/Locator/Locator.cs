@@ -619,7 +619,7 @@ internal sealed class Locator : ILocator
             options?.HasText ?? _hasText,
             options?.Has ?? _has,
             options?.HasNot ?? _hasNot,
-            _defaultTimeout,
+            options?.Timeout ?? _defaultTimeout,
             options?.PierceShadow ?? _pierceShadow,
             _parentSteps, _childSelector);
 
@@ -767,7 +767,7 @@ internal sealed class Locator : ILocator
 
     public async Task TypeAsync(string text, KeyboardTypeOptions? options = null)
     {
-        using var cts = BuildActionCts(null);
+        using var cts = BuildActionCts(options?.Timeout);
         await RunWithHooksAsync("type", async () =>
         {
             var objectId = await ActionabilityChecker.WaitForActionabilityAsync(
@@ -781,7 +781,7 @@ internal sealed class Locator : ILocator
 
     public async Task PressAsync(string key, KeyboardPressOptions? options = null)
     {
-        using var cts = BuildActionCts(null);
+        using var cts = BuildActionCts(options?.Timeout);
         await RunWithHooksAsync("press", async () =>
         {
             var objectId = await ActionabilityChecker.WaitForActionabilityAsync(
@@ -837,9 +837,12 @@ internal sealed class Locator : ILocator
             await UncheckAsync(timeout).ConfigureAwait(false);
     }
 
-    public async Task<IReadOnlyList<string>> SelectOptionAsync(params string[] values)
+    public Task<IReadOnlyList<string>> SelectOptionAsync(params string[] values)
+        => SelectOptionAsync(values, timeout: null);
+
+    public async Task<IReadOnlyList<string>> SelectOptionAsync(string[] values, double? timeout)
     {
-        using var cts = BuildActionCts(null);
+        using var cts = BuildActionCts(timeout);
         return await RunWithHooksAsync("selectOption", async () =>
         {
             var objectId = await ActionabilityChecker.WaitForActionabilityAsync(

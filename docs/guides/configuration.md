@@ -305,9 +305,9 @@ Settings for the MCP server, read when `motus mcp --config <file>` names this fi
 
 | Property | Type | Default | Description |
 |---|---|---|---|
-| `caps` | `string[]` | `null` | Optional tool groups the server advertises on top of the ones it always has: `coordinates`, `recording`, `contexts`, `routing`. |
+| `caps` | `string[]` | `null` | Optional tool groups the server advertises on top of the ones it always has: `coordinates`, `recording`, `contexts`, `routing`. Also settable as `MOTUS_MCP_CAPS`, a comma-separated list of the same names. |
 
-`--caps` on the command line replaces this list rather than adding to it, the same way every other option outranks the file. Unlike the rest of the file, this section is read only when `--config` names the file: the server is launched by an agent client from whatever directory that client happens to be in, so a file found by walking up from there would be somebody else's settings.
+`--caps` on the command line replaces this list rather than adding to it, and `MOTUS_MCP_CAPS` sits between the two: the flag wins over the variable, and the variable over the file, the same way every other setting is ordered. Unlike the rest of the file, this section is read only when `--config` names the file: the server is launched by an agent client from whatever directory that client happens to be in, so a file found by walking up from there would be somebody else's settings. The variable is read either way, which is what makes it the simpler place to name the groups from a client's launch configuration.
 
 ---
 
@@ -353,6 +353,7 @@ Boolean variables accept `true`, `false`, `1`, or `0` (case-insensitive). Intege
 | `MOTUS_FLAKY_QUARANTINE` | `flaky.quarantinePath` | `string` | Path to the quarantine list file. |
 | `MOTUS_SHARD_INDEX` | `shard.index` | `int` | 1-based index of this shard. |
 | `MOTUS_SHARD_TOTAL` | `shard.total` | `int` | Total number of shards. |
+| `MOTUS_MCP_CAPS` | `mcp.caps` | `string` | Optional tool groups `motus mcp` advertises, as a comma-separated list. `--caps` wins over it. |
 
 > Not all config file sections have environment variable coverage. `reporter`, `recorder`, the locator `selectorPriority` arrays, and `performance.collectAfterNavigation` are file-only settings. Use the config file for those.
 
@@ -408,8 +409,8 @@ The merge checks are per-property:
 | `SlowMo` | `int` | `0` | Milliseconds to add after every browser operation. |
 | `Timeout` | `int` | `30000` | Maximum time in milliseconds to wait for the browser process to start. |
 | `UserDataDir` | `string?` | `null` | Path to a browser user-data directory. Enables persistent sessions. |
-| `HandleSIGINT` | `bool` | `true` | Close the browser when the process receives SIGINT. |
-| `HandleSIGTERM` | `bool` | `true` | Close the browser when the process receives SIGTERM. |
+| `HandleSIGINT` | `bool` | `true` | Close the browser when the process receives SIGINT, or Ctrl+C on Windows. |
+| `HandleSIGTERM` | `bool` | `true` | Close the browser when the process receives SIGTERM or SIGHUP. Unix only. |
 | `IgnoreDefaultArgs` | `IReadOnlyList<string>?` | `null` | Default browser arguments to suppress. |
 | `DownloadsPath` | `string?` | `null` | Directory for browser-initiated file downloads. |
 | `Plugins` | `IReadOnlyList<IPlugin>?` | `null` | Plugin instances loaded into every browser context created from this launch. |

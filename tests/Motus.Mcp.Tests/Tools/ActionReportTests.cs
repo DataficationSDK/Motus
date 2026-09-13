@@ -111,6 +111,66 @@ public class ActionReportTests
         StringAssert.Contains(TextOf(result), "\nNew tab opened: [1] https://example.test/other");
     }
 
+    /// <summary>
+    /// The page said it opened a window and it is in none of the listed tabs, which now means the
+    /// window went away again or has not finished arriving. Saying nothing would leave the agent
+    /// believing the action opened nothing at all.
+    /// </summary>
+    [TestMethod]
+    public async Task AWindowThatIsInNoTabList_IsStillReported()
+    {
+        var page = NewPage();
+        var elsewhere = NewPage();
+        var service = new ReportingPageService(page, settle: 0);
+
+        var result = await Run(service, page, during: () => page.RaisePopup(elsewhere));
+
+        StringAssert.Contains(TextOf(result), "A window opened but is not among the tabs listed");
+    }
+
+    /// <summary>
+    /// The tabs span every context the session holds, so a tab that opened in another one is an
+    /// ordinary new tab. It is named with its context, because acting on it means going there.
+    /// </summary>
+    [TestMethod]
+    public async Task ATabThatOpenedInAnotherContext_IsListedWithThatContext()
+    {
+        var page = NewPage();
+        var opened = NewPage();
+        opened.PageUrl = "https://example.test/elsewhere";
+        var service = new ReportingPageService(page);
+        service.Contexts[opened] = "work";
+
+        var result = await Run(service, page, during: () =>
+        {
+            service.Tabs.Add(opened);
+            page.RaisePopup(opened);
+        });
+
+        var text = TextOf(result);
+        StringAssert.Contains(text, "New tab opened: [1] https://example.test/elsewhere in context 'work'");
+        Assert.IsFalse(text.Contains("not among the tabs listed", StringComparison.Ordinal), text);
+    }
+
+    [TestMethod]
+    public async Task AWindowTheTabsDoList_IsReportedAsANewTabAndNothingMore()
+    {
+        var page = NewPage();
+        var opened = NewPage();
+        opened.PageUrl = "https://example.test/popup";
+        var service = new ReportingPageService(page);
+
+        var result = await Run(service, page, during: () =>
+        {
+            service.Tabs.Add(opened);
+            page.RaisePopup(opened);
+        });
+
+        var text = TextOf(result);
+        StringAssert.Contains(text, "New tab opened: [1] https://example.test/popup");
+        Assert.IsFalse(text.Contains("not among the tabs listed", StringComparison.Ordinal), text);
+    }
+
     [TestMethod]
     public async Task AfterANavigation_TheResultSaysTheRefsAreGone()
     {
@@ -190,7 +250,7 @@ public class ActionReportTests
         // The dialog that interrupted the action is reported by the runner; the report does not
         // repeat it underneath.
         Assert.AreEqual(
-            "The action opened a confirm dialog: \"Delete this?\". Call handle_dialog to accept or dismiss it.",
+            "The action opened a confirm dialog: \"Delete this?\". Call handle_dialog to accept or dismiss it. The page finishes the action once the dialog is answered, so a dialog opened from a mousedown handler means the click lands after this call returned.",
             TextOf(result));
     }
 
@@ -232,8 +292,17 @@ public class ActionReportTests
         private readonly FakeToolPage _page;
 
         public ReportingPageService(
-            FakeToolPage page, ConsoleService? console = null, DialogService? dialogs = null, int? settle = null)
-            : base(new BrowserSessionManager(new McpServerLaunchOptions { SettleTimeout = settle }), dialogs, console)
+            FakeToolPage page,
+            ConsoleService? console = null,
+            DialogService? dialogs = null,
+            int? settle = null)
+            : base(
+                new BrowserSessionManager(new McpServerLaunchOptions
+                {
+                    SettleTimeout = settle,
+                }),
+                dialogs,
+                console)
         {
             _page = page;
             Tabs = [page];
@@ -247,7 +316,25 @@ public class ActionReportTests
         protected override Task<IPage> ResolvePageAsync(CancellationToken cancellationToken)
             => Task.FromResult<IPage>(_page);
 
-        protected override Task<IReadOnlyList<IPage>> GetActiveContextPagesAsync(CancellationToken cancellationToken)
-            => Task.FromResult<IReadOnlyList<IPage>>(Tabs.Cast<IPage>().ToArray());
+        protected override Task<IReadOnlyList<TabEntry>> GetOpenTabsAsync(CancellationToken cancellationToken)
+            => Task.FromResult<IReadOnlyList<TabEntry>>(
+                Tabs.Select(t => new TabEntry(t, ContextOf(t))).ToArray());
+
+        /// <summary>
+        /// The context a tab is modelled as belonging to. Everything is in the active context
+        /// unless a test says otherwise, which is what a session with one context looks like.
+        /// </summary>
+        public Dictionary<FakeToolPage, string> Contexts { get; } = [];
+
+        public override string GetActiveContextName() => ActiveContextName;
+
+        public override IReadOnlyCollection<string> GetContextNames()
+            => Contexts.Values.Append(ActiveContextName).Distinct().ToArray();
+
+        /// <summary>The context the session is working in.</summary>
+        public string ActiveContextName { get; set; } = BrowserSessionManager.DefaultContextName;
+
+        private string ContextOf(FakeToolPage page)
+            => Contexts.TryGetValue(page, out var name) ? name : ActiveContextName;
     }
 }

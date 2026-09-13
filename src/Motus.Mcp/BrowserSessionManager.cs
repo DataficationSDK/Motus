@@ -105,6 +105,17 @@ public sealed class BrowserSessionManager : IAsyncDisposable
     public IReadOnlyCollection<string> ContextNames => _contexts.Keys.ToArray();
 
     /// <summary>
+    /// A snapshot of the contexts this session holds, each with the name it is known by, in the
+    /// same order as <see cref="ContextNames"/>.
+    /// </summary>
+    /// <remarks>
+    /// The tab tools address every context's tabs with one index, so they need the contexts in an
+    /// order that holds still and the name to give each tab.
+    /// </remarks>
+    public IReadOnlyList<KeyValuePair<string, IBrowserContext>> HeldContexts
+        => _contexts.Select(e => new KeyValuePair<string, IBrowserContext>(e.Key, e.Value.Context)).ToArray();
+
+    /// <summary>
     /// Returns the live browser, acquiring it lazily on first use: started here, or connected to
     /// when an endpoint is configured. If the cached browser has died (its process crashed or its
     /// CDP transport dropped), it is disposed and acquired again the same way, so a transient

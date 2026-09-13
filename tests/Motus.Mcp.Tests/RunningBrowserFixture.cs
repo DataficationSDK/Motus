@@ -52,8 +52,10 @@ internal sealed class RunningBrowserFixture : IDisposable
         }
 
         var port = AllocateFreePort();
+        // Named the way the launcher names its own profiles, so one pattern finds every browser a
+        // test run can leave behind rather than every browser but this one.
         var userDataDir = Path.Combine(
-            Path.GetTempPath(), "motus-mcp-attach-" + Guid.NewGuid().ToString("N")[..8]);
+            Path.GetTempPath(), "motus-profile-mcp-attach-" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(userDataDir);
 
         var psi = new ProcessStartInfo
@@ -65,7 +67,7 @@ internal sealed class RunningBrowserFixture : IDisposable
             CreateNoWindow = true,
         };
 
-        foreach (var arg in ChromiumArgs.Build(new LaunchOptions { Headless = true }, port, userDataDir))
+        foreach (var arg in ChromiumArgs.Build(new LaunchOptions { Headless = true }, userDataDir, port))
             psi.ArgumentList.Add(arg);
 
         var process = Process.Start(psi)
@@ -74,7 +76,7 @@ internal sealed class RunningBrowserFixture : IDisposable
         // Redirected streams nobody reads fill and then block the browser writing to them.
         BrowserOutputDrain.Start(process.StandardOutput, process.StandardError);
 
-        await CdpEndpointPoller.WaitForEndpointAsync(port, StartupTimeout, CancellationToken.None)
+        await new CdpEndpointPoller().WaitForEndpointAsync(port, StartupTimeout, CancellationToken.None)
             .ConfigureAwait(false);
 
         return new RunningBrowserFixture(process, userDataDir, port);

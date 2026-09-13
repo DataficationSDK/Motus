@@ -11,6 +11,12 @@ public static class McpCommand
 {
     private const string TokenEnvVar = "MOTUS_MCP_TOKEN";
 
+    /// <summary>
+    /// The environment variable that names tool groups, as a comma-separated list. An MCP client's
+    /// launch configuration is often easier to set a variable in than to edit an argument list.
+    /// </summary>
+    private const string CapsEnvVar = "MOTUS_MCP_CAPS";
+
     private const string DefaultDialogPolicy = "ask";
 
     /// <summary>What <c>--dialogs</c> accepts. Listed once so the help text and the error agree.</summary>
@@ -176,8 +182,9 @@ public static class McpCommand
         var capsOpt = new Option<string[]>("--caps")
         {
             Description = "Add optional tool groups to the catalog: " + KnownCapabilities + ". Separate them "
-                + "with commas or repeat the flag. The tools an agent needs to read and drive a page are "
-                + "always there; these are added to them",
+                + "with commas or repeat the flag (or set " + CapsEnvVar + " to a comma-separated list). "
+                + "The tools an agent needs to read and drive a page are always there; these are added "
+                + "to them",
             Arity = ArgumentArity.ZeroOrMore,
             AllowMultipleArgumentsPerToken = true,
         };
@@ -269,9 +276,10 @@ public static class McpCommand
             bool Typed(Option option) => parseResult.GetResult(option) is { Implicit: false };
 
             if (!TryResolveCapabilities(
-                    Typed(capsOpt) ? parseResult.GetValue(capsOpt) : config?.Mcp?.Caps,
+                    Typed(capsOpt) ? parseResult.GetValue(capsOpt) : null,
                     out var caps,
-                    out var capsError))
+                    out var capsError,
+                    config?.Mcp?.Caps))
             {
                 await Console.Error.WriteLineAsync(capsError);
                 return 1;
@@ -538,19 +546,39 @@ public static class McpCommand
     }
 
     /// <summary>
-    /// Works out which optional tool groups to register, from what was typed or, failing that,
-    /// from the config file. Returns false, with the message to print, when a name is not one of
-    /// the groups.
+    /// Works out which optional tool groups to register, from what was typed or, failing that, from
+    /// <c>MOTUS_MCP_CAPS</c> and then the config file. Returns false, with the message to print,
+    /// when a name is not one of the groups.
     /// </summary>
+    /// <param name="requested">The groups named on the command line, or null when none were.</param>
+    /// <param name="capabilities">The group names to register.</param>
+    /// <param name="error">Why the answer was refused, or null.</param>
+    /// <param name="fromConfig">The groups the config file named, or null when it named none.</param>
+    /// <param name="envReader">
+    /// Where to read the environment variable from. Tests pass their own so no real variable has to
+    /// be set for the process.
+    /// </param>
     /// <remarks>
     /// The command line is a whole answer when it has one: a client that passes <c>--caps</c> says
-    /// exactly which groups it wants rather than adding to whatever the file happened to name, the
-    /// same way every other option here outranks the file.
+    /// exactly which groups it wants rather than adding to whatever the environment or the file
+    /// happened to name, the same way every other option here outranks them. The variable sits
+    /// between the two, matching the order the rest of the configuration documents, and is read
+    /// here rather than with the config file because that file is loaded only when
+    /// <c>--config</c> names it.
     /// </remarks>
     internal static bool TryResolveCapabilities(
-        IEnumerable<string>? requested, out string[] capabilities, out string? error)
+        IEnumerable<string>? requested,
+        out string[] capabilities,
+        out string? error,
+        IEnumerable<string>? fromConfig = null,
+        Func<string, string?>? envReader = null)
     {
-        capabilities = SplitCapabilities(requested);
+        var selection = requested;
+        if (selection is null
+            && (envReader ?? Environment.GetEnvironmentVariable)(CapsEnvVar) is { Length: > 0 } fromEnvironment)
+            selection = [fromEnvironment];
+
+        capabilities = SplitCapabilities(selection ?? fromConfig);
 
         foreach (var name in capabilities)
         {

@@ -22,7 +22,9 @@ internal static class DialogNotice
         var name = Name(dialog.Type);
         var article = name.StartsWith('a') ? "an" : "a";
         return $"The action opened {article} {name} dialog: \"{dialog.Message}\". "
-            + "Call handle_dialog to accept or dismiss it.";
+            + "Call handle_dialog to accept or dismiss it. The page finishes the action once the "
+            + "dialog is answered, so a dialog opened from a mousedown handler means the click "
+            + "lands after this call returned.";
     }
 
     /// <summary>The line every tool result carries while a dialog is waiting to be answered.</summary>

@@ -98,6 +98,18 @@ public interface ILocator
     Task<IReadOnlyList<string>> SelectOptionAsync(params string[] values);
 
     /// <summary>
+    /// Selects options in a select element by value, waiting no longer than the given timeout.
+    /// </summary>
+    /// <param name="values">The option values to select.</param>
+    /// <param name="timeout">Maximum time in milliseconds to wait.</param>
+    /// <returns>The selected option values.</returns>
+    /// <remarks>
+    /// The timeout has no default here, so a call that passes only values still binds to the
+    /// <c>params</c> overload above and means the same thing it always did.
+    /// </remarks>
+    Task<IReadOnlyList<string>> SelectOptionAsync(string[] values, double? timeout);
+
+    /// <summary>
     /// Sets the files for a file input element.
     /// </summary>
     /// <param name="files">The files to set.</param>

@@ -62,7 +62,8 @@ internal sealed class ActionReport : IDisposable
     private readonly long _consoleCursor;
     private readonly bool _hadSnapshot;
     private readonly IReadOnlyList<SnapshotFrame> _framesBefore;
-    private readonly IReadOnlyList<IPage>? _tabsBefore;
+    private readonly SnapshotScope? _scopeBefore;
+    private readonly IReadOnlyList<TabEntry>? _tabsBefore;
 
     private bool _subscribed;
 
@@ -74,7 +75,8 @@ internal sealed class ActionReport : IDisposable
         long consoleCursor,
         bool hadSnapshot,
         IReadOnlyList<SnapshotFrame> framesBefore,
-        IReadOnlyList<IPage>? tabsBefore)
+        SnapshotScope? scopeBefore,
+        IReadOnlyList<TabEntry>? tabsBefore)
     {
         _pageService = pageService;
         _page = page;
@@ -83,6 +85,7 @@ internal sealed class ActionReport : IDisposable
         _consoleCursor = consoleCursor;
         _hadSnapshot = hadSnapshot;
         _framesBefore = framesBefore;
+        _scopeBefore = scopeBefore;
         _tabsBefore = tabsBefore;
 
         _page.Popup += OnPopup;
@@ -108,6 +111,7 @@ internal sealed class ActionReport : IDisposable
             pageService.ConsoleLog?.NextSequence ?? 0,
             pageService.HasSnapshot(page),
             pageService.SnapshotFrames(page),
+            pageService.SnapshotScope(page),
             await TryListTabsAsync(pageService, cancellationToken).ConfigureAwait(false));
     }
 
@@ -196,7 +200,10 @@ internal sealed class ActionReport : IDisposable
             rows.Add("Page: " + PageDescription.Of(url, title));
 
         foreach (var tab in newTabs)
-            rows.Add($"New tab opened: [{tab.Index}] {tab.Page.Url}");
+            rows.Add(NewTabRow(tab.Index, tab.Tab));
+
+        if (newTabs.Count == 0 && PopupCount > 0)
+            rows.Add(UnlistedWindowRow);
 
         if (ConsoleRow() is { } console)
             rows.Add(console);
@@ -205,9 +212,38 @@ internal sealed class ActionReport : IDisposable
             rows.Add("Refs from the last snapshot no longer address this page: it navigated. Take a new snapshot.");
         else if (MovedFrames() is { Count: > 0 } movedFrames)
             rows.Add(FrameRefRow(movedFrames));
+        else if (ScopeMoved())
+            rows.Add("Refs from the last snapshot no longer address anything: the frame it described "
+                + "navigated. Take a new snapshot.");
 
         return rows;
     }
+
+    /// <summary>
+    /// Names a tab that was not open when the action started, with the index tab_select takes, and
+    /// says which context it landed in when that is not the one the session is working in.
+    /// </summary>
+    private string NewTabRow(int index, TabEntry tab)
+    {
+        var row = $"New tab opened: [{index}] {tab.Page.Url}";
+
+        return string.Equals(tab.ContextName, _pageService.GetActiveContextName(), StringComparison.Ordinal)
+            ? row
+            : row + $" in context '{tab.ContextName}'";
+    }
+
+    /// <summary>
+    /// Says that the page announced a window that is not among the tabs listed.
+    /// </summary>
+    /// <remarks>
+    /// The tabs span every context the session holds, and a window inherits the context of the page
+    /// that opened it, so this is now the odd case rather than the ordinary one: a window that
+    /// closed again as soon as it opened, or one still arriving when the report ran out of patience
+    /// waiting for it. Saying nothing would leave the agent believing the action opened nothing.
+    /// </remarks>
+    private const string UnlistedWindowRow =
+        "A window opened but is not among the tabs listed: it may have closed again, or it may "
+        + "still be arriving. Call tab_list to look again.";
 
     /// <summary>
     /// The frames the last snapshot printed that have since gone somewhere else, by their index.
@@ -229,6 +265,19 @@ internal sealed class ActionReport : IDisposable
 
         return moved;
     }
+
+    /// <summary>
+    /// Whether the frame the last snapshot described on its own has since gone somewhere else.
+    /// </summary>
+    /// <remarks>
+    /// A snapshot of one frame prints no frames inside itself, so <see cref="MovedFrames"/> has
+    /// nothing to walk after one and the refs it handed out would quietly stop meaning anything.
+    /// The refs of a scoped snapshot carry no frame index, so the row this feeds names no frame
+    /// either. Nothing here touches the browser.
+    /// </remarks>
+    private bool ScopeMoved()
+        => _scopeBefore is { } scope
+            && (scope.Frame.IsDetached || !string.Equals(scope.Frame.Url, scope.Url, StringComparison.Ordinal));
 
     private static string FrameRefRow(List<int> moved)
     {
@@ -279,7 +328,7 @@ internal sealed class ActionReport : IDisposable
     /// there is nothing to wait for and the agent should hear about the dialog straight away.
     /// </param>
     /// <param name="cancellationToken">The tool call's token.</param>
-    private async Task<IReadOnlyList<(int Index, IPage Page)>> NewTabsAsync(
+    private async Task<IReadOnlyList<(int Index, TabEntry Tab)>> NewTabsAsync(
         bool blocked, CancellationToken cancellationToken)
     {
         if (_tabsBefore is null)
@@ -295,7 +344,7 @@ internal sealed class ActionReport : IDisposable
         // about:blank at the moment it appears. Reporting that would point the agent at nothing.
         var started = Stopwatch.GetTimestamp();
         while (!blocked
-            && opened.Any(tab => IsBlank(tab.Page.Url))
+            && opened.Any(tab => IsBlank(tab.Tab.Page.Url))
             && Stopwatch.GetElapsedTime(started) < NewTabUrlWait
             && !cancellationToken.IsCancellationRequested)
         {
@@ -313,7 +362,7 @@ internal sealed class ActionReport : IDisposable
     /// event extends it: that is the browser saying a tab is on its way, so giving up on the
     /// ordinary budget would be giving up on something known to be coming.
     /// </remarks>
-    private async Task<IReadOnlyList<(int Index, IPage Page)>> WaitForTabsAsync(CancellationToken cancellationToken)
+    private async Task<IReadOnlyList<(int Index, TabEntry Tab)>> WaitForTabsAsync(CancellationToken cancellationToken)
     {
         var started = Stopwatch.GetTimestamp();
 
@@ -332,14 +381,14 @@ internal sealed class ActionReport : IDisposable
     }
 
     /// <summary>The open tabs that were not open when the action started, read once.</summary>
-    private async Task<List<(int Index, IPage Page)>> DiffTabsAsync(CancellationToken cancellationToken)
+    private async Task<List<(int Index, TabEntry Tab)>> DiffTabsAsync(CancellationToken cancellationToken)
     {
         var tabs = await TryListTabsAsync(_pageService, cancellationToken).ConfigureAwait(false) ?? [];
 
-        var opened = new List<(int Index, IPage Page)>();
+        var opened = new List<(int Index, TabEntry Tab)>();
         for (var index = 0; index < tabs.Count; index++)
         {
-            if (!_tabsBefore!.Any(before => ReferenceEquals(before, tabs[index])))
+            if (!_tabsBefore!.Any(before => ReferenceEquals(before.Page, tabs[index].Page)))
                 opened.Add((index, tabs[index]));
         }
 
@@ -387,7 +436,7 @@ internal sealed class ActionReport : IDisposable
     /// report describes what an action did, and launching a browser to describe a fake page is
     /// not that.
     /// </summary>
-    private static async Task<IReadOnlyList<IPage>?> TryListTabsAsync(
+    private static async Task<IReadOnlyList<TabEntry>?> TryListTabsAsync(
         ActivePageService pageService, CancellationToken cancellationToken)
     {
         if (!pageService.IsBrowserLaunched)

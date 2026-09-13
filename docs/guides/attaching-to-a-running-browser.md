@@ -60,7 +60,7 @@ await MotusLauncher.ConnectAsync(endpoint, new ConnectOptions
 });
 ```
 
-New tabs and frames that appear after connecting are picked up as they happen, so a long-lived session stays accurate rather than describing the browser as it was at connect time.
+New tabs and frames that appear after connecting are picked up as they happen, so a long-lived session stays accurate rather than describing the browser as it was at connect time. Turning adoption off narrows what is taken over, not what is watched: a popup opened by a page in a context you created is still tracked and still raises `IPage.Popup`, while tabs belonging to whoever else is using the browser stay out of it.
 
 ---
 
@@ -158,6 +158,8 @@ motus mcp --allow-attach
 ```
 
 Choosing which browser a session drives is the operator's decision rather than the agent's. A browser with a debugging port open may be holding somebody's signed-in sessions, and an agent acting partly on instructions that came from the pages it visited is not the right party to make that call. A tool that would refuse every call teaches an agent to keep trying it, so it is left out of the catalog instead, and the refusal stays behind it for anything that reaches it another way.
+
+The browser on the other end is a Chromium-based one, because attaching speaks the Chrome DevTools Protocol. Firefox is driven only by a browser the server starts, and snapshot refs are unavailable in a Firefox session: the `snapshot` tool says so rather than describing the page, so take a screenshot and act on positions with the coordinate tools there.
 
 Two consequences of attaching are worth stating plainly:
 

@@ -168,14 +168,38 @@ public class PageSnapshotServiceTests
     }
 
     [TestMethod]
-    public async Task TakeSnapshot_WithNoAddressableNodes_AppendsCoordinateWorkflowNote()
+    public async Task TakeSnapshot_WithNoAddressableNodes_AndCoordinateTools_NamesThem()
+    {
+        var service = new PageSnapshotService(
+            new FakeAccessibilityPage(EmptySnapshot()), coordinateToolsAvailable: true);
+
+        var text = await service.TakeSnapshotAsync();
+
+        StringAssert.Contains(text, "no addressable elements were found");
+        StringAssert.Contains(text, "click_xy");
+        Assert.IsFalse(
+            text.Contains("--caps coordinates", StringComparison.Ordinal),
+            "the tools are there, so there is nothing to restart the server for");
+        Assert.AreEqual(text, service.LastSnapshot);
+    }
+
+    /// <summary>
+    /// Without the coordinate tools there is no way to act on this page at all, and saying so
+    /// plainly is the point: an agent asked to check its own tool list and draw the conclusion
+    /// answers inconsistently.
+    /// </summary>
+    [TestMethod]
+    public async Task TakeSnapshot_WithNoAddressableNodes_AndNoCoordinateTools_SaysTheSessionIsStuck()
     {
         var service = new PageSnapshotService(new FakeAccessibilityPage(EmptySnapshot()));
 
         var text = await service.TakeSnapshotAsync();
 
         StringAssert.Contains(text, "no addressable elements were found");
-        StringAssert.Contains(text, "click_xy");
+        StringAssert.Contains(text, "--caps coordinates");
+        Assert.IsFalse(
+            text.Contains("click_xy", StringComparison.Ordinal),
+            "naming a tool the agent cannot call sends it looking for one that is not there");
         Assert.AreEqual(text, service.LastSnapshot);
     }
 
@@ -208,7 +232,8 @@ public class PageSnapshotServiceTests
             DiagnosticMessage: "Accessibility.getFullAXTree is not supported on the active transport "
                 + "(Firefox/WebDriver BiDi). Use a Chromium-based browser for accessibility audits.");
 
-        var service = new PageSnapshotService(new FakeAccessibilityPage(snapshot));
+        var service = new PageSnapshotService(
+            new FakeAccessibilityPage(snapshot), coordinateToolsAvailable: true);
 
         var text = await service.TakeSnapshotAsync();
 
@@ -218,6 +243,45 @@ public class PageSnapshotServiceTests
         Assert.IsFalse(
             text.Contains("canvas", StringComparison.Ordinal),
             "the page is not the reason the tree is empty, so do not send the agent looking at it");
+    }
+
+    /// <summary>
+    /// A snapshot of one frame prints no frames inside itself, so the address of the frame it did
+    /// describe is the only thing an action afterwards can compare to notice that the refs have
+    /// stopped meaning anything.
+    /// </summary>
+    [TestMethod]
+    public async Task TakeSnapshot_ScopedToAFrame_RecordsTheAddressTheFrameHeld()
+    {
+        var page = new FakeToolPage(EmptySnapshot());
+        var frame = new FakeToolFrame(page, "https://example.test/payment")
+        {
+            Snapshot = new AccessibilitySnapshot(
+                Roots:
+                [
+                    new AccessibilityNode("1", "button", "Pay now", null, null,
+                        new Dictionary<string, string?>(), [], BackendDOMNodeId: 5),
+                ],
+                IgnoredCount: 0,
+                DiagnosticMessage: null),
+        };
+        var service = new PageSnapshotService(page);
+
+        await service.TakeSnapshotAsync(frame, rootRef: null, maxDepth: null);
+
+        Assert.IsNotNull(service.ScopedTo);
+        Assert.AreSame(frame, service.ScopedTo.Frame);
+        Assert.AreEqual("https://example.test/payment", service.ScopedTo.Url);
+    }
+
+    [TestMethod]
+    public async Task TakeSnapshot_OfThePage_RecordsNoScope()
+    {
+        var service = new PageSnapshotService(new FakeAccessibilityPage(EmptySnapshot()));
+
+        await service.TakeSnapshotAsync();
+
+        Assert.IsNull(service.ScopedTo, "a page snapshot describes no frame on its own.");
     }
 
     private static AccessibilitySnapshot EmptySnapshot()

@@ -5,6 +5,12 @@ namespace Motus;
 
 internal sealed partial class Page
 {
+    /// <summary>
+    /// The reason <c>Page.frameDetached</c> carries when a frame has changed renderer process
+    /// rather than gone away.
+    /// </summary>
+    private const string SwapDetachReason = "swap";
+
     private void StartEventPump()
     {
         var ct = _pageCts.Token;
@@ -79,20 +85,11 @@ internal sealed partial class Page
     {
         var isPageSession = ReferenceEquals(session, _session);
 
-        _ = PumpEventsAsync(session,
-            "Page.frameNavigated",
-            CdpJsonContext.Default.PageFrameNavigatedEvent,
-            evt => OnFrameNavigated(evt, session, isPageSession), ct);
-
-        _ = PumpEventsAsync(session,
-            "Page.frameAttached",
-            CdpJsonContext.Default.PageFrameAttachedEvent,
-            evt => OnFrameAttached(evt, session), ct);
-
-        _ = PumpEventsAsync(session,
-            "Page.frameDetached",
-            CdpJsonContext.Default.PageFrameDetachedEvent,
-            OnFrameDetached, ct);
+        // The three events that shape the frame tree are read together, in the order the browser
+        // sent them. Each on a channel of its own would be handled by a loop of its own, and a
+        // child's attach could then be acted on before the navigation of its parent that came
+        // first on the wire, which would drop a frame the new document had only just added.
+        _ = PumpFrameTreeEventsAsync(session, isPageSession, ct);
 
         // Per-frame load completion, used to wait out a navigation of a single frame.
         _ = PumpEventsAsync(session,
@@ -126,6 +123,44 @@ internal sealed partial class Page
             OnTargetDetached, ct);
     }
 
+    private async Task PumpFrameTreeEventsAsync(IMotusSession session, bool isPageSession, CancellationToken ct)
+    {
+        string[] events = ["Page.frameNavigated", "Page.frameAttached", "Page.frameDetached"];
+
+        try
+        {
+            await foreach (var raw in session.SubscribeAsync(events, ct).ConfigureAwait(false))
+            {
+                try
+                {
+                    switch (raw.Method)
+                    {
+                        case "Page.frameNavigated":
+                            if (JsonSerializer.Deserialize(raw.Params, CdpJsonContext.Default.PageFrameNavigatedEvent) is { } navigated)
+                                OnFrameNavigated(navigated, session, isPageSession);
+                            break;
+                        case "Page.frameAttached":
+                            if (JsonSerializer.Deserialize(raw.Params, CdpJsonContext.Default.PageFrameAttachedEvent) is { } attached)
+                                OnFrameAttached(attached, session);
+                            break;
+                        case "Page.frameDetached":
+                            if (JsonSerializer.Deserialize(raw.Params, CdpJsonContext.Default.PageFrameDetachedEvent) is { } detached)
+                                OnFrameDetached(detached, session);
+                            break;
+                    }
+                }
+                catch
+                {
+                    // Prevent user handler exceptions from killing the event pump
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected on page close
+        }
+    }
+
     private async Task PumpEventsAsync<T>(
         IMotusSession session,
         string eventName,
@@ -156,7 +191,14 @@ internal sealed partial class Page
     private void OnFrameNavigated(PageFrameNavigatedEvent evt, IMotusSession source, bool isPageSession)
     {
         var info = evt.Frame;
-        var frame = _frames.GetOrAdd(info.Id, id => new Frame(this, id, info.ParentId));
+        var frame = EnsureFrame(info.Id, info.ParentId);
+
+        // A new document replaces everything the old one hosted, so the frames underneath are gone
+        // whatever the browser goes on to say about them. It does not always say they were
+        // removed: a document kept in the back-forward cache has its frames announced as swapped
+        // out instead, and those would otherwise be listed alongside the new document's for as
+        // long as the page lived.
+        DetachChildFrames(info.Id);
 
         frame.Url = info.Url;
         frame.Name = info.Name;
@@ -181,18 +223,69 @@ internal sealed partial class Page
 
     private void OnFrameAttached(PageFrameAttachedEvent evt, IMotusSession source)
     {
-        var frame = _frames.GetOrAdd(evt.FrameId, id => new Frame(this, id, evt.ParentFrameId));
+        var frame = EnsureFrame(evt.FrameId, evt.ParentFrameId);
         RecordFrameOwnership(evt.FrameId, source, ReferenceEquals(source, _session));
         FrameAttached?.Invoke(this, frame);
     }
 
-    private void OnFrameDetached(PageFrameDetachedEvent evt)
+    /// <summary>
+    /// Drops a frame the browser says has gone away, unless it is only changing renderer process.
+    /// </summary>
+    /// <remarks>
+    /// A frame moved into another process is announced as a detach carrying the reason
+    /// <c>swap</c>, and that frame has not gone anywhere: the target now hosting it reports it
+    /// again through its own frame tree. The two announcements travel over different sessions, so
+    /// either can arrive first. When the new target has already reported the frame, the frame is
+    /// recorded against that target's session rather than the one delivering the notice, and the
+    /// notice is late news to be ignored: acting on it would remove a frame the page still has,
+    /// send its traffic back to the wrong session, and mark a handle the caller is holding as
+    /// detached for good. When the notice comes first, the frame is kept for the target about to
+    /// claim it, and only the frames it hosted are dropped, since the new document reports its
+    /// own.
+    /// <para>
+    /// A swap can also mean a document going into the back-forward cache when its parent navigates
+    /// away. Nothing here tells that apart, and nothing needs to: the parent's navigation drops
+    /// every frame underneath it (see <see cref="OnFrameNavigated"/>), so the notice finds nothing
+    /// left to keep.
+    /// </para>
+    /// </remarks>
+    private void OnFrameDetached(PageFrameDetachedEvent evt, IMotusSession source)
     {
-        _frames.TryRemove(evt.FrameId, out var frame);
-        _frameIdToExecutionContext.TryRemove(evt.FrameId, out _);
-        _frameIdToSession.TryRemove(evt.FrameId, out _);
-        _frameIdToIsolatedWorld.TryRemove(evt.FrameId, out _);
-        _frameTargetInit.TryRemove(evt.FrameId, out _);
+        if (string.Equals(evt.Reason, SwapDetachReason, StringComparison.Ordinal))
+        {
+            if (_frameIdToSession.TryGetValue(evt.FrameId, out var owner) && !ReferenceEquals(owner, source))
+                return;
+
+            DetachChildFrames(evt.FrameId);
+            return;
+        }
+
+        DetachFrame(evt.FrameId);
+    }
+
+    /// <summary>
+    /// Drops the frames hosted underneath <paramref name="frameId"/>, deepest first, leaving the
+    /// frame itself in place.
+    /// </summary>
+    private void DetachChildFrames(string frameId)
+    {
+        foreach (var child in GetChildFrames(frameId).Cast<Frame>())
+        {
+            DetachChildFrames(child.Id);
+            DetachFrame(child.Id);
+        }
+    }
+
+    /// <summary>
+    /// Drops one frame and everything recorded about it, and tells subscribers it has gone.
+    /// </summary>
+    private void DetachFrame(string frameId)
+    {
+        var frame = RemoveFrame(frameId);
+        _frameIdToExecutionContext.TryRemove(frameId, out _);
+        _frameIdToSession.TryRemove(frameId, out _);
+        _frameIdToIsolatedWorld.TryRemove(frameId, out _);
+        _frameTargetInit.TryRemove(frameId, out _);
 
         if (frame is null)
             return;

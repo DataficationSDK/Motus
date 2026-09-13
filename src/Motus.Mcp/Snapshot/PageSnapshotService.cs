@@ -9,6 +9,16 @@ namespace Motus.Mcp;
 public sealed record SnapshotFrame(int Index, IFrame Frame, string Url);
 
 /// <summary>
+/// The frame a snapshot described on its own, and the address that frame held when it was read.
+/// </summary>
+/// <remarks>
+/// A snapshot of one frame hands out refs that mean something only to the document it read, and
+/// that document can be replaced without the page moving at all. The address is kept so an action
+/// afterwards can say the refs have stopped meaning anything.
+/// </remarks>
+public sealed record SnapshotScope(IFrame Frame, string Url);
+
+/// <summary>
 /// Holds the most recent accessibility snapshot for a single page and turns the targets a caller
 /// names into actionable locators: the refs it assigned, and selectors, which need no snapshot at
 /// all. Refs are valid only for the latest snapshot; taking a new snapshot replaces the ref map.
@@ -21,15 +31,23 @@ public sealed record SnapshotFrame(int Index, IFrame Frame, string Url);
 public sealed class PageSnapshotService
 {
     private readonly IPage _page;
+    private readonly bool _coordinateToolsAvailable;
     private IReadOnlyDictionary<string, RefTarget>? _refs;
     private IReadOnlyDictionary<long, string>? _backendNodeIdToRef;
     private IReadOnlyList<AccessibilityNode>? _roots;
     private IFrame? _refFrame;
 
-    public PageSnapshotService(IPage page)
+    /// <param name="page">The page to snapshot.</param>
+    /// <param name="coordinateToolsAvailable">
+    /// Whether the tools that act on a position are in the catalog. It decides what a snapshot with
+    /// nothing addressable in it offers as a way forward, so the restrictive answer is the default:
+    /// a caller that has not said otherwise is not promised tools it may not have.
+    /// </param>
+    public PageSnapshotService(IPage page, bool coordinateToolsAvailable = false)
     {
         ArgumentNullException.ThrowIfNull(page);
         _page = page;
+        _coordinateToolsAvailable = coordinateToolsAvailable;
     }
 
     /// <summary>The text of the most recent snapshot, or null if none has been taken.</summary>
@@ -52,6 +70,17 @@ public sealed class PageSnapshotService
     /// the caller asked for.
     /// </summary>
     public IFrame? Scope => _refFrame;
+
+    /// <summary>
+    /// The frame the most recent snapshot described, with the address it held at the time, or null
+    /// when the snapshot described the page or none has been taken.
+    /// </summary>
+    /// <remarks>
+    /// Kept for the same reason as <see cref="InlinedFrames"/>, which a scoped snapshot never
+    /// fills: the one document its refs came from is the one that can go somewhere else under
+    /// them, and the page's own address would show nothing when it does.
+    /// </remarks>
+    public SnapshotScope? ScopedTo { get; private set; }
 
     /// <summary>
     /// Fetches a fresh accessibility snapshot, assigns refs in document order, and
@@ -148,6 +177,7 @@ public sealed class PageSnapshotService
         _backendNodeIdToRef = BuildReverseMap(serialized.Refs);
         _roots = snapshot.Roots;
         _refFrame = scope;
+        ScopedTo = scope is null ? null : new SnapshotScope(scope, scope.Url);
         InlinedFrames = [.. serialized.Frames.Select(f => new SnapshotFrame(f.Index, f.Frame, f.Frame.Url))];
 
         var text = serialized.Text;
@@ -169,10 +199,14 @@ public sealed class PageSnapshotService
                   + "with this browser."
                 : "no addressable elements were found. The page may render to a canvas or custom "
                   + "surface that the accessibility tree cannot describe.")
-                + " Take a screenshot to identify controls visually, then act on their positions "
-                + "with the coordinate tools: click_xy, drag, or scroll_xy. If those are not in "
-                + "this server's tool list, say that it has to be restarted with --caps "
-                + "coordinates.\n";
+                // What to do next is not the same question in both catalogs, and an agent asked to
+                // check its own tool list and draw the conclusion answers inconsistently.
+                + (_coordinateToolsAvailable
+                    ? " Take a screenshot to identify controls visually, then act on their positions "
+                      + "with the coordinate tools: click_xy, drag, or scroll_xy.\n"
+                    : " Take a screenshot to identify controls visually. This server has no tools "
+                      + "that act on a position, so nothing on this page can be clicked until it is "
+                      + "restarted with --caps coordinates.\n");
         }
 
         // A frame left out of the tree is one the agent cannot see at all, so say how many and

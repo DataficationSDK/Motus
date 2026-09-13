@@ -27,6 +27,9 @@ internal sealed class CrossOriginFixtureServer : IDisposable
 
     internal string OuterUrl => PrimaryOrigin + "/outer.html";
 
+    /// <summary>A document whose six iframes are all in the markup, one of them cross-origin.</summary>
+    internal string OrderedUrl => PrimaryOrigin + "/ordered.html";
+
     /// <summary>
     /// How far the cross-origin frame is pushed from the top left of the outer document. Large
     /// enough on both axes that a reading taken inside the frame is obviously wrong if the frame's
@@ -94,6 +97,32 @@ internal sealed class CrossOriginFixtureServer : IDisposable
               <script>document.getElementById('target').onclick = () => window.clicks++;</script>
               <iframe id="deep" src="{{PrimaryOrigin}}/deep.html"></iframe>
             </body></html>
+            """;
+
+        // Six frames the parser sees in one pass, so the order they attach in is the order they are
+        // written in. The fourth is served from the second origin, so it is adopted through a
+        // session of its own and arrives by a different route from its siblings.
+        _documents["/ordered.html"] = $$"""
+            <!doctype html>
+            <html><head><style>
+              body { margin: 0; }
+              iframe { display: block; width: 100px; height: 40px; border: 0; }
+            </style></head>
+            <body>
+              <iframe src="/ordered-child.html?i=0"></iframe>
+              <iframe src="/ordered-child.html?i=1"></iframe>
+              <iframe src="/ordered-child.html?i=2"></iframe>
+              <iframe src="{{SecondaryOrigin}}/ordered-child.html?i=3"></iframe>
+              <iframe src="/ordered-child.html?i=4"></iframe>
+              <iframe src="/ordered-child.html?i=5"></iframe>
+            </body></html>
+            """;
+
+        // One document behind all six frames. Which one a frame is stays readable from its URL,
+        // because the query string is carried there and the server ignores it.
+        _documents["/ordered-child.html"] = """
+            <!doctype html>
+            <html><body><p>child</p></body></html>
             """;
 
         // Two process boundaries from the page, so a click here only lands if the frame offsets

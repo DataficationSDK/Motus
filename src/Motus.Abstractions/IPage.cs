@@ -18,8 +18,12 @@ public interface IPage : IAsyncDisposable
     IFrame MainFrame { get; }
 
     /// <summary>
-    /// Gets all frames in the page, including the main frame.
+    /// Gets all frames in the page, including the main frame, in the order they attached.
     /// </summary>
+    /// <remarks>
+    /// For frames that share a parent, attach order is the order their elements appear in the page,
+    /// unless the page inserted one later, in which case it goes on the end.
+    /// </remarks>
     IReadOnlyList<IFrame> Frames { get; }
 
     /// <summary>

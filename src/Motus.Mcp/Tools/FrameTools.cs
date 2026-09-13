@@ -28,10 +28,10 @@ public sealed class FrameTools
 {
     [McpServerTool(Name = "frame_list", Title = "List frames", Destructive = false, ReadOnly = true, Idempotent = true)]
     [Description("Lists the frames of the active page, each with its zero-based index, nesting depth, URL, and "
-        + "name. Index 0 is the page itself and a frame is listed after the frame that holds it, though frames at "
-        + "the same level come in the order the browser reports them rather than the order they appear in the "
-        + "page. The scoped frame is marked with an asterisk. The index is the one a page snapshot prints as "
-        + "[frame=N] and puts in front of the refs inside it.")]
+        + "name. Index 0 is the page itself and a frame is listed after the frame that holds it, with frames at "
+        + "the same level in the order they attached, which is the order they appear in the page unless the page "
+        + "inserted one later. The scoped frame is marked with an asterisk. The index is the one a page snapshot "
+        + "prints as [frame=N] and puts in front of the refs inside it.")]
     public static async Task<CallToolResult> FrameListAsync(
         ActivePageService pageService,
         CancellationToken cancellationToken)

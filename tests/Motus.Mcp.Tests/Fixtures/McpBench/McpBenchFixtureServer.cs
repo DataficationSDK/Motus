@@ -9,13 +9,14 @@ namespace Motus.Mcp.Tests.Fixtures;
 /// and does run against a page with the shapes that trip agents up: a form under a stack of
 /// wrapper elements, a button that opens an alert, a button that logs an error and throws, a
 /// link that opens a new tab, content that appears after a delay, a canvas, and a same-origin
-/// frame.
+/// frame. A second page carries the dialogs on their own.
 /// </summary>
 /// <remarks>
-/// The documents live beside this class as <c>index.html</c>, <c>frame.html</c>, and
-/// <c>other.html</c> and are copied to the test output directory, so the same files can be served
-/// by hand for a manual comparison. A real <c>http://</c> origin is needed rather than a
-/// <c>data:</c> URL because the new-tab link and the frame both need a URL to resolve against.
+/// The documents live beside this class as <c>index.html</c>, <c>frame.html</c>,
+/// <c>other.html</c> and <c>dialogs.html</c>, and are copied to the test output directory, so the
+/// same files can be served by hand for a manual comparison. A real <c>http://</c> origin is
+/// needed rather than a <c>data:</c> URL because the new-tab link and the frame both need a URL to
+/// resolve against.
 /// </remarks>
 internal sealed class McpBenchFixtureServer : IDisposable
 {
@@ -32,6 +33,12 @@ internal sealed class McpBenchFixtureServer : IDisposable
 
     /// <summary>The page the two navigation links point at.</summary>
     internal string OtherUrl => Origin + "/other.html";
+
+    /// <summary>
+    /// Two buttons that open the same alert, one from a click handler and one from a mousedown
+    /// handler, each counting the click events the page actually saw.
+    /// </summary>
+    internal string DialogsUrl => Origin + "/dialogs.html";
 
     /// <summary>
     /// Every path requested so far, in order. Lets a test prove the browser fetched a document

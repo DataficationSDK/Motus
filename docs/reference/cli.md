@@ -303,14 +303,14 @@ motus mcp --http --host 0.0.0.0 --port 8931 --token "$MOTUS_MCP_TOKEN"
 | `--timezone` | machine default | Time zone every page reports, e.g. `Europe/Berlin`. |
 | `--proxy-server` | none | Send browser traffic through this proxy, e.g. `http://127.0.0.1:8080`. |
 | `--proxy-bypass` | none | Comma-separated hosts that skip the proxy. Needs `--proxy-server`. |
-| `--timeout` | framework default | How long an element action waits for its target, in milliseconds. |
+| `--timeout` | framework default | How long an element action waits for its target, in milliseconds. `press_key` dispatches a key to the active page and waits for nothing, so it is the one tool this does not reach. |
 | `--navigation-timeout` | framework default | How long a navigation waits to finish, in milliseconds. |
 | `--settle` | `500` | How long an action waits, after the browser accepts it, for the page to show what it did before the result is written, in milliseconds. `0` describes the page the instant the action returns. |
 | `--dialogs` | `ask` | What becomes of a JavaScript dialog: `accept`, `dismiss`, or `ask` to leave it for `handle_dialog`. |
 | `--record-video` | none | Record every page into this directory, one MJPEG AVI per page. |
 | `--show-cursor` | `false` | Draw an on-screen pointer and click effects into the page so captures show them. Turns on natural mouse motion unless `--natural-mouse` says otherwise. |
 | `--natural-mouse` | follows `--show-cursor` | Move along curved, eased paths. Pass `--natural-mouse false` to keep the cursor without it. |
-| `--caps` | none | Optional tool groups to advertise on top of the always-available ones: `coordinates`, `recording`, `contexts`, `routing`. Separate with commas or repeat the flag. |
+| `--caps` | none | Optional tool groups to advertise on top of the always-available ones: `coordinates`, `recording`, `contexts`, `routing`. Separate with commas or repeat the flag, or set `MOTUS_MCP_CAPS` to a comma-separated list. The flag wins over the variable, and the variable over the config file. |
 | `--config` | none | Read defaults from this `motus.config.json` file: `--headless`, `--channel`, `--executable-path`, `--viewport`, `--locale`, `--timeout`, and `--caps` (as `mcp.caps`). The command line wins over it. |
 | `--http` | `false` | Serve over Streamable HTTP instead of stdio. |
 | `--host` | `127.0.0.1` | Interface to bind when `--http` is set. |

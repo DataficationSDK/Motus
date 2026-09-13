@@ -180,6 +180,34 @@ public class SecurityPolicyTests
         StringAssert.Contains(refusal, "Reads are confined to");
     }
 
+    /// <summary>
+    /// A client may move its roots while the session is running. An answer kept from an earlier
+    /// call would go on allowing a directory the client has since let go of, so every check asks
+    /// again.
+    /// </summary>
+    [TestMethod]
+    public async Task Read_WhenTheClientMovesItsRoots_FollowsTheChange()
+    {
+        var asked = 0;
+        var policy = new SecurityPolicy(new McpServerLaunchOptions { OutputDirectory = _outputDir })
+        {
+            ReadRootsOverride = _ => new ValueTask<IReadOnlyList<string>>(
+                ++asked == 1 ? new[] { _outside } : new[] { _outputDir }),
+        };
+
+        Assert.IsNull(await policy.RefuseReadAsync(
+            Path.Combine(_outside, "upload.txt"), server: null, CancellationToken.None));
+
+        var refusal = await policy.RefuseReadAsync(
+            Path.Combine(_outside, "upload.txt"), server: null, CancellationToken.None);
+
+        Assert.IsNotNull(refusal, "the client no longer reports that directory, so the read is refused.");
+        Assert.IsNull(
+            await policy.RefuseReadAsync(
+                Path.Combine(_outputDir, "upload.txt"), server: null, CancellationToken.None),
+            "and the directory it moved to is readable without restarting anything.");
+    }
+
     [TestMethod]
     public async Task Read_WithNoRootsReported_FallsBackToTheWorkingAndOutputDirectories()
     {

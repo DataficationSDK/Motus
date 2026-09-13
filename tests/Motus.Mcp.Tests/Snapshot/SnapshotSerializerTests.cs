@@ -331,6 +331,21 @@ public class SnapshotSerializerTests
     }
 
     [TestMethod]
+    public void LineBreak_IsNeverPrinted()
+    {
+        var snapshot = Snapshot(Node("paragraph", null, backendId: 1, children:
+        [
+            Text("First line", 2),
+            Node("LineBreak", "\n", backendId: 3),
+            Text("Second line", 4),
+        ]));
+
+        var result = SnapshotSerializer.Serialize(snapshot);
+
+        Assert.AreEqual("- paragraph: First line Second line\n", result.Text);
+    }
+
+    [TestMethod]
     public void Heading_ShowsItsLevel_AndOtherRolesDoNot()
     {
         var level = new Dictionary<string, string?> { ["level"] = "2" };

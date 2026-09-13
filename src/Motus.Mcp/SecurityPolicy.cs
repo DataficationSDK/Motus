@@ -32,9 +32,6 @@ public sealed class SecurityPolicy
 
     private static readonly Lazy<SecurityPolicy> LazyDefault = new(() => new SecurityPolicy(new McpServerLaunchOptions()));
 
-    private readonly SemaphoreSlim _rootsGate = new(1, 1);
-    private IReadOnlyList<string>? _readRoots;
-
     /// <summary>Derives the boundaries from the options the server was started with.</summary>
     public SecurityPolicy(McpServerLaunchOptions options)
     {
@@ -186,6 +183,19 @@ public sealed class SecurityPolicy
             return null;
 
         var roots = await ReadRootsAsync(server, cancellationToken).ConfigureAwait(false);
+        return RefuseRead(path, roots);
+    }
+
+    /// <summary>
+    /// Says why a file outside <paramref name="roots"/> may not be read, or null when it may. For a
+    /// tool holding several paths: it reads the roots once and checks every path against that one
+    /// answer, so one tool call asks the client once.
+    /// </summary>
+    internal string? RefuseRead(string path, IReadOnlyList<string> roots)
+    {
+        if (AllowUnrestrictedFileAccess)
+            return null;
+
         var real = RealPath(Path.GetFullPath(path));
 
         foreach (var root in roots)
@@ -198,40 +208,26 @@ public sealed class SecurityPolicy
             + "Start the server with " + UnrestrictedFileAccessOption + " to lift this.";
     }
 
-    /// <summary>The directories reads are currently confined to. Resolved once and then reused.</summary>
+    /// <summary>
+    /// The directories reads are currently confined to, asked of the client every time they are
+    /// needed.
+    /// </summary>
+    /// <remarks>
+    /// A client may move its roots while the session is running, and an answer kept from an earlier
+    /// call would go on allowing a directory the client has since let go of. The only tool that
+    /// reads a file is one a person asked for, so a round trip per call costs nothing anyone
+    /// notices.
+    /// </remarks>
     internal async ValueTask<IReadOnlyList<string>> ReadRootsAsync(McpServer? server, CancellationToken cancellationToken)
     {
-        if (_readRoots is { } cached)
-            return cached;
-
-        await _rootsGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            if (_readRoots is { } raced)
-                return raced;
-
-            var roots = await AskForRootsAsync(server, cancellationToken).ConfigureAwait(false);
-            if (roots.Count == 0)
-            {
-                // No client roots: the server's own working directory is what the operator started
-                // it in, and the output directory holds what this session produced, so a file the
-                // agent was told to upload is reachable without opening the whole machine.
-                var fallback = new[] { Path.GetFullPath(Directory.GetCurrentDirectory()), OutputDirectory };
-
-                // A server with no client to ask may be asked again later, once one has connected.
-                if (server is null && ReadRootsOverride is null)
-                    return fallback;
-
-                roots = fallback;
-            }
-
-            _readRoots = roots;
+        var roots = await AskForRootsAsync(server, cancellationToken).ConfigureAwait(false);
+        if (roots.Count > 0)
             return roots;
-        }
-        finally
-        {
-            _rootsGate.Release();
-        }
+
+        // No client roots: the server's own working directory is what the operator started it in,
+        // and the output directory holds what this session produced, so a file the agent was told
+        // to upload is reachable without opening the whole machine.
+        return [Path.GetFullPath(Directory.GetCurrentDirectory()), OutputDirectory];
     }
 
     private async ValueTask<IReadOnlyList<string>> AskForRootsAsync(McpServer? server, CancellationToken cancellationToken)

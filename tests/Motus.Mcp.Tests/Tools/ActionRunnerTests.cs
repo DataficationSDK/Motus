@@ -41,7 +41,7 @@ public class ActionRunnerTests
         var result = await running;
 
         Assert.AreEqual(
-            "The action opened an alert dialog: \"Are you sure?\". Call handle_dialog to accept or dismiss it.",
+            "The action opened an alert dialog: \"Are you sure?\". Call handle_dialog to accept or dismiss it. The page finishes the action once the dialog is answered, so a dialog opened from a mousedown handler means the click lands after this call returned.",
             TextOf(result));
         Assert.IsFalse(result.IsError ?? false, "the action ran; the page is simply waiting on an answer.");
         Assert.IsTrue(actionToken.IsCancellationRequested, "the action's token should have been cancelled.");

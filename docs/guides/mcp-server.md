@@ -143,6 +143,8 @@ Naming a group only ever adds to the catalog. There is no way to drop a tool fro
 
 Attaching is the exception to the pattern, because it is already governed by an option: `browser_attach` is listed when the server was started with `--allow-attach` or `--connect`, and left out otherwise. A tool that is going to refuse every call teaches an agent to keep trying it, and saying nothing is clearer than refusing repeatedly.
 
+`tab_list` covers every tab the session has open, whichever context it is in, and numbers them in one sequence. When more than one context is open, each row names the context its tab belongs to. `tab_select` takes that number and moves the session to the tab's context when the tab is not in the active one, so a tab that can be seen can be worked in without naming its context first, and `tab_close` reaches across contexts the same way. `context_select` is still what decides where `tab_open` opens.
+
 Elements are addressed by the `ref` values returned in a snapshot, or by a selector. Take a `snapshot`, then pass a node's `ref` to `click`, `type`, or another interaction tool. References are relative to the most recent snapshot, so take a fresh snapshot after the page changes.
 
 Anywhere a `ref` is accepted, a selector is accepted in its place: CSS by default (`#submit`, `button.primary`), or prefixed with `xpath=`, `text=`, `role=`, or `data-testid=`. A selector needs no snapshot at all, so it is what to reach for when the refs in hand have gone stale, or when you already know a stable selector for the element and would rather say it than look it up. Anything shaped like a ref (`e5`, or `f1e5` for an element inside a frame) is read as one, so a ref the latest snapshot no longer holds still comes back as a stale ref rather than as a selector that matched nothing. A selector is searched in the selected frame when one is selected, and in the page otherwise.
@@ -223,7 +225,7 @@ A JavaScript dialog stops the browser answering anything until it is handled, in
 
 ```
 click(e12)
-  -> The action opened an alert dialog: "Are you sure?". Call handle_dialog to accept or dismiss it.
+  -> The action opened an alert dialog: "Are you sure?". Call handle_dialog to accept or dismiss it. The page finishes the action once the dialog is answered, so a dialog opened from a mousedown handler means the click lands after this call returned.
 ```
 
 Results from calls that follow carry a line of their own until the dialog is answered, and an action asked for while one is open is refused rather than sent into a page that cannot receive it:
@@ -252,7 +254,7 @@ The browser does not hand frames over with the page, so each one is read separat
 
 Two tools remain for the things a ref cannot do:
 
-1. `frame_list` lists the frames with their nesting depth, each one after the frame that holds it. Index 0 is the page itself, and each index is the one the snapshot printed as `[frame=N]`. Frames at the same level come in the order the browser reports them, which is not always the order they appear in the page.
+1. `frame_list` lists the frames with their nesting depth, each one after the frame that holds it. Index 0 is the page itself, and each index is the one the snapshot printed as `[frame=N]`. Frames at the same level come in the order they attached, which is the order they appear in the page unless the page inserted one later.
 2. `frame_select <index>` scopes the session to one frame. `frame_select 0` returns to the page.
 
 Scope is what `evaluate` and the `wait_for` text conditions need, since those name no element and so have no frame of their own to work from. It also narrows `snapshot`, which then describes that one frame on its own with plain `e1`, `e2` refs, and it decides where a selector is searched. Refs need no scope either way: a ref keeps addressing the document it was read from, even after the scope moves on. Selection resets on navigation and on switching tab or context, since the frame it named is gone by then.
@@ -275,10 +277,13 @@ An agent can also attach at any point with `browser_attach`, which is what to re
 motus mcp --allow-attach
 ```
 
-Two consequences are worth knowing:
+Attaching speaks the Chrome DevTools Protocol, so the browser at the other end is a Chromium-based one; Firefox is driven only by a session the server starts, with `--channel firefox`. Snapshot refs are unavailable in a Firefox session either way, because the accessibility tree they are built from is read over that same protocol: the `snapshot` tool says so rather than describing the page, and the coordinate tools take over from there with `--caps coordinates`.
+
+Three consequences are worth knowing:
 
 - **Options that describe starting a browser have nothing to act on.** `--headless`, `--channel`, `--executable-path`, `--browser-arg`, `--user-data-dir`, `--viewport`, `--storage-state`, `--user-agent`, `--locale`, `--timezone`, the proxy options, `--record-video` and `--show-cursor` bind either at launch or at context creation, and an attached session does neither: it adopts the context the browser is already using. The server says so on startup rather than ignoring them silently. The `resize` tool still changes a page's viewport at runtime, with `--caps coordinates`.
 - **`--http` with `--connect` means clients share one browser.** The HTTP transport otherwise gives each connected client its own isolated browser. Pointed at one endpoint, every session drives the same browser, and so shares its tabs and cookies.
+- **Sessions share one output directory.** Every session writes into the directory printed at startup, whichever client it belongs to. Two sessions that pass the same explicit filename overwrite each other, so leave the path off and use the absolute path the result returns.
 
 `tab_close`, and `context_close` where the contexts group is on, mean more against an attached browser: they discard somebody's working state rather than scratch state. An adopted context is never disposed by the server, so its windows survive even when the session lets go of it.
 
@@ -331,14 +336,14 @@ To record everything without per-page tool calls, launch the server with `--reco
 | `--timezone` | _(machine default)_ | Time zone every page reports, such as `Europe/Berlin`. |
 | `--proxy-server` | _(none)_ | Send browser traffic through this proxy, such as `http://127.0.0.1:8080`. |
 | `--proxy-bypass` | _(none)_ | Comma-separated hosts that skip the proxy, such as `localhost,*.internal`. Needs `--proxy-server`. |
-| `--timeout` | _(framework default)_ | How long an element action waits for its target, in milliseconds. Most element tools take it; `select_option`, `press`, `press_key`, and typing with `slowly` keep the framework default, because the calls behind them accept no timeout. |
+| `--timeout` | _(framework default)_ | How long an element action waits for its target, in milliseconds. Every tool that waits for an element takes it. `press_key` does not: it dispatches a key to the active page and waits for nothing, so there is nothing for a timeout to bound. |
 | `--navigation-timeout` | _(framework default)_ | How long a navigation waits to finish, in milliseconds. Applies to `navigate`, `reload`, `go_back`, `go_forward`, and `tab_open`. |
 | `--settle` | `500` | How long an action waits, after the browser accepts it, for the page to show what it did before the result is written, in milliseconds. Every action pays it, so keep it short; `0` describes the page the instant the action returns. |
 | `--dialogs` | `ask` | What becomes of a JavaScript dialog the page raises: `accept` answers it, `dismiss` cancels it, and `ask` leaves it pending for `handle_dialog`. |
 | `--record-video` | _(none)_ | Record a video of every page into this directory, one MJPEG AVI per page, finalized when the page closes. |
 | `--show-cursor` | `false` | Draw an on-screen pseudo-cursor in screenshots and recordings. It follows the element's CSS cursor style and shows a click effect. Enables `--natural-mouse` unless that is set explicitly. |
 | `--natural-mouse` | `--show-cursor` | Move the mouse along a curved, eased path instead of jumping to the target, so motion looks human and the page receives a realistic event stream. Pass `--natural-mouse false` to keep the cursor without it. Adds latency to every move. |
-| `--caps` | _(none)_ | Optional tool groups to add to the catalog: `coordinates`, `recording`, `contexts`, `routing`. Separate them with commas or repeat the flag. The always-available tools are there whatever this says, so naming a group only adds to what the agent can call. |
+| `--caps` | _(none)_ | Optional tool groups to add to the catalog: `coordinates`, `recording`, `contexts`, `routing`. Separate them with commas or repeat the flag. May also be supplied as a comma-separated list in the `MOTUS_MCP_CAPS` environment variable, which the flag outranks. The always-available tools are there whatever this says, so naming a group only adds to what the agent can call. |
 | `--config` | _(none)_ | Read defaults from this `motus.config.json` file, which is how a suite's settings are reused instead of restated. It fills in `--headless`, `--channel`, `--executable-path`, `--viewport`, `--locale`, `--timeout`, and `--caps` (as `mcp.caps`, an array of group names); anything given on the command line wins over it. |
 | `--http` | `false` | Serve over Streamable HTTP for concurrent remote clients instead of stdio. |
 | `--host` | `127.0.0.1` | Interface to bind when `--http` is set. |

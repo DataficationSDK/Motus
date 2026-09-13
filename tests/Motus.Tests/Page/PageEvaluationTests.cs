@@ -188,7 +188,7 @@ public class PageEvaluationTests
 
         await evalTask;
 
-        var sentExpression = GetEvaluateExpression(_socket.GetSentJson(9));
+        var sentExpression = GetEvaluateExpression(_socket.GetSentJson(10));
         Assert.AreEqual("document.title", sentExpression);
     }
 
@@ -210,7 +210,7 @@ public class PageEvaluationTests
         var result = await evalTask;
         Assert.AreEqual(42, result);
 
-        var sentExpression = GetEvaluateExpression(_socket.GetSentJson(9));
+        var sentExpression = GetEvaluateExpression(_socket.GetSentJson(10));
         Assert.AreEqual("((() => 42)(undefined))", sentExpression);
     }
 
@@ -232,7 +232,7 @@ public class PageEvaluationTests
         var result = await evalTask;
         Assert.AreEqual(10, result);
 
-        var sentExpression = GetEvaluateExpression(_socket.GetSentJson(9));
+        var sentExpression = GetEvaluateExpression(_socket.GetSentJson(10));
         Assert.AreEqual("((function(x) { return x * 2; })(5))", sentExpression);
     }
 
@@ -263,7 +263,7 @@ public class PageEvaluationTests
         var result = await waitTask;
         Assert.IsTrue(result);
 
-        var sentExpression = GetEvaluateExpression(_socket.GetSentJson(9));
+        var sentExpression = GetEvaluateExpression(_socket.GetSentJson(10));
         Assert.AreEqual("((() => window.ready === true)(undefined))", sentExpression);
     }
 

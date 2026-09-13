@@ -25,6 +25,8 @@ foreach (IFrame frame in page.Frames)
 
 `page.Frames` is a flat list; `MainFrame` plus `ChildFrames` is the tree. `IFrame.ParentFrame` walks back up and is null for the main frame.
 
+Frames come in the order they attached. For frames that share a parent that is the order they appear in the page, unless the page inserted one later, in which case it goes on the end. A frame the browser moves into a process of its own keeps its place.
+
 Frames arrive as the page loads them, and a frame in its own process arrives as a separate event after its parent already knows about it. Code that reads `page.Frames` immediately after `GotoAsync` may see the tree before it is complete. Wait for the frame you want rather than assuming it is there:
 
 ```csharp

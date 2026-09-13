@@ -61,14 +61,29 @@ public class FrameToolsIntegrationTests
     /// The frames arrive as events after the navigation settles, and the nested one only after its
     /// parent's session is armed, so both levels are waited for rather than assumed.
     /// </summary>
-    private async Task WaitForFramesAsync()
+    private async Task WaitForFramesAsync() => await WaitForFramesAsync(4, settled: null);
+
+    /// <summary>
+    /// Waits for <paramref name="count"/> frames, and for every frame but the page itself to carry
+    /// <paramref name="settled"/> in its URL when one is given. A frame is listed as soon as it
+    /// attaches, which is before it says where it is.
+    /// </summary>
+    private async Task WaitForFramesAsync(int count, string? settled)
     {
-        var deadline = DateTime.UtcNow.AddSeconds(20);
+        // Longer than the browser needs on an idle machine, because the frame served from a second
+        // origin is stitched in through a session of its own and a loaded machine makes every round
+        // trip of that slower.
+        var deadline = DateTime.UtcNow.AddSeconds(60);
         while (DateTime.UtcNow < deadline)
         {
             var frames = await _pages!.ListFramesAsync();
-            if (frames.Count >= 4)
+            if (frames.Count >= count
+                && frames.Skip(1).All(f => settled is null
+                    ? !string.IsNullOrEmpty(f.Frame.Url)
+                    : f.Frame.Url.Contains(settled, StringComparison.Ordinal)))
+            {
                 return;
+            }
 
             await Task.Delay(100);
         }
@@ -90,6 +105,46 @@ public class FrameToolsIntegrationTests
 
         Assert.Fail($"No frame ending in '{urlSuffix}' was listed.");
         return -1;
+    }
+
+    /// <summary>
+    /// The list has to be the same list from one call to the next, and it has to be the order the
+    /// frames appear in the page. It used to be read out of a hash table, so an agent that listed
+    /// the frames, acted, and listed them again could be handed a different order with nothing on
+    /// the page having changed.
+    /// </summary>
+    [TestMethod]
+    public async Task FrameList_PrintsTheFramesInPageOrder_AndTheSameOrderTwiceRunning()
+    {
+        var page = await _pages!.GetOrCreateActivePageAsync();
+        await page.GotoAsync(_server!.OrderedUrl);
+        await WaitForFramesAsync(7, settled: "?i=");
+
+        var first = TextOf(await FrameTools.FrameListAsync(_pages, CancellationToken.None));
+        var second = TextOf(await FrameTools.FrameListAsync(_pages, CancellationToken.None));
+
+        CollectionAssert.AreEqual(
+            new[] { "0", "1", "2", "3", "4", "5" },
+            MarkersIn(first),
+            "The frames are not listed in the order they appear in the page.");
+
+        Assert.AreEqual(first, second, "Two calls in a row listed the frames differently.");
+    }
+
+    /// <summary>
+    /// Which of the ordered fixture's frames each line names, in the order the lines came out.
+    /// </summary>
+    private static string[] MarkersIn(string listing)
+    {
+        var markers = new List<string>();
+        foreach (var line in listing.Split('\n'))
+        {
+            var at = line.IndexOf("?i=", StringComparison.Ordinal);
+            if (at >= 0)
+                markers.Add(line[(at + 3)..(at + 4)]);
+        }
+
+        return markers.ToArray();
     }
 
     [TestMethod]

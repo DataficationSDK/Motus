@@ -26,10 +26,11 @@ public class InteractionToolsUnitTests
 
     /// <summary>Builds a service over a one-element page and takes a snapshot so e1 resolves.</summary>
     private static async Task<(FakeToolPage page, FakeActivePageService service)> SnapshottedAsync(
-        string role = "button", string? name = "Go")
+        string role = "button", string? name = "Go", double? actionTimeout = null)
     {
         var page = new FakeToolPage(Snapshot(Node(role, name, 10)));
-        var service = new FakeActivePageService(page);
+        var service = new FakeActivePageService(
+            page, options: new McpServerLaunchOptions { ActionTimeout = actionTimeout });
         await CoreTools.SnapshotAsync(
             pageService: service,
             cancellationToken: CancellationToken.None,
@@ -50,6 +51,20 @@ public class InteractionToolsUnitTests
 
         Assert.IsFalse(result.IsError ?? false);
         CollectionAssert.AreEqual(new[] { "us", "ca" }, page.RecordingLocator.SelectedValues?.ToArray());
+    }
+
+    /// <summary>
+    /// The configured action timeout reaches the call, so a session that was started with
+    /// <c>--timeout</c> does not silently wait out the framework default here.
+    /// </summary>
+    [TestMethod]
+    public async Task SelectOption_CarriesTheConfiguredTimeout()
+    {
+        var (page, service) = await SnapshottedAsync("combobox", "Country", actionTimeout: 2_500);
+
+        await InteractionTools.SelectOptionAsync("e1", ["us"], service, CancellationToken.None);
+
+        Assert.AreEqual(2_500d, page.RecordingLocator.SelectOptionTimeout);
     }
 
     // --- hover / clear / focus / scroll_into_view ---
@@ -96,6 +111,16 @@ public class InteractionToolsUnitTests
         await InteractionTools.PressAsync("e1", "Enter", service, CancellationToken.None);
 
         CollectionAssert.AreEqual(new[] { "Enter" }, page.RecordingLocator.PressedKeys);
+    }
+
+    [TestMethod]
+    public async Task Press_CarriesTheConfiguredTimeout()
+    {
+        var (page, service) = await SnapshottedAsync("textbox", "Name", actionTimeout: 2_500);
+
+        await InteractionTools.PressAsync("e1", "Enter", service, CancellationToken.None);
+
+        Assert.AreEqual(2_500d, page.RecordingLocator.PressTimeout);
     }
 
     // --- set_checked ---
@@ -156,6 +181,47 @@ public class InteractionToolsUnitTests
             Assert.AreEqual(Path.GetFileName(path), uploaded[0].Name);
             Assert.AreEqual("text/plain", uploaded[0].MimeType);
             CollectionAssert.AreEqual(bytes, uploaded[0].Buffer);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// The roots are asked for once per call rather than once per file, so an upload of several
+    /// files is one round trip to the client instead of several.
+    /// </summary>
+    [TestMethod]
+    public async Task UploadFiles_WithSeveralPaths_AsksTheClientWhereItIsWorkingOnce()
+    {
+        var (_, service) = await SnapshottedAsync("button", "Upload");
+        var directory = Path.Combine(Path.GetTempPath(), $"motus_upload_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+
+        var asked = 0;
+        var policy = new SecurityPolicy(new McpServerLaunchOptions { OutputDirectory = directory })
+        {
+            ReadRootsOverride = _ =>
+            {
+                asked++;
+                return new ValueTask<IReadOnlyList<string>>(new[] { directory });
+            },
+        };
+
+        var paths = new[] { "one.txt", "two.txt", "three.txt" }
+            .Select(name => Path.Combine(directory, name))
+            .ToArray();
+        foreach (var path in paths)
+            await File.WriteAllTextAsync(path, "content");
+
+        try
+        {
+            var result = await InteractionTools.UploadFilesAsync(
+                "e1", paths, service, CancellationToken.None, server: null, policy: policy);
+
+            Assert.IsFalse(result.IsError ?? false, TextOf(result));
+            Assert.AreEqual(1, asked);
         }
         finally
         {

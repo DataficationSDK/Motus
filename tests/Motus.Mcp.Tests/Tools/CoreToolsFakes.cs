@@ -10,8 +10,9 @@ namespace Motus.Mcp.Tests.Tools;
 /// can be exercised without a browser. The snapshot registry, gating, and
 /// invalidation run for real against the fake page.
 /// </summary>
-internal sealed class FakeActivePageService(FakeToolPage page, DialogService? dialogService = null)
-    : ActivePageService(new BrowserSessionManager(new McpServerLaunchOptions()), dialogService)
+internal sealed class FakeActivePageService(
+    FakeToolPage page, DialogService? dialogService = null, McpServerLaunchOptions? options = null)
+    : ActivePageService(new BrowserSessionManager(options ?? new McpServerLaunchOptions()), dialogService)
 {
     public FakeToolPage Page { get; } = page;
 
@@ -143,6 +144,9 @@ internal sealed class FakeToolPage(AccessibilitySnapshot snapshot) : IPage
     /// <summary>Raises the <see cref="PageError"/> event, as the browser would on an uncaught error.</summary>
     public void RaisePageError(string message, string? stack = null)
         => PageError?.Invoke(this, new PageErrorEventArgs(message, stack));
+
+    /// <summary>Raises the <see cref="Popup"/> event, as the browser would when the page opens a window.</summary>
+    public void RaisePopup(IPage popup) => Popup?.Invoke(this, popup);
 
     /// <summary>Raises the <see cref="Response"/> event, as the browser would when a response arrives.</summary>
     public void RaiseResponse(IResponse response) => Response?.Invoke(this, new ResponseEventArgs(response));
@@ -391,6 +395,15 @@ internal sealed class FakeToolLocator : ILocator
     /// <summary>The options of the last click, or null when it was a plain left click.</summary>
     public MouseButtonOptions? ClickOptions { get; private set; }
 
+    /// <summary>The timeout the last type carried, or null when it was given none.</summary>
+    public double? TypeTimeout { get; private set; }
+
+    /// <summary>The timeout the last press carried, or null when it was given none.</summary>
+    public double? PressTimeout { get; private set; }
+
+    /// <summary>The timeout the last option selection carried, or null when it was given none.</summary>
+    public double? SelectOptionTimeout { get; private set; }
+
     public Task ClickAsync(double? timeout = null)
     {
         ClickCount++;
@@ -420,12 +433,14 @@ internal sealed class FakeToolLocator : ILocator
     public Task TypeAsync(string text, KeyboardTypeOptions? options = null)
     {
         TypedValue = text;
+        TypeTimeout = options?.Timeout;
         return Task.CompletedTask;
     }
 
     public Task PressAsync(string key, KeyboardPressOptions? options = null)
     {
         PressedKeys.Add(key);
+        PressTimeout = options?.Timeout;
         return Task.CompletedTask;
     }
 
@@ -457,8 +472,12 @@ internal sealed class FakeToolLocator : ILocator
     }
 
     public Task<IReadOnlyList<string>> SelectOptionAsync(params string[] values)
+        => SelectOptionAsync(values, timeout: null);
+
+    public Task<IReadOnlyList<string>> SelectOptionAsync(string[] values, double? timeout)
     {
         SelectedValues = values;
+        SelectOptionTimeout = timeout;
         return Task.FromResult<IReadOnlyList<string>>(values);
     }
 
@@ -836,14 +855,21 @@ internal sealed class FakeHeaders(KeyValuePair<string, string>[]? entries = null
 /// set of context names, so the tools' own index validation, active-page tracking, and
 /// error mapping run for real without a browser.
 /// </summary>
+/// <remarks>
+/// Each tab records the context it belongs to, because the tab index runs across every context the
+/// session holds and selecting a tab in another one is supposed to move the session there.
+/// </remarks>
 internal sealed class FakeSessionPageService : ActivePageService
 {
     private readonly List<FakeToolPage> _pages;
+    private readonly Dictionary<FakeToolPage, string> _contextOf = [];
 
     public FakeSessionPageService(params FakeToolPage[] pages)
         : base(new BrowserSessionManager(new McpServerLaunchOptions()))
     {
         _pages = pages.Length == 0 ? [NewPage()] : [.. pages];
+        foreach (var page in _pages)
+            _contextOf[page] = BrowserSessionManager.DefaultContextName;
     }
 
     /// <summary>The simulated open context names; the first is the implicit default.</summary>
@@ -867,8 +893,23 @@ internal sealed class FakeSessionPageService : ActivePageService
         return Task.FromResult<IPage>(open);
     }
 
-    protected override Task<IReadOnlyList<IPage>> GetActiveContextPagesAsync(CancellationToken cancellationToken)
-        => Task.FromResult<IReadOnlyList<IPage>>(_pages.Where(p => !p.IsClosed).Cast<IPage>().ToArray());
+    protected override Task<IReadOnlyList<TabEntry>> GetOpenTabsAsync(CancellationToken cancellationToken)
+        => Task.FromResult<IReadOnlyList<TabEntry>>(
+            _pages.Where(p => !p.IsClosed)
+                .Select(p => new TabEntry(p, _contextOf[p]))
+                .ToArray());
+
+    /// <summary>Adds a tab to a context other than the one that is active.</summary>
+    public FakeToolPage AddTabIn(string context, string url)
+    {
+        if (!Contexts.Contains(context))
+            Contexts.Add(context);
+
+        var page = new FakeToolPage(new AccessibilitySnapshot([], 0, null)) { PageUrl = url };
+        _pages.Add(page);
+        _contextOf[page] = context;
+        return page;
+    }
 
     public override Task<IPage> OpenNewTabAsync(CancellationToken cancellationToken = default)
     {
@@ -877,6 +918,9 @@ internal sealed class FakeSessionPageService : ActivePageService
         SelectPage(page);
         return Task.FromResult<IPage>(page);
     }
+
+    /// <summary>The context each listed tab belongs to, by tab.</summary>
+    public string ContextOf(FakeToolPage page) => _contextOf[page];
 
     public override Task CreateContextAsync(string name, CancellationToken cancellationToken = default)
     {
@@ -919,6 +963,7 @@ internal sealed class FakeSessionPageService : ActivePageService
     {
         var page = NewPage();
         _pages.Add(page);
+        _contextOf[page] = ActiveContext;
         return page;
     }
 }

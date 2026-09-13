@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using Motus.Abstractions;
 
 namespace Motus;
@@ -17,6 +18,10 @@ internal sealed class Browser : IBrowser
     private readonly LaunchOptions _launchOptions;
     private readonly BrowserOutputDrain? _output;
 
+    // Ties the browser process to this one where the connection cannot. Released once the browser
+    // has been ended, never before, because letting go of it is itself what ends the browser.
+    private readonly IDisposable? _processGuard;
+
     // Motus is responsible for ending only a browser it started. Everything that terminates the
     // browser reads this rather than testing the process field, so the two can never disagree.
     private readonly bool _ownsProcess;
@@ -30,7 +35,19 @@ internal sealed class Browser : IBrowser
     private int _closedFlag;
     private BrowserHeartbeat? _heartbeat;
     private ConsoleCancelEventHandler? _cancelHandler;
-    private EventHandler? _processExitHandler;
+
+    // One per signal this browser is watching. Held so they can be released when the browser is
+    // closed some other way, which is the ordinary case.
+    private readonly List<PosixSignalRegistration> _signalRegistrations = [];
+
+    /// <summary>
+    /// How long a signal handler waits for the browser to close before ending it outright.
+    /// </summary>
+    /// <remarks>
+    /// The process is on its way out for the whole of this wait, so it is short. A browser that
+    /// answers takes a fraction of it; one that does not is killed rather than waited on.
+    /// </remarks>
+    private static readonly TimeSpan SignalCloseTimeout = TimeSpan.FromSeconds(5);
 
     internal Browser(
         IMotusTransport transport,
@@ -41,7 +58,8 @@ internal sealed class Browser : IBrowser
         bool handleSigterm,
         LaunchOptions? launchOptions = null,
         BrowserOutputDrain? output = null,
-        bool adoptExistingTargets = false)
+        bool adoptExistingTargets = false,
+        IDisposable? processGuard = null)
     {
         _transport = transport;
         _registry = registry;
@@ -51,6 +69,7 @@ internal sealed class Browser : IBrowser
         _handleSigterm = handleSigterm;
         _launchOptions = launchOptions ?? new LaunchOptions();
         _output = output;
+        _processGuard = processGuard;
         _ownsProcess = process is not null;
         _adoptExistingTargets = adoptExistingTargets;
 
@@ -119,6 +138,7 @@ internal sealed class Browser : IBrowser
             UnregisterProcessExitHandler();
             _browserCts.Cancel();
             await EndProcessAsync().ConfigureAwait(false);
+            _processGuard?.Dispose();
             return;
         }
 
@@ -170,6 +190,7 @@ internal sealed class Browser : IBrowser
         await _transport.DisposeAsync().ConfigureAwait(false);
 
         await EndProcessAsync().ConfigureAwait(false);
+        _processGuard?.Dispose();
     }
 
     public async Task DisconnectAsync()
@@ -272,6 +293,7 @@ internal sealed class Browser : IBrowser
             }
 
             _process.Dispose();
+            _processGuard?.Dispose();
         }
 
         if (_tempUserDataDir is not null)
@@ -295,10 +317,15 @@ internal sealed class Browser : IBrowser
     {
         options = ConfigMerge.ApplyConfig(options ?? new ContextOptions());
 
+        // Asking the browser to throw the context away when this client detaches is right for a
+        // browser Motus did not start, where the browser itself carries on and an abandoned
+        // context would sit in it. It is wrong for one Motus started: a browser handling a detach
+        // by disposing contexts does not also act on the connection having closed, and so keeps
+        // running with nothing left in it, which is exactly the leak the pipe exists to prevent.
         var result = await _registry.BrowserSession.SendAsync(
             "Target.createBrowserContext",
             new TargetCreateBrowserContextParams(
-                DisposeOnDetach: true,
+                DisposeOnDetach: !_ownsProcess,
                 ProxyServer: options?.Proxy?.Server),
             CdpJsonContext.Default.TargetCreateBrowserContextParams,
             CdpJsonContext.Default.TargetCreateBrowserContextResult,
@@ -346,10 +373,12 @@ internal sealed class Browser : IBrowser
     /// multiplexes targets offers it. One that models browsing contexts its own way has nothing to
     /// discover here and must not be pushed through these semantics.
     ///
-    /// A browser Motus started is watched in full, because everything in it is Motus's. A browser
-    /// Motus only connected to is watched when the caller asked for what was already open to be
-    /// taken over, and is left alone otherwise: declining that is asking not to be handed windows
-    /// the caller did not open.
+    /// Every browser is watched, whoever started it, because a tab one of Motus's own pages opens
+    /// belongs to Motus wherever the browser came from. What differs is what is taken up, and that
+    /// is decided per target rather than here: one in a browser context Motus did not create is
+    /// dropped on arrival unless the caller asked for what was already open to be taken over. So
+    /// declining that still means never being handed a window the caller did not open, and a popup
+    /// from a context the caller did create is still tracked.
     /// </remarks>
     private async Task StartTargetTrackingAsync(CancellationToken ct)
     {
@@ -362,13 +391,10 @@ internal sealed class Browser : IBrowser
             return;
         }
 
-        if (!_ownsProcess)
-            return;
-
         // Listening first, because the browser replays every target it already has the moment
         // discovery is switched on, and a pump that has not subscribed yet would drop them. Nothing
-        // is lost by hearing that replay: those targets sit in the browser's own context, which a
-        // browser Motus started never takes over, so they are ignored on arrival.
+        // is lost by hearing that replay: every one of those targets sits in a context Motus did not
+        // create, and without adoption those are ignored on arrival.
         StartTargetLifecyclePump();
 
         await _registry.BrowserSession.SendAsync(
@@ -498,7 +524,7 @@ internal sealed class Browser : IBrowser
             if (sessionId is not null)
                 _registry.RemoveSession(sessionId);
 
-            Console.Error.WriteLine($"Motus: an open page could not be adopted ({ex.Message}).");
+            Console.Error.WriteLine($"Motus: a page could not be adopted ({ex.Message}).");
         }
     }
 
@@ -600,7 +626,7 @@ internal sealed class Browser : IBrowser
 
         _isConnected = false;
         ReportUnexpectedLoss("the connection to the browser closed");
-        Disconnected?.Invoke(this, EventArgs.Empty);
+        RaiseDisconnected();
     }
 
     private void OnProcessExited(object? sender, EventArgs e)
@@ -614,7 +640,28 @@ internal sealed class Browser : IBrowser
         // Dispose transport to fault all pending CDP commands immediately
         _ = _transport.DisposeAsync().AsTask();
 
-        Disconnected?.Invoke(this, EventArgs.Empty);
+        RaiseDisconnected();
+    }
+
+    /// <summary>
+    /// Tells subscribers the browser is gone, without letting one of them take the process down.
+    /// </summary>
+    /// <remarks>
+    /// Every caller of this runs on a background callback rather than on a caller's thread: a
+    /// process exit notification, the transport's receive loop, or the heartbeat. An exception
+    /// escaping a thread pool callback ends the whole process, so a handler that throws would kill
+    /// a test run with no test named and no browser to blame it on.
+    /// </remarks>
+    private void RaiseDisconnected()
+    {
+        try
+        {
+            Disconnected?.Invoke(this, EventArgs.Empty);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Motus: a Disconnected handler threw ({ex.Message}).");
+        }
     }
 
     private void OnHeartbeatFailed(Exception? ex)
@@ -628,7 +675,7 @@ internal sealed class Browser : IBrowser
         // Dispose transport to fault all pending CDP commands (browser is frozen)
         _ = _transport.DisposeAsync().AsTask();
 
-        Disconnected?.Invoke(this, EventArgs.Empty);
+        RaiseDisconnected();
     }
 
     /// <summary>
@@ -665,25 +712,88 @@ internal sealed class Browser : IBrowser
             _process.Exited -= OnProcessExited;
     }
 
+    /// <summary>
+    /// Arranges for a browser this process started to be closed when this process is asked to end.
+    /// </summary>
+    /// <remarks>
+    /// The signals are registered rather than the runtime's own shutdown events, because on Unix
+    /// those events do not fire for a signal at all: a process sent SIGTERM or SIGINT is ended by
+    /// the operating system, and nothing managed runs on the way out. A browser started here is
+    /// not a child in any sense the system enforces, so unless it is closed here it keeps running
+    /// after its launcher is gone, holding its profile directory and several hundred megabytes.
+    ///
+    /// The signals are not cancelled, so each keeps the meaning the caller expects and the process
+    /// still ends. What changes is the order: the browser is closed first, while there is still
+    /// something running that knows about it.
+    /// </remarks>
     private void RegisterSignalHandlers()
     {
         if (_process is null)
             return;
 
-        if (_handleSigint)
+        if (OperatingSystem.IsWindows())
         {
-            _cancelHandler = (_, e) =>
+            // Windows has no POSIX signals. Ctrl+C arrives as a console control event instead, and
+            // the handler for it runs before the process is torn down, which is the same opening.
+            if (_handleSigint)
             {
-                e.Cancel = true;
-                _ = CloseAsync();
-            };
-            Console.CancelKeyPress += _cancelHandler;
+                _cancelHandler = (_, _) => CloseBeforeExit();
+                Console.CancelKeyPress += _cancelHandler;
+            }
+
+            return;
         }
+
+        if (_handleSigint)
+            RegisterSignal(PosixSignal.SIGINT);
 
         if (_handleSigterm)
         {
-            _processExitHandler = (_, _) => _ = CloseAsync();
-            AppDomain.CurrentDomain.ProcessExit += _processExitHandler;
+            RegisterSignal(PosixSignal.SIGTERM);
+
+            // A closed terminal ends a process the same way a kill does, and leaves the same
+            // browser behind, so it is covered by the same option rather than by one of its own.
+            RegisterSignal(PosixSignal.SIGHUP);
+        }
+    }
+
+    private void RegisterSignal(PosixSignal signal)
+    {
+        var registration = PosixSignalRegistration.Create(signal, _ => CloseBeforeExit());
+
+        lock (_signalRegistrations)
+            _signalRegistrations.Add(registration);
+    }
+
+    /// <summary>
+    /// Closes the browser and waits for it, from somewhere that is about to end the process.
+    /// </summary>
+    /// <remarks>
+    /// Starting the close and moving on would not do: nothing waits for a task nobody awaited, and
+    /// the process would end with the close half sent. The wait is bounded so that a browser which
+    /// will not answer cannot hold a shutdown open for good, and when the bound is reached the
+    /// browser is ended outright, because nothing is going to come back for it afterwards.
+    /// </remarks>
+    private void CloseBeforeExit()
+    {
+        try
+        {
+            if (CloseAsync().Wait(SignalCloseTimeout))
+                return;
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Motus: closing the browser on a signal failed ({ex.Message}).");
+        }
+
+        try
+        {
+            if (_process is { HasExited: false })
+                _process.Kill(entireProcessTree: true);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or NotSupportedException)
+        {
+            // It left while we were waiting on it.
         }
     }
 
@@ -695,10 +805,12 @@ internal sealed class Browser : IBrowser
             _cancelHandler = null;
         }
 
-        if (_processExitHandler is not null)
+        lock (_signalRegistrations)
         {
-            AppDomain.CurrentDomain.ProcessExit -= _processExitHandler;
-            _processExitHandler = null;
+            foreach (var registration in _signalRegistrations)
+                registration.Dispose();
+
+            _signalRegistrations.Clear();
         }
     }
 }

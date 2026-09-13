@@ -102,6 +102,61 @@ public class McpCommandTests
         Assert.AreEqual(0, caps.Length);
     }
 
+    /// <summary>
+    /// An MCP client's launch configuration is often easier to set a variable in than to edit an
+    /// argument list, so the groups can be named that way when the flag is absent.
+    /// </summary>
+    [TestMethod]
+    public void TryResolveCapabilities_FromTheEnvironment_ReadsCommaSeparatedNames()
+    {
+        Assert.IsTrue(
+            McpCommand.TryResolveCapabilities(
+                null, out var caps, out var error, envReader: Env("recording, contexts")),
+            error);
+
+        CollectionAssert.AreEqual(new[] { "recording", "contexts" }, caps);
+    }
+
+    /// <summary>
+    /// An exported variable changes every server started from that shell, so what was typed for
+    /// this one wins.
+    /// </summary>
+    [TestMethod]
+    public void TryResolveCapabilities_FlagBeatsTheEnvironment()
+    {
+        Assert.IsTrue(
+            McpCommand.TryResolveCapabilities(
+                ["routing"], out var caps, out var error, envReader: Env("recording")),
+            error);
+
+        CollectionAssert.AreEqual(new[] { "routing" }, caps);
+    }
+
+    [TestMethod]
+    public void TryResolveCapabilities_EnvironmentBeatsTheConfigFile()
+    {
+        Assert.IsTrue(
+            McpCommand.TryResolveCapabilities(
+                null, out var caps, out var error, fromConfig: ["routing"], envReader: Env("recording")),
+            error);
+
+        CollectionAssert.AreEqual(new[] { "recording" }, caps);
+    }
+
+    [TestMethod]
+    public void TryResolveCapabilities_UnknownGroupFromTheEnvironment_NamesTheOnesThatExist()
+    {
+        Assert.IsFalse(McpCommand.TryResolveCapabilities(
+            null, out _, out var error, envReader: Env("recording,telepathy")));
+
+        StringAssert.Contains(error, "'telepathy'");
+        StringAssert.Contains(error, "coordinates, recording, contexts, routing");
+    }
+
+    /// <summary>An environment reader that answers only for the variable this command reads.</summary>
+    private static Func<string, string?> Env(string caps)
+        => name => name == "MOTUS_MCP_CAPS" ? caps : null;
+
     [TestMethod]
     public void TryResolveCapabilities_UnknownGroup_NamesTheOnesThatExist()
     {

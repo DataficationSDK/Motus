@@ -7,7 +7,7 @@ namespace Motus;
 /// <summary>
 /// Raw event payload surfaced to event channels before typed deserialization.
 /// </summary>
-internal readonly record struct RawCdpEvent(JsonElement Params, string? SessionId);
+internal readonly record struct RawCdpEvent(string Method, JsonElement Params, string? SessionId);
 
 /// <summary>
 /// Core CDP WebSocket transport. Manages a single WebSocket connection, a background
@@ -61,6 +61,18 @@ internal sealed class CdpTransport : IMotusTransport
     internal async Task ConnectAsync(Uri endpointUri, CancellationToken ct)
     {
         await _socket.ConnectAsync(endpointUri, ct).ConfigureAwait(false);
+        Start();
+    }
+
+    /// <summary>
+    /// Starts the background receive loop on a socket that is already open.
+    /// </summary>
+    /// <remarks>
+    /// A pipe to a browser this process started is open before the socket wrapping it exists,
+    /// so there is nothing to dial and no endpoint to name.
+    /// </remarks>
+    internal void Start()
+    {
         _receiveLoop = RunReceiveLoopAsync(_cts.Token);
     }
 
@@ -124,6 +136,34 @@ internal sealed class CdpTransport : IMotusTransport
                 SingleReader = false,
                 SingleWriter = true
             }));
+    }
+
+    /// <summary>
+    /// Registers one channel under several keys, so the events behind those keys come out in the
+    /// order the browser sent them rather than each on a channel of its own.
+    /// </summary>
+    /// <remarks>
+    /// A channel per event is the right shape for events that stand alone. It is the wrong shape
+    /// for events that describe one structure between them, since each channel is read by its own
+    /// loop and nothing keeps two loops in step: a frame's attach can be handled before the
+    /// navigation of its parent that preceded it on the wire. Reading such a set from one channel
+    /// is what keeps the order the browser meant.
+    /// </remarks>
+    internal ChannelReader<RawCdpEvent> ShareEventChannel(IReadOnlyList<string> channelKeys)
+    {
+        var channel = Channel.CreateUnbounded<RawCdpEvent>(new UnboundedChannelOptions
+        {
+            SingleReader = true,
+            SingleWriter = true
+        });
+
+        foreach (var key in channelKeys)
+        {
+            if (!ReferenceEquals(_eventChannels.GetOrAdd(key, channel), channel))
+                throw new InvalidOperationException($"Event channel '{key}' is already subscribed on its own.");
+        }
+
+        return channel.Reader;
     }
 
     /// <summary>
@@ -226,6 +266,7 @@ internal sealed class CdpTransport : IMotusTransport
         if (_eventChannels.TryGetValue(channelKey, out var channel))
         {
             var rawEvent = new RawCdpEvent(
+                envelope.Method!,
                 envelope.Params ?? default,
                 envelope.SessionId);
 

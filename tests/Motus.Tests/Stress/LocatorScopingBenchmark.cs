@@ -35,7 +35,7 @@ public class LocatorScopingBenchmark
         _registry = new CdpSessionRegistry(_transport);
         _browser = new Motus.Browser(_transport, _registry, process: null, tempUserDataDir: null,
                                      handleSigint: false, handleSigterm: false);
-        _socket.Respond(id: 1, @"{""id"": 1, ""result"": {""protocolVersion"":""1.3"",""product"":""Chrome/120"",""revision"":""@x"",""userAgent"":""UA"",""jsVersion"":""12""}}");
+        _socket.Respond("Browser.getVersion", @"{""result"": {""protocolVersion"":""1.3"",""product"":""Chrome/120"",""revision"":""@x"",""userAgent"":""UA"",""jsVersion"":""12""}}");
         await _browser.InitializeAsync(CancellationToken.None);
     }
 
@@ -44,14 +44,9 @@ public class LocatorScopingBenchmark
 
     private async Task<IPage> CreatePageAsync()
     {
-        _socket.Respond(2, @"{""id"": 2, ""result"": {""browserContextId"": ""ctx-1""}}");
-        _socket.Respond(3, @"{""id"": 3, ""result"": {""targetId"": ""target-1""}}");
-        _socket.Respond(4, @"{""id"": 4, ""result"": {""sessionId"": ""session-1""}}");
-        _socket.Respond(5, @"{""id"": 5, ""sessionId"": ""session-1"", ""result"": {}}");
-        _socket.Respond(6, @"{""id"": 6, ""sessionId"": ""session-1"", ""result"": {}}");
-        _socket.Respond(7, @"{""id"": 7, ""sessionId"": ""session-1"", ""result"": {}}");
-        _socket.Respond(8, @"{""id"": 8, ""sessionId"": ""session-1"", ""result"": {}}");
-        _socket.Respond(9, @"{""id"": 9, ""sessionId"": ""session-1"", ""result"": {}}");
+        _socket.Respond("Target.createBrowserContext", @"{""result"": {""browserContextId"": ""ctx-1""}}");
+        _socket.Respond("Target.createTarget", @"{""result"": {""targetId"": ""target-1""}}");
+        _socket.Respond("Target.attachToTarget", @"{""result"": {""sessionId"": ""session-1""}}");
         return await _browser.NewPageAsync();
     }
 
