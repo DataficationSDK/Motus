@@ -30,7 +30,8 @@ public interface IFrame
     string Url { get; }
 
     /// <summary>
-    /// Gets the child frames.
+    /// Gets the child frames, in the order they attached, which is the order they appear in the
+    /// document unless the page inserted one later.
     /// </summary>
     IReadOnlyList<IFrame> ChildFrames { get; }
 

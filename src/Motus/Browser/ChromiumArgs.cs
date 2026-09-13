@@ -23,7 +23,15 @@ internal static class ChromiumArgs
         "--safebrowsing-disable-auto-update"
     ];
 
-    internal static List<string> Build(LaunchOptions options, int debuggingPort, string userDataDir)
+    /// <summary>
+    /// Builds the browser's command line.
+    /// </summary>
+    /// <param name="debuggingPort">
+    /// The port to open the debugging endpoint on, or null to drive the browser over a pipe
+    /// instead. A pipe is preferred where it can be arranged, because the browser exits when its
+    /// end closes and so cannot outlive the process that started it.
+    /// </param>
+    internal static List<string> Build(LaunchOptions options, string userDataDir, int? debuggingPort = null)
     {
         var ignoreSet = options.IgnoreDefaultArgs is not null
             ? new HashSet<string>(options.IgnoreDefaultArgs, StringComparer.Ordinal)
@@ -37,7 +45,10 @@ internal static class ChromiumArgs
                 args.Add(arg);
         }
 
-        args.Add($"--remote-debugging-port={debuggingPort}");
+        args.Add(debuggingPort is { } port
+            ? $"--remote-debugging-port={port}"
+            : "--remote-debugging-pipe");
+
         args.Add($"--user-data-dir={userDataDir}");
 
         if (options.Headless)

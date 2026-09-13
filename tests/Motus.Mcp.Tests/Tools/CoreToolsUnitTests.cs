@@ -238,6 +238,162 @@ public class CoreToolsUnitTests
         StringAssert.Contains(TextOf(result), "e999");
     }
 
+    [TestMethod]
+    public async Task Click_WithASelector_ActsWithNoSnapshotTaken()
+    {
+        var page = new FakeToolPage(Snapshot(Node("button", "Go", 10)));
+        var service = new FakeActivePageService(page);
+
+        var result = await CoreTools.ClickAsync(
+            @ref: "#submit",
+            pageService: service,
+            cancellationToken: CancellationToken.None,
+            @double: null);
+
+        Assert.IsFalse(result.IsError ?? false, TextOf(result));
+        Assert.AreEqual(1, page.RecordingLocator.ClickCount);
+        Assert.AreEqual("#submit", page.ResolvedSelector);
+    }
+
+    [TestMethod]
+    public async Task Click_WithASelector_DoesNotAskForASnapshotAfterANavigation()
+    {
+        var page = new FakeToolPage(Snapshot(Node("button", "Go", 10)));
+        var service = new FakeActivePageService(page);
+
+        await CoreTools.SnapshotAsync(
+            pageService: service,
+            cancellationToken: CancellationToken.None,
+            root_ref: null,
+            max_depth: null);
+        await CoreTools.NavigateAsync("https://example.com", service, CancellationToken.None);
+
+        // Navigation drops the ref map, which is exactly the moment a selector earns its keep.
+        var result = await CoreTools.ClickAsync(
+            @ref: "text=Go",
+            pageService: service,
+            cancellationToken: CancellationToken.None,
+            @double: null);
+
+        Assert.IsFalse(result.IsError ?? false, TextOf(result));
+        Assert.AreEqual("text=Go", page.ResolvedSelector);
+    }
+
+    [TestMethod]
+    public async Task Click_WithARefShapedTarget_IsNeverRunAsASelector()
+    {
+        var page = new FakeToolPage(Snapshot(Node("button", "Go", 10)));
+        var service = new FakeActivePageService(page);
+
+        await CoreTools.SnapshotAsync(
+            pageService: service,
+            cancellationToken: CancellationToken.None,
+            root_ref: null,
+            max_depth: null);
+        var result = await CoreTools.ClickAsync(
+            @ref: "e99",
+            pageService: service,
+            cancellationToken: CancellationToken.None,
+            @double: null);
+
+        Assert.IsTrue(result.IsError);
+        StringAssert.Contains(TextOf(result), "e99");
+        Assert.IsNull(page.ResolvedSelector, "a stale ref is a stale ref, not a selector that matched nothing.");
+    }
+
+    [TestMethod]
+    public async Task Click_WithAButtonAndModifiers_PassesThemToTheLocator()
+    {
+        var page = new FakeToolPage(Snapshot(Node("button", "Go", 10)));
+        var service = new FakeActivePageService(page);
+
+        await CoreTools.SnapshotAsync(
+            pageService: service,
+            cancellationToken: CancellationToken.None,
+            root_ref: null,
+            max_depth: null);
+        var result = await CoreTools.ClickAsync(
+            @ref: "e1",
+            pageService: service,
+            cancellationToken: CancellationToken.None,
+            @double: null,
+            button: "right",
+            modifiers: ["Control", "shift"]);
+
+        Assert.IsFalse(result.IsError ?? false, TextOf(result));
+        var options = page.RecordingLocator.ClickOptions;
+        Assert.IsNotNull(options, "a right-click has to reach the element, not just the coordinate tools.");
+        Assert.AreEqual(MouseButton.Right, options.Button);
+        Assert.AreEqual(KeyModifier.Control | KeyModifier.Shift, options.Modifiers);
+    }
+
+    [TestMethod]
+    public async Task Click_WithNoButtonOrModifiers_StaysAPlainClick()
+    {
+        var page = new FakeToolPage(Snapshot(Node("button", "Go", 10)));
+        var service = new FakeActivePageService(page);
+
+        await CoreTools.SnapshotAsync(
+            pageService: service,
+            cancellationToken: CancellationToken.None,
+            root_ref: null,
+            max_depth: null);
+        await CoreTools.ClickAsync(
+            @ref: "e1",
+            pageService: service,
+            cancellationToken: CancellationToken.None,
+            @double: null,
+            button: null,
+            modifiers: null);
+
+        Assert.AreEqual(1, page.RecordingLocator.ClickCount);
+        Assert.IsNull(page.RecordingLocator.ClickOptions);
+    }
+
+    [TestMethod]
+    public async Task Click_WithAnUnknownButtonOrModifier_SaysWhichValueIsWrong()
+    {
+        var page = new FakeToolPage(Snapshot(Node("button", "Go", 10)));
+        var service = new FakeActivePageService(page);
+
+        var badButton = await CoreTools.ClickAsync(
+            @ref: "#submit",
+            pageService: service,
+            cancellationToken: CancellationToken.None,
+            @double: null,
+            button: "back");
+        var badModifier = await CoreTools.ClickAsync(
+            @ref: "#submit",
+            pageService: service,
+            cancellationToken: CancellationToken.None,
+            @double: null,
+            modifiers: ["Hyper"]);
+
+        Assert.IsTrue(badButton.IsError);
+        StringAssert.Contains(TextOf(badButton), "back");
+        Assert.IsTrue(badModifier.IsError);
+        StringAssert.Contains(TextOf(badModifier), "Hyper");
+        Assert.AreEqual(0, page.RecordingLocator.ClickCount, "neither call should have reached the page.");
+    }
+
+    [TestMethod]
+    public async Task Click_DoubleWithAButtonOrModifiers_IsRefusedRatherThanQuietlyPlain()
+    {
+        var page = new FakeToolPage(Snapshot(Node("button", "Go", 10)));
+        var service = new FakeActivePageService(page);
+
+        var result = await CoreTools.ClickAsync(
+            @ref: "#submit",
+            pageService: service,
+            cancellationToken: CancellationToken.None,
+            @double: true,
+            button: "right");
+
+        Assert.IsTrue(result.IsError);
+        StringAssert.Contains(TextOf(result), "click_xy");
+        Assert.AreEqual(0, page.RecordingLocator.DblClickCount);
+    }
+
     // --- type ---
 
     [TestMethod]
@@ -311,6 +467,34 @@ public class CoreToolsUnitTests
         CollectionAssert.AreEqual(new[] { "Enter" }, page.RecordingLocator.PressedKeys);
     }
 
+    /// <summary>
+    /// Typing slowly and the Enter that follows a submit both carry the configured action timeout,
+    /// so a session started with <c>--timeout</c> is not left on the framework default for them.
+    /// </summary>
+    [TestMethod]
+    public async Task Type_SlowlyAndSubmit_CarryTheConfiguredTimeout()
+    {
+        var page = new FakeToolPage(Snapshot(Node("textbox", "Name", 10)));
+        var service = new FakeActivePageService(
+            page, options: new McpServerLaunchOptions { ActionTimeout = 2_500 });
+
+        await CoreTools.SnapshotAsync(
+            pageService: service,
+            cancellationToken: CancellationToken.None,
+            root_ref: null,
+            max_depth: null);
+        await CoreTools.TypeAsync(
+            @ref: "e1",
+            text: "hello",
+            pageService: service,
+            cancellationToken: CancellationToken.None,
+            submit: true,
+            slowly: true);
+
+        Assert.AreEqual(2_500d, page.RecordingLocator.TypeTimeout);
+        Assert.AreEqual(2_500d, page.RecordingLocator.PressTimeout);
+    }
+
     // --- screenshot ---
 
     [TestMethod]
@@ -342,5 +526,34 @@ public class CoreToolsUnitTests
             full_page: true);
 
         Assert.AreEqual(true, page.ScreenshotFullPage);
+    }
+
+    // --- navigate: the local filesystem ---
+
+    [TestMethod]
+    public async Task Navigate_ToAFileUrl_IsRefusedWithoutTouchingThePage()
+    {
+        var page = new FakeToolPage(Snapshot());
+        var service = new FakeActivePageService(page);
+
+        var result = await CoreTools.NavigateAsync("file:///etc/hosts", service, CancellationToken.None);
+
+        Assert.IsTrue(result.IsError);
+        StringAssert.Contains(TextOf(result), "file:// navigation is disabled");
+        Assert.IsNull(page.NavigatedUrl);
+    }
+
+    [TestMethod]
+    public async Task Navigate_ToAFileUrl_WithUnrestrictedFileAccess_IsAllowed()
+    {
+        var page = new FakeToolPage(Snapshot());
+        var service = new FakeActivePageService(page);
+        var unrestricted = new SecurityPolicy(new McpServerLaunchOptions { AllowUnrestrictedFileAccess = true });
+
+        var result = await CoreTools.NavigateAsync(
+            "file:///etc/hosts", service, CancellationToken.None, policy: unrestricted);
+
+        Assert.IsFalse(result.IsError ?? false, TextOf(result));
+        Assert.AreEqual("file:///etc/hosts", page.NavigatedUrl);
     }
 }

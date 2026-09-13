@@ -19,7 +19,13 @@ public static class MotusLauncher
 
         var executablePath = BrowserFinder.Resolve(options.Channel, options.ExecutablePath);
         var isFirefox = IsFirefoxChannel(options.Channel, executablePath);
-        var port = AllocateFreePort();
+
+        // A browser Motus starts is driven over a pipe wherever that can be arranged, because a
+        // pipe is the only thing that tells the browser its launcher has gone. Firefox has no pipe
+        // mode, and Windows offers no way to hand a child the descriptors Chromium expects, so
+        // both keep the debugging port. What replaces the pipe on Windows is a job object.
+        var usePipe = !isFirefox && !OperatingSystem.IsWindows();
+        var port = usePipe ? 0 : AllocateFreePort();
 
         string profileOrDataDir;
         bool ownsTempDir;
@@ -54,16 +60,24 @@ public static class MotusLauncher
             ownsTempDir = options.UserDataDir is null;
             profileOrDataDir = options.UserDataDir ?? CreateTempUserDataDir();
 
-            var args = ChromiumArgs.Build(options, port, profileOrDataDir);
+            var args = ChromiumArgs.Build(options, profileOrDataDir, usePipe ? null : port);
 
             psi = new ProcessStartInfo
             {
-                FileName = executablePath,
+                FileName = usePipe ? "/bin/sh" : executablePath,
                 UseShellExecute = false,
+                RedirectStandardInput = usePipe,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 CreateNoWindow = true
             };
+
+            if (usePipe)
+            {
+                psi.ArgumentList.Add("-c");
+                psi.ArgumentList.Add(PipeLaunchScript);
+                psi.ArgumentList.Add(executablePath);
+            }
 
             foreach (var arg in args)
                 psi.ArgumentList.Add(arg);
@@ -72,30 +86,43 @@ public static class MotusLauncher
         var process = Process.Start(psi)
                       ?? throw new InvalidOperationException($"Failed to start browser process: {executablePath}");
 
-        // Both streams above are redirected, and a redirected stream nobody reads is a pipe that
-        // fills and then blocks the browser writing to it. Draining begins before the first command
-        // is sent. Firefox's stderr is left alone: the endpoint reader below reads it line by line
-        // and keeps doing so for the life of the process.
+        // A redirected stream nobody reads is a pipe that fills and then blocks the browser writing
+        // to it. Draining begins before the first command is sent. Firefox's stderr is left alone:
+        // the endpoint reader below reads it line by line and keeps doing so for the life of the
+        // process. A browser on a pipe has its standard output carrying the protocol itself, and
+        // only its diagnostics are drained.
         var output = isFirefox
             ? BrowserOutputDrain.Start(process.StandardOutput)
-            : BrowserOutputDrain.Start(process.StandardOutput, process.StandardError);
+            : usePipe
+                ? BrowserOutputDrain.Start(process.StandardError)
+                : BrowserOutputDrain.Start(process.StandardOutput, process.StandardError);
+
+        // On Windows the browser keeps a debugging port, so nothing about the connection tells it
+        // this process has gone. The job object does that instead.
+        var guard = !isFirefox && OperatingSystem.IsWindows()
+            ? WindowsProcessGuard.TryAdopt(process)
+            : null;
 
         try
         {
             var timeout = TimeSpan.FromMilliseconds(options.Timeout);
 
-            Uri wsEndpoint;
-            try
+            Uri? wsEndpoint = null;
+            if (!usePipe)
             {
-                wsEndpoint = isFirefox
-                    ? await FirefoxEndpointReader
-                        .WaitForEndpointAsync(new ProcessStderrAdapter(process), timeout, ct).ConfigureAwait(false)
-                    : await CdpEndpointPoller.WaitForEndpointAsync(port, timeout, ct).ConfigureAwait(false);
-            }
-            catch (MotusTimeoutException ex)
-            {
-                // A browser that never offered an endpoint has usually said why on its way down.
-                throw new MotusTimeoutException(timeoutDuration: timeout, message: $"{ex.Message}{output.Describe()}");
+                try
+                {
+                    wsEndpoint = isFirefox
+                        ? await FirefoxEndpointReader
+                            .WaitForEndpointAsync(new ProcessStderrAdapter(process), timeout, ct).ConfigureAwait(false)
+                        : await new CdpEndpointPoller()
+                            .WaitForEndpointAsync(port, timeout, ct).ConfigureAwait(false);
+                }
+                catch (MotusTimeoutException ex)
+                {
+                    // A browser that never offered an endpoint has usually said why on its way down.
+                    throw new MotusTimeoutException(timeoutDuration: timeout, message: $"{ex.Message}{output.Describe()}");
+                }
             }
 
             // Everything from here to the first answered command is bounded by the launch timeout.
@@ -109,13 +136,27 @@ public static class MotusLauncher
             {
                 IMotusTransport transport;
                 IMotusSessionRegistry registry;
+                var slowMo = TimeSpan.FromMilliseconds(options.SlowMo);
 
-                if (isFirefox)
+                if (usePipe)
+                {
+                    // The browser is already on the other end of these, so the transport is started
+                    // rather than connected.
+                    var pipeSocket = new CdpPipeSocket(
+                        process.StandardInput.BaseStream, process.StandardOutput.BaseStream);
+
+                    var pipeTransport = new CdpTransport(pipeSocket, slowMo);
+                    pipeTransport.Start();
+
+                    transport = pipeTransport;
+                    registry = new CdpSessionRegistry(pipeTransport);
+                }
+                else if (isFirefox)
                 {
                     // TODO: BiDiTransport does not support SlowMo yet
                     var socket = new CdpSocket();
                     var bidiTransport = new BiDiTransport(socket);
-                    await bidiTransport.ConnectAsync(wsEndpoint, readyCts.Token).ConfigureAwait(false);
+                    await bidiTransport.ConnectAsync(wsEndpoint!, readyCts.Token).ConfigureAwait(false);
 
                     var sessionId = await bidiTransport.CreateSessionAsync(readyCts.Token).ConfigureAwait(false);
 
@@ -124,10 +165,9 @@ public static class MotusLauncher
                 }
                 else
                 {
-                    var slowMo = TimeSpan.FromMilliseconds(options.SlowMo);
                     var socket = new CdpSocket();
                     var cdpTransport = new CdpTransport(socket, slowMo);
-                    await cdpTransport.ConnectAsync(wsEndpoint, readyCts.Token).ConfigureAwait(false);
+                    await cdpTransport.ConnectAsync(wsEndpoint!, readyCts.Token).ConfigureAwait(false);
 
                     transport = cdpTransport;
                     registry = new CdpSessionRegistry(cdpTransport);
@@ -137,7 +177,7 @@ public static class MotusLauncher
                     transport, registry, process,
                     ownsTempDir ? profileOrDataDir : null,
                     options.HandleSIGINT, options.HandleSIGTERM,
-                    options, output);
+                    options, output, processGuard: guard);
 
                 await browser.InitializeAsync(readyCts.Token).ConfigureAwait(false);
                 return browser;
@@ -146,8 +186,11 @@ public static class MotusLauncher
             {
                 throw new MotusTimeoutException(
                     timeoutDuration: timeout,
-                    message: $"Browser offered a debugging endpoint but did not finish connecting "
-                             + $"within {timeout.TotalSeconds}s.{output.Describe()}");
+                    message: usePipe
+                        ? $"Browser started but did not answer on its pipe within "
+                          + $"{timeout.TotalSeconds}s.{output.Describe()}"
+                        : $"Browser offered a debugging endpoint but did not finish connecting "
+                          + $"within {timeout.TotalSeconds}s.{output.Describe()}");
             }
         }
         catch
@@ -157,6 +200,7 @@ public static class MotusLauncher
                 try { process.Kill(entireProcessTree: true); } catch { }
             }
             process.Dispose();
+            guard?.Dispose();
 
             if (ownsTempDir)
             {
@@ -166,6 +210,20 @@ public static class MotusLauncher
             throw;
         }
     }
+
+    /// <summary>
+    /// Hands the browser the two file descriptors it reads and writes CDP on.
+    /// </summary>
+    /// <remarks>
+    /// Chromium started with <c>--remote-debugging-pipe</c> reads commands on descriptor 3 and
+    /// writes on descriptor 4, and the process API offers no way to give a child an arbitrary
+    /// descriptor. A shell does. It copies this process's end of the redirected standard input
+    /// onto 3 and of the redirected standard output onto 4, points standard output at nothing so
+    /// that the browser's own logging cannot be mistaken for protocol traffic, and then replaces
+    /// itself with the browser, so the process handle still refers to the browser and nothing sits
+    /// between the two.
+    /// </remarks>
+    private const string PipeLaunchScript = "exec \"$0\" \"$@\" 3<&0 4>&1 1>/dev/null";
 
     /// <summary>
     /// Connects to an existing browser instance via its CDP WebSocket endpoint.
@@ -195,31 +253,67 @@ public static class MotusLauncher
         using var readyCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         readyCts.CancelAfter(timeout);
 
+        // Each step is bounded separately so that running out of time says which one was still
+        // waiting. They share one token, so the budget for all of them together is still the
+        // caller's timeout and no step can extend it.
+        var poller = new CdpEndpointPoller();
+
+        // The poller keeps a deadline of its own and the budget above cancels it at the same
+        // moment, so which of the two speaks first is a matter of timing. Both mean the same thing
+        // and are reported in the same words.
+        Uri wsEndpoint;
         try
         {
-            var wsEndpoint = await ResolveWebSocketEndpointAsync(endpoint, timeout, readyCts.Token)
+            wsEndpoint = await ResolveWebSocketEndpointAsync(endpoint, timeout, poller, readyCts.Token)
                 .ConfigureAwait(false);
-
-            var slowMo = TimeSpan.FromMilliseconds(options.SlowMo);
-            var socket = new CdpSocket();
-            var transport = new CdpTransport(socket, slowMo);
-            await transport.ConnectAsync(wsEndpoint, readyCts.Token).ConfigureAwait(false);
-
-            var registry = new CdpSessionRegistry(transport);
-            var browser = new Browser(
-                transport, registry, process: null, tempUserDataDir: null,
-                handleSigint: false, handleSigterm: false,
-                adoptExistingTargets: options.AdoptExistingTargets);
-
-            await browser.InitializeAsync(readyCts.Token).ConfigureAwait(false);
-            return browser;
         }
-        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        catch (Exception ex) when (ex is MotusTimeoutException
+                                   || (ex is OperationCanceledException && !ct.IsCancellationRequested))
         {
             throw new MotusTimeoutException(
                 timeoutDuration: timeout,
-                message: $"Did not finish connecting to {endpoint} within {timeout.TotalSeconds}s.");
+                message: $"Did not finish connecting to {endpoint} within {timeout.TotalSeconds}s. "
+                         + $"Its debugging endpoint never answered with a WebSocket URL.{poller.Describe()}");
         }
+
+        var slowMo = TimeSpan.FromMilliseconds(options.SlowMo);
+        var socket = new CdpSocket();
+        var transport = new CdpTransport(socket, slowMo);
+
+        try
+        {
+            await transport.ConnectAsync(wsEndpoint, readyCts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            await transport.DisposeAsync().ConfigureAwait(false);
+            throw new MotusTimeoutException(
+                timeoutDuration: timeout,
+                message: $"Did not finish connecting to {endpoint} within {timeout.TotalSeconds}s. "
+                         + $"It named {wsEndpoint}, and that WebSocket never finished opening.");
+        }
+
+        var registry = new CdpSessionRegistry(transport);
+        var browser = new Browser(
+            transport, registry, process: null, tempUserDataDir: null,
+            handleSigint: false, handleSigterm: false,
+            adoptExistingTargets: options.AdoptExistingTargets);
+
+        try
+        {
+            await browser.InitializeAsync(readyCts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            await browser.DisposeAsync().ConfigureAwait(false);
+            throw new MotusTimeoutException(
+                timeoutDuration: timeout,
+                message: $"Did not finish connecting to {endpoint} within {timeout.TotalSeconds}s. "
+                         + "The WebSocket opened, and the browser did not finish reporting its "
+                         + "version and taking over the tabs already open.");
+        }
+
+        return browser;
     }
 
     /// <summary>
@@ -228,7 +322,7 @@ public static class MotusLauncher
     /// chose the port already knows.
     /// </summary>
     private static async Task<Uri> ResolveWebSocketEndpointAsync(
-        string endpoint, TimeSpan timeout, CancellationToken ct)
+        string endpoint, TimeSpan timeout, CdpEndpointPoller poller, CancellationToken ct)
     {
         if (!Uri.TryCreate(endpoint, UriKind.Absolute, out var uri))
             throw new ArgumentException(
@@ -240,7 +334,7 @@ public static class MotusLauncher
             return uri;
 
         if (uri.Scheme is "http" or "https")
-            return await CdpEndpointPoller.WaitForEndpointAsync(uri, timeout, ct).ConfigureAwait(false);
+            return await poller.WaitForEndpointAsync(uri, timeout, ct).ConfigureAwait(false);
 
         throw new ArgumentException(
             $"Browser endpoint scheme '{uri.Scheme}' is not supported. Expected ws, wss, http, or https.",

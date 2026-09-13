@@ -29,7 +29,7 @@ public class CdpTransportTests
 
         // Start the send (registers TCS in _pending), then enqueue the response
         var sendTask = _transport.SendRawAsync("Page.navigate", emptyParams, null, CancellationToken.None);
-        _socket.Enqueue("""{"id":1,"result":{"frameId":"ABC"}}""");
+        _socket.EnqueueRaw("""{"id":1,"result":{"frameId":"ABC"}}""");
 
         var result = await sendTask;
         Assert.AreEqual("ABC", result.GetProperty("frameId").GetString());
@@ -41,7 +41,7 @@ public class CdpTransportTests
         var emptyParams = CdpTransport.EmptyJsonElement();
 
         var sendTask = _transport.SendRawAsync("Page.navigate", emptyParams, null, CancellationToken.None);
-        _socket.Enqueue("""{"id":1,"error":{"code":-32000,"message":"Page not found"}}""");
+        _socket.EnqueueRaw("""{"id":1,"error":{"code":-32000,"message":"Page not found"}}""");
 
         var ex = await Assert.ThrowsExceptionAsync<CdpProtocolException>(() => sendTask);
         Assert.AreEqual(-32000, ex.Code);
@@ -54,7 +54,7 @@ public class CdpTransportTests
         var emptyParams = CdpTransport.EmptyJsonElement();
 
         var sendTask = _transport.SendRawAsync("DOM.getDocument", emptyParams, "session-42", CancellationToken.None);
-        _socket.Enqueue("""{"id":1,"result":{}}""");
+        _socket.EnqueueRaw("""{"id":1,"result":{}}""");
         await sendTask;
 
         var sentJson = _socket.GetSentJson(0);
@@ -69,7 +69,7 @@ public class CdpTransportTests
         var emptyParams = CdpTransport.EmptyJsonElement();
 
         var sendTask = _transport.SendRawAsync("Target.getTargets", emptyParams, null, CancellationToken.None);
-        _socket.Enqueue("""{"id":1,"result":{}}""");
+        _socket.EnqueueRaw("""{"id":1,"result":{}}""");
         await sendTask;
 
         var sentJson = _socket.GetSentJson(0);
@@ -85,11 +85,11 @@ public class CdpTransportTests
         var emptyParams = CdpTransport.EmptyJsonElement();
 
         var send1 = _transport.SendRawAsync("method1", emptyParams, null, CancellationToken.None);
-        _socket.Enqueue("""{"id":1,"result":{}}""");
+        _socket.EnqueueRaw("""{"id":1,"result":{}}""");
         await send1;
 
         var send2 = _transport.SendRawAsync("method2", emptyParams, null, CancellationToken.None);
-        _socket.Enqueue("""{"id":2,"result":{}}""");
+        _socket.EnqueueRaw("""{"id":2,"result":{}}""");
         await send2;
 
         using var doc1 = JsonDocument.Parse(_socket.GetSentJson(0));
@@ -210,10 +210,43 @@ public class CdpTransportTests
         var emptyParams = CdpTransport.EmptyJsonElement();
 
         var sendTask = _transport.SendRawAsync("Page.enable", emptyParams, null, CancellationToken.None);
-        _socket.Enqueue("""{"id":1}""");
+        _socket.EnqueueRaw("""{"id":1}""");
 
         var result = await sendTask;
         Assert.AreEqual(JsonValueKind.Object, result.ValueKind);
+    }
+
+    [TestMethod]
+    public async Task ShareEventChannel_HandsOutEventsOfSeveralKinds_InTheOrderTheyArrived()
+    {
+        var reader = _transport.ShareEventChannel(["Page.frameNavigated|s1", "Page.frameAttached|s1", "Page.frameDetached|s1"]);
+
+        _socket.EnqueueRaw("""{"method":"Page.frameNavigated","sessionId":"s1","params":{"n":1}}""");
+        _socket.EnqueueRaw("""{"method":"Page.frameAttached","sessionId":"s1","params":{"n":2}}""");
+        _socket.EnqueueRaw("""{"method":"Page.frameDetached","sessionId":"s1","params":{"n":3}}""");
+        _socket.EnqueueRaw("""{"method":"Page.frameAttached","sessionId":"s1","params":{"n":4}}""");
+
+        var seen = new List<string>();
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await foreach (var evt in reader.ReadAllAsync(cts.Token))
+        {
+            seen.Add($"{evt.Method}:{evt.Params.GetProperty("n").GetInt32()}");
+            if (seen.Count == 4)
+                break;
+        }
+
+        CollectionAssert.AreEqual(
+            new[] { "Page.frameNavigated:1", "Page.frameAttached:2", "Page.frameDetached:3", "Page.frameAttached:4" },
+            seen);
+    }
+
+    [TestMethod]
+    public void ShareEventChannel_RefusesAKeyAlreadySubscribedOnItsOwn()
+    {
+        _transport.GetOrCreateEventChannel("Page.frameAttached|s1");
+
+        Assert.ThrowsException<InvalidOperationException>(
+            () => _transport.ShareEventChannel(["Page.frameNavigated|s1", "Page.frameAttached|s1"]));
     }
 
     private static async Task<RawCdpEvent> ReadOneEvent(

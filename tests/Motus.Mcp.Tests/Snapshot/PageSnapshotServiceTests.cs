@@ -1,5 +1,6 @@
 using Motus.Abstractions;
 using Motus.Mcp;
+using Motus.Mcp.Tests.Tools;
 
 namespace Motus.Mcp.Tests.Snapshot;
 
@@ -31,6 +32,53 @@ public class PageSnapshotServiceTests
 
         var ex = Assert.ThrowsException<StaleRefException>(() => service.ResolveRef("e999"));
         Assert.AreEqual("e999", ex.RefId);
+    }
+
+    [TestMethod]
+    public void ResolveRef_WithASelector_NeedsNoSnapshot()
+    {
+        var page = new FakeAccessibilityPage(EmptySnapshot());
+        var service = new PageSnapshotService(page);
+
+        var locator = service.ResolveRef("#late-btn");
+
+        Assert.IsNotNull(locator, "a selector describes the element itself, so nothing has to be read first.");
+        Assert.AreEqual("#late-btn", page.ResolvedSelector);
+    }
+
+    [TestMethod]
+    public async Task ResolveRef_WithARefTheSnapshotDoesNotHold_IsStaleRatherThanASelector()
+    {
+        var snapshot = new AccessibilitySnapshot(
+            Roots:
+            [
+                new AccessibilityNode("1", "button", "Go", null, null,
+                    new Dictionary<string, string?>(), [], BackendDOMNodeId: 5),
+            ],
+            IgnoredCount: 0,
+            DiagnosticMessage: null);
+
+        var page = new FakeAccessibilityPage(snapshot);
+        var service = new PageSnapshotService(page);
+        await service.TakeSnapshotAsync();
+
+        // Running a ref as a selector would answer "no element matched e99", which sends the agent
+        // looking at the page rather than at the snapshot it took too long ago.
+        Assert.ThrowsException<StaleRefException>(() => service.ResolveRef("e99"));
+        Assert.IsNull(page.ResolvedSelector);
+    }
+
+    [TestMethod]
+    public async Task ResolveRef_WithAFrameScopedRefShape_IsReadAsARef()
+    {
+        var page = new FakeAccessibilityPage(EmptySnapshot());
+        var service = new PageSnapshotService(page);
+        await service.TakeSnapshotAsync();
+
+        // Refs that name the frame they came from are the next step for the snapshot, and a
+        // selector is never shaped like one, so they are claimed here before they are assigned.
+        Assert.ThrowsException<StaleRefException>(() => service.ResolveRef("f1e2"));
+        Assert.IsNull(page.ResolvedSelector);
     }
 
     [TestMethod]
@@ -67,7 +115,7 @@ public class PageSnapshotServiceTests
         var snapshot = new AccessibilitySnapshot(
             Roots:
             [
-                new AccessibilityNode("1", "img", "", null, null,
+                new AccessibilityNode("1", "img", "Logo", null, null,
                     new Dictionary<string, string?>(), [], BackendDOMNodeId: 5),
                 new AccessibilityNode("2", "button", "Go", null, null,
                     new Dictionary<string, string?>(), [], BackendDOMNodeId: 7),
@@ -85,14 +133,73 @@ public class PageSnapshotServiceTests
     }
 
     [TestMethod]
-    public async Task TakeSnapshot_WithNoAddressableNodes_AppendsCoordinateWorkflowNote()
+    public async Task GetRefForNodeId_ForANodeTheSnapshotDidNotAddress_ReturnsNull_AndItsTextInstead()
+    {
+        // An unnamed image is in the tree but not worth a ref; a paragraph is not worth one either
+        // but carries text that says which one it is.
+        var snapshot = new AccessibilitySnapshot(
+            Roots:
+            [
+                new AccessibilityNode("1", "img", "", null, null,
+                    new Dictionary<string, string?>(), [], BackendDOMNodeId: 5),
+                new AccessibilityNode("2", "paragraph", "", null, null,
+                    new Dictionary<string, string?>(),
+                    [
+                        new AccessibilityNode("3", "StaticText", "Terms apply.", null, null,
+                            new Dictionary<string, string?>(), [], BackendDOMNodeId: 6),
+                    ],
+                    BackendDOMNodeId: 7),
+                new AccessibilityNode("4", "button", "Go", null, null,
+                    new Dictionary<string, string?>(), [], BackendDOMNodeId: 8),
+            ],
+            IgnoredCount: 0,
+            DiagnosticMessage: null);
+
+        var service = new PageSnapshotService(new FakeAccessibilityPage(snapshot));
+        Assert.IsNull(service.GetTextForNodeId(7), "no snapshot has been taken yet");
+
+        await service.TakeSnapshotAsync();
+
+        Assert.IsNull(service.GetRefForNodeId(5));
+        Assert.IsNull(service.GetTextForNodeId(5));
+        Assert.IsNull(service.GetRefForNodeId(7));
+        Assert.AreEqual("Terms apply.", service.GetTextForNodeId(7));
+        Assert.AreEqual("e1", service.GetRefForNodeId(8));
+    }
+
+    [TestMethod]
+    public async Task TakeSnapshot_WithNoAddressableNodes_AndCoordinateTools_NamesThem()
+    {
+        var service = new PageSnapshotService(
+            new FakeAccessibilityPage(EmptySnapshot()), coordinateToolsAvailable: true);
+
+        var text = await service.TakeSnapshotAsync();
+
+        StringAssert.Contains(text, "no addressable elements were found");
+        StringAssert.Contains(text, "click_xy");
+        Assert.IsFalse(
+            text.Contains("--caps coordinates", StringComparison.Ordinal),
+            "the tools are there, so there is nothing to restart the server for");
+        Assert.AreEqual(text, service.LastSnapshot);
+    }
+
+    /// <summary>
+    /// Without the coordinate tools there is no way to act on this page at all, and saying so
+    /// plainly is the point: an agent asked to check its own tool list and draw the conclusion
+    /// answers inconsistently.
+    /// </summary>
+    [TestMethod]
+    public async Task TakeSnapshot_WithNoAddressableNodes_AndNoCoordinateTools_SaysTheSessionIsStuck()
     {
         var service = new PageSnapshotService(new FakeAccessibilityPage(EmptySnapshot()));
 
         var text = await service.TakeSnapshotAsync();
 
         StringAssert.Contains(text, "no addressable elements were found");
-        StringAssert.Contains(text, "click_xy");
+        StringAssert.Contains(text, "--caps coordinates");
+        Assert.IsFalse(
+            text.Contains("click_xy", StringComparison.Ordinal),
+            "naming a tool the agent cannot call sends it looking for one that is not there");
         Assert.AreEqual(text, service.LastSnapshot);
     }
 
@@ -114,6 +221,67 @@ public class PageSnapshotServiceTests
 
         Assert.IsFalse(text.Contains("no addressable elements"),
             "a snapshot with refs should not carry the degraded note");
+    }
+
+    [TestMethod]
+    public async Task TakeSnapshot_WhenTheBrowserCannotProduceATree_SaysSoRatherThanBlamingThePage()
+    {
+        var snapshot = new AccessibilitySnapshot(
+            Roots: [],
+            IgnoredCount: 0,
+            DiagnosticMessage: "Accessibility.getFullAXTree is not supported on the active transport "
+                + "(Firefox/WebDriver BiDi). Use a Chromium-based browser for accessibility audits.");
+
+        var service = new PageSnapshotService(
+            new FakeAccessibilityPage(snapshot), coordinateToolsAvailable: true);
+
+        var text = await service.TakeSnapshotAsync();
+
+        StringAssert.Contains(text, "not supported on the active transport");
+        StringAssert.Contains(text, "cannot be used with this browser");
+        StringAssert.Contains(text, "click_xy");
+        Assert.IsFalse(
+            text.Contains("canvas", StringComparison.Ordinal),
+            "the page is not the reason the tree is empty, so do not send the agent looking at it");
+    }
+
+    /// <summary>
+    /// A snapshot of one frame prints no frames inside itself, so the address of the frame it did
+    /// describe is the only thing an action afterwards can compare to notice that the refs have
+    /// stopped meaning anything.
+    /// </summary>
+    [TestMethod]
+    public async Task TakeSnapshot_ScopedToAFrame_RecordsTheAddressTheFrameHeld()
+    {
+        var page = new FakeToolPage(EmptySnapshot());
+        var frame = new FakeToolFrame(page, "https://example.test/payment")
+        {
+            Snapshot = new AccessibilitySnapshot(
+                Roots:
+                [
+                    new AccessibilityNode("1", "button", "Pay now", null, null,
+                        new Dictionary<string, string?>(), [], BackendDOMNodeId: 5),
+                ],
+                IgnoredCount: 0,
+                DiagnosticMessage: null),
+        };
+        var service = new PageSnapshotService(page);
+
+        await service.TakeSnapshotAsync(frame, rootRef: null, maxDepth: null);
+
+        Assert.IsNotNull(service.ScopedTo);
+        Assert.AreSame(frame, service.ScopedTo.Frame);
+        Assert.AreEqual("https://example.test/payment", service.ScopedTo.Url);
+    }
+
+    [TestMethod]
+    public async Task TakeSnapshot_OfThePage_RecordsNoScope()
+    {
+        var service = new PageSnapshotService(new FakeAccessibilityPage(EmptySnapshot()));
+
+        await service.TakeSnapshotAsync();
+
+        Assert.IsNull(service.ScopedTo, "a page snapshot describes no frame on its own.");
     }
 
     private static AccessibilitySnapshot EmptySnapshot()
@@ -143,6 +311,9 @@ public class PageSnapshotServiceTests
         public Task<string> StopVideoRecordingAsync(CancellationToken ct = default) => throw new NotImplementedException();
 
         public ILocator LocatorByBackendNodeId(long backendNodeId) => throw new NotImplementedException();
+
+        /// <summary>The last selector this page was asked to build a locator for.</summary>
+        public string? ResolvedSelector { get; private set; }
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 
@@ -187,7 +358,12 @@ public class PageSnapshotServiceTests
         public Task<string> ContentAsync() => throw new NotImplementedException();
         public Task SetContentAsync(string html, NavigationOptions? options = null) => throw new NotImplementedException();
         public Task<string> TitleAsync() => throw new NotImplementedException();
-        public ILocator Locator(string selector, LocatorOptions? options = null) => throw new NotImplementedException();
+        public ILocator Locator(string selector, LocatorOptions? options = null)
+        {
+            ResolvedSelector = selector;
+            return new FakeToolLocator();
+        }
+
         public ILocator GetByRole(string role, string? name = null) => throw new NotImplementedException();
         public ILocator GetByText(string text, bool? exact = null) => throw new NotImplementedException();
         public ILocator GetByLabel(string text, bool? exact = null) => throw new NotImplementedException();

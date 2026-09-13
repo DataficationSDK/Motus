@@ -73,16 +73,26 @@ public class InteractionToolsIntegrationTests
         AssertOk(await InteractionTools.ClearAsync(name, service, ct), "clear");
         AssertOk(await InteractionTools.PressAsync(name, "Tab", service, ct), "press");
 
-        var path = Path.Combine(Path.GetTempPath(), $"motus_upload_{Guid.NewGuid():N}.txt");
+        // Uploads read only from the directories the session is allowed to read, standing in here
+        // for the roots an MCP client reports.
+        var uploadDir = Path.Combine(Path.GetTempPath(), $"motus_upload_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(uploadDir);
+        var path = Path.Combine(uploadDir, "upload.txt");
         await File.WriteAllTextAsync(path, "hello", ct);
+        var policy = new SecurityPolicy(new McpServerLaunchOptions { OutputDirectory = uploadDir })
+        {
+            ReadRootsOverride = _ => new ValueTask<IReadOnlyList<string>>(new[] { uploadDir }),
+        };
         try
         {
             var doc = RefForLineContaining(snapText, "Doc");
-            AssertOk(await InteractionTools.UploadFilesAsync(doc, [path], service, ct), "upload_files");
+            AssertOk(
+                await InteractionTools.UploadFilesAsync(doc, [path], service, ct, server: null, policy: policy),
+                "upload_files");
         }
         finally
         {
-            File.Delete(path);
+            Directory.Delete(uploadDir, recursive: true);
         }
 
         AssertOk(await InteractionTools.WaitForElementAsync(accept, "visible", service, ct), "wait_for_element");

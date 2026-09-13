@@ -14,6 +14,19 @@ public interface ILocator
     Task ClickAsync(double? timeout = null);
 
     /// <summary>
+    /// Clicks the element with a specific mouse button, or with modifier keys held.
+    /// </summary>
+    /// <param name="options">The button to press, and the modifier keys the page sees held.</param>
+    /// <param name="timeout">Maximum time in milliseconds to wait.</param>
+    /// <remarks>
+    /// This runs the same actionability checks as <see cref="ClickAsync(double?)"/>: the element has
+    /// to be visible, enabled, settled, and receiving events before the button goes down. Assembling
+    /// the same click from a bounding box and <see cref="IMouse.ClickAsync"/> skips every one of
+    /// them, which is why a right-click or a modified click belongs here rather than at the caller.
+    /// </remarks>
+    Task ClickAsync(MouseButtonOptions options, double? timeout = null);
+
+    /// <summary>
     /// Double-clicks the element.
     /// </summary>
     /// <param name="timeout">Maximum time in milliseconds to wait.</param>
@@ -83,6 +96,18 @@ public interface ILocator
     /// <param name="values">The option values to select.</param>
     /// <returns>The selected option values.</returns>
     Task<IReadOnlyList<string>> SelectOptionAsync(params string[] values);
+
+    /// <summary>
+    /// Selects options in a select element by value, waiting no longer than the given timeout.
+    /// </summary>
+    /// <param name="values">The option values to select.</param>
+    /// <param name="timeout">Maximum time in milliseconds to wait.</param>
+    /// <returns>The selected option values.</returns>
+    /// <remarks>
+    /// The timeout has no default here, so a call that passes only values still binds to the
+    /// <c>params</c> overload above and means the same thing it always did.
+    /// </remarks>
+    Task<IReadOnlyList<string>> SelectOptionAsync(string[] values, double? timeout);
 
     /// <summary>
     /// Sets the files for a file input element.

@@ -10,6 +10,13 @@ namespace Motus.Mcp;
 public sealed record FrameEntry(IFrame Frame, int Depth);
 
 /// <summary>
+/// One open tab and the name of the context holding it. The context is carried because the tab
+/// index runs across every context the session holds, so selecting a tab can mean moving to the
+/// context it lives in.
+/// </summary>
+public sealed record TabEntry(IPage Page, string ContextName);
+
+/// <summary>
 /// Resolves the page that unscoped tool calls act on and keeps the per-page
 /// snapshot service alive between calls. Tool invocations arrive as individually
 /// stateless messages, so the ref map a <c>snapshot</c> produced has to survive
@@ -47,7 +54,56 @@ public class ActivePageService
         _dialogService = dialogService;
         _consoleService = consoleService;
         _networkService = networkService;
+
+        HasCoordinateTools = ToolCapabilities.Includes(sessions.Options.Capabilities, ToolCapabilities.Coordinates);
     }
+
+    /// <summary>
+    /// The dialog watcher following the active page, or null when the session has none. Exposed so
+    /// a tool can race its action against a dialog without taking a second injected service: the
+    /// dialog follows the active page, and this is what owns that.
+    /// </summary>
+    public DialogService? Dialogs => _dialogService;
+
+    /// <summary>
+    /// The console capture following the active page, or null when the session has none. Exposed
+    /// for the same reason as <see cref="Dialogs"/>: what an action says about the errors it
+    /// caused is read from the capture that follows the page it ran against.
+    /// </summary>
+    public ConsoleService? ConsoleLog => _consoleService;
+
+    /// <summary>
+    /// How long an element action may take, in milliseconds, or null for the framework default.
+    /// Neither a page nor a context holds a default for this, so every tool passes it on the call
+    /// it makes, and reads it from here so there is one place it comes from.
+    /// </summary>
+    public double? ActionTimeout => _sessions.Options.ActionTimeout;
+
+    /// <summary>
+    /// Whether the tools that act on a position are in this server's catalog.
+    /// </summary>
+    /// <remarks>
+    /// Read once at construction, because what a result tells an agent to do next turns on it: a
+    /// page nothing can address is a dead end when there is no way to click a coordinate, and a
+    /// recovery it can follow when there is. A message that describes both cases and asks the agent
+    /// to work out which one it is in gets answered inconsistently.
+    /// </remarks>
+    public bool HasCoordinateTools { get; }
+
+    /// <summary>
+    /// The options every navigation is made with, carrying the configured navigation timeout, or
+    /// null when none was configured and the framework default applies.
+    /// </summary>
+    public NavigationOptions? Navigation => _sessions.Options.NavigationTimeout is { } timeout
+        ? new NavigationOptions { Timeout = timeout }
+        : null;
+
+    /// <summary>
+    /// How long an action result waits for the page to show what the action did before it is
+    /// written: the configured settle time, or the default when none was given.
+    /// </summary>
+    public TimeSpan Settle => TimeSpan.FromMilliseconds(
+        _sessions.Options.SettleTimeout ?? McpServerLaunchOptions.DefaultSettleMilliseconds);
 
     /// <summary>
     /// Returns the active page, reusing the cached one while it is still open and
@@ -111,7 +167,52 @@ public class ActivePageService
     public PageSnapshotService GetSnapshotService(IPage page)
     {
         ArgumentNullException.ThrowIfNull(page);
-        return _snapshots.GetValue(page, static p => new PageSnapshotService(p));
+        return _snapshots.GetValue(page, p => new PageSnapshotService(p, HasCoordinateTools));
+    }
+
+    /// <summary>
+    /// Whether a snapshot of this page has been taken and its refs are still being held. Asked
+    /// before an action so the result can say when the action has just made those refs point at a
+    /// document that is no longer there.
+    /// </summary>
+    /// <remarks>
+    /// This does not create a snapshot service the way <see cref="GetSnapshotService"/> does, so
+    /// asking the question never changes the answer.
+    /// </remarks>
+    public bool HasSnapshot(IPage page)
+    {
+        ArgumentNullException.ThrowIfNull(page);
+        return _snapshots.TryGetValue(page, out var service) && service.LastSnapshot is not null;
+    }
+
+    /// <summary>
+    /// The frames the page's last snapshot printed inside itself, with the address each held at the
+    /// time, or an empty list when there is no snapshot to speak of.
+    /// </summary>
+    /// <remarks>
+    /// Asked before an action so the result can say when a frame has gone somewhere else under the
+    /// refs the agent is holding. Like <see cref="HasSnapshot"/>, this does not create a snapshot
+    /// service, so asking never changes the answer.
+    /// </remarks>
+    public IReadOnlyList<SnapshotFrame> SnapshotFrames(IPage page)
+    {
+        ArgumentNullException.ThrowIfNull(page);
+        return _snapshots.TryGetValue(page, out var service) ? service.InlinedFrames : [];
+    }
+
+    /// <summary>
+    /// The frame the page's last snapshot described on its own, with the address it held at the
+    /// time, or null when that snapshot described the page or there is none.
+    /// </summary>
+    /// <remarks>
+    /// A snapshot of one frame prints no frames inside itself, so <see cref="SnapshotFrames"/> is
+    /// empty for it and the one document its refs came from would otherwise go unwatched. Like
+    /// <see cref="HasSnapshot"/>, this does not create a snapshot service.
+    /// </remarks>
+    public SnapshotScope? SnapshotScope(IPage page)
+    {
+        ArgumentNullException.ThrowIfNull(page);
+        return _snapshots.TryGetValue(page, out var service) ? service.ScopedTo : null;
     }
 
     /// <summary>
@@ -173,14 +274,17 @@ public class ActivePageService
     }
 
     /// <summary>
-    /// Lists the frames of the active page in document order, the main frame first, each with how
-    /// deeply it is nested. The index of each entry is what <see cref="SelectFrameAsync"/> takes.
+    /// Lists the frames of the active page, the main frame first and every other frame after the
+    /// one that holds it, each with how deeply it is nested. The index of each entry is what
+    /// <see cref="SelectFrameAsync"/> takes.
     /// </summary>
     /// <remarks>
     /// The tree is walked from the main frame rather than read from <see cref="IPage.Frames"/>, so
-    /// the order is the order of the documents rather than the order they happened to be
-    /// discovered in. A frame that arrives late, which is the ordinary case for one the browser
-    /// puts in its own process, would otherwise land in an arbitrary place in the list.
+    /// a frame always follows its parent rather than landing wherever it happened to be discovered.
+    /// A frame that arrives late, which is the ordinary case for one the browser puts in its own
+    /// process, would otherwise turn up in an arbitrary place in the list. Frames that share a
+    /// parent come in the order they attached, which is the order their elements appear in the
+    /// document unless the page inserted one later.
     /// </remarks>
     public virtual async Task<IReadOnlyList<FrameEntry>> ListFramesAsync(CancellationToken cancellationToken = default)
     {
@@ -249,18 +353,37 @@ public class ActivePageService
         => _sessions.GetOrCreateActiveContextAsync(cancellationToken);
 
     /// <summary>
-    /// Returns the open pages of the active context. This touches the browser, so
-    /// tests override it to supply fake pages.
+    /// Returns the open pages of every context this session holds, context by context and then in
+    /// the order each context holds its pages. This touches the browser, so tests override it to
+    /// supply fake tabs.
     /// </summary>
-    protected virtual async Task<IReadOnlyList<IPage>> GetActiveContextPagesAsync(CancellationToken cancellationToken)
+    /// <remarks>
+    /// One list across every context is what makes a tab addressable wherever it is. A tab in
+    /// another context used to be reachable only by naming its context first, and a tab adopted
+    /// from an attached browser into a context the session did not create was counted but never
+    /// listed. The active context is resolved first so a session that has not touched the browser
+    /// yet has something to list.
+    /// </remarks>
+    protected virtual async Task<IReadOnlyList<TabEntry>> GetOpenTabsAsync(CancellationToken cancellationToken)
     {
-        var context = await _sessions.GetOrCreateActiveContextAsync(cancellationToken).ConfigureAwait(false);
-        return context.Pages.Where(p => !p.IsClosed).ToArray();
+        await _sessions.GetOrCreateActiveContextAsync(cancellationToken).ConfigureAwait(false);
+
+        var tabs = new List<TabEntry>();
+        foreach (var (name, context) in _sessions.HeldContexts)
+        {
+            foreach (var page in context.Pages)
+            {
+                if (!page.IsClosed)
+                    tabs.Add(new TabEntry(page, name));
+            }
+        }
+
+        return tabs;
     }
 
-    /// <summary>Lists the active context's open tabs, in order.</summary>
-    public Task<IReadOnlyList<IPage>> ListTabsAsync(CancellationToken cancellationToken = default)
-        => GetActiveContextPagesAsync(cancellationToken);
+    /// <summary>Lists the open tabs of every context this session holds, in order.</summary>
+    public async Task<IReadOnlyList<TabEntry>> ListTabsAsync(CancellationToken cancellationToken = default)
+        => await GetOpenTabsAsync(cancellationToken).ConfigureAwait(false);
 
     /// <summary>
     /// Opens a new tab in the active context and makes it active. This touches the
@@ -275,21 +398,29 @@ public class ActivePageService
     }
 
     /// <summary>
-    /// Makes the tab at the given zero-based index active and brings it to the
-    /// foreground. The index runs over the active context's open tabs.
+    /// Makes the tab at the given zero-based index active and brings it to the foreground. The
+    /// index runs over every context's open tabs, and a tab in another context moves the session to
+    /// that context as well.
     /// </summary>
     /// <exception cref="IndexOutOfRangeException">The index is outside the open-tab range.</exception>
     public async Task<IPage> SelectTabAsync(int index, CancellationToken cancellationToken = default)
     {
-        var pages = await GetActiveContextPagesAsync(cancellationToken).ConfigureAwait(false);
-        if (index < 0 || index >= pages.Count)
+        var tabs = await GetOpenTabsAsync(cancellationToken).ConfigureAwait(false);
+        if (index < 0 || index >= tabs.Count)
             throw new IndexOutOfRangeException(
-                $"Tab index {index} is out of range; {pages.Count} tab(s) are open. Use tab_list to see them.");
+                $"Tab index {index} is out of range; {tabs.Count} tab(s) are open. Use tab_list to see them.");
 
-        var page = pages[index];
-        await page.BringToFrontAsync().ConfigureAwait(false);
-        SelectPage(page);
-        return page;
+        var tab = tabs[index];
+
+        // Naming a tab is enough to say where the session should be working. Leaving the active
+        // context behind would make every call that followed act on a page in a different context
+        // from the one just selected.
+        if (!string.Equals(tab.ContextName, GetActiveContextName(), StringComparison.Ordinal))
+            SelectContext(tab.ContextName);
+
+        await tab.Page.BringToFrontAsync().ConfigureAwait(false);
+        SelectPage(tab.Page);
+        return tab.Page;
     }
 
     /// <summary>
@@ -299,33 +430,33 @@ public class ActivePageService
     /// <exception cref="IndexOutOfRangeException">The index is outside the open-tab range.</exception>
     public async Task<int> CloseTabAsync(int? index, CancellationToken cancellationToken = default)
     {
-        var pages = await GetActiveContextPagesAsync(cancellationToken).ConfigureAwait(false);
+        var tabs = await GetOpenTabsAsync(cancellationToken).ConfigureAwait(false);
 
         int target;
         if (index is { } i)
         {
-            if (i < 0 || i >= pages.Count)
+            if (i < 0 || i >= tabs.Count)
                 throw new IndexOutOfRangeException(
-                    $"Tab index {i} is out of range; {pages.Count} tab(s) are open. Use tab_list to see them.");
+                    $"Tab index {i} is out of range; {tabs.Count} tab(s) are open. Use tab_list to see them.");
             target = i;
         }
         else
         {
             var active = await GetOrCreateActivePageAsync(cancellationToken).ConfigureAwait(false);
-            target = IndexOf(pages, active);
+            target = IndexOf(tabs, active);
             if (target < 0)
                 target = 0;
         }
 
         ResetActivePage();
-        await pages[target].CloseAsync().ConfigureAwait(false);
+        await tabs[target].Page.CloseAsync().ConfigureAwait(false);
         return target;
 
-        static int IndexOf(IReadOnlyList<IPage> list, IPage page)
+        static int IndexOf(IReadOnlyList<TabEntry> list, IPage page)
         {
             for (var n = 0; n < list.Count; n++)
             {
-                if (ReferenceEquals(list[n], page))
+                if (ReferenceEquals(list[n].Page, page))
                     return n;
             }
 

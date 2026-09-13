@@ -8,6 +8,12 @@ namespace Motus.Recorder.Tests.Transport;
 /// Mock <see cref="ICdpSocket"/> for unit tests. Provides controllable inbound message
 /// delivery and captures all outbound sends.
 /// </summary>
+/// <remarks>
+/// A command that only bookkeeps the connection is answered from <see cref="CdpFakeResponse"/>
+/// without touching anything the fixture set up, so adding one to browser startup does not shift
+/// the fixture. Otherwise the next response queued with <see cref="QueueResponse"/> is handed
+/// back, readdressed to the command that just went out.
+/// </remarks>
 internal sealed class FakeCdpSocket : ICdpSocket
 {
     private readonly Channel<byte[]> _inbox = Channel.CreateUnbounded<byte[]>();
@@ -26,6 +32,16 @@ internal sealed class FakeCdpSocket : ICdpSocket
     {
         var bytes = message.ToArray();
         _sent.Add(bytes);
+
+        // Both answers below are written inside SendRawAsync, after the pending request is
+        // registered and before it is awaited, so the response reaches the command that just went
+        // out.
+        if (CdpFakeResponse.TryAnswerBookkeeping(bytes, out var bookkeeping))
+        {
+            Enqueue(bookkeeping);
+            return Task.CompletedTask;
+        }
+
         if (_autoResponses.TryDequeue(out var response))
             Enqueue(CdpFakeResponse.WithIdOf(bytes, response));
         return Task.CompletedTask;

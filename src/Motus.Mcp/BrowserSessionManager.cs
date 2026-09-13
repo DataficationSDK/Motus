@@ -64,6 +64,12 @@ public sealed class BrowserSessionManager : IAsyncDisposable
     /// </summary>
     internal Func<string, CancellationToken, Task<IBrowser>>? ConnectOverride { get; init; }
 
+    /// <summary>
+    /// The configuration this session was built with. Exposed because settings that no layer below
+    /// can hold, such as the per-action timeout, have to be readable by the layers that apply them.
+    /// </summary>
+    public McpServerLaunchOptions Options => _options;
+
     /// <summary>The name of the context that unscoped tool calls act on.</summary>
     public string ActiveContextName { get; private set; } = DefaultContextName;
 
@@ -97,6 +103,17 @@ public sealed class BrowserSessionManager : IAsyncDisposable
 
     /// <summary>A snapshot of the currently open context names.</summary>
     public IReadOnlyCollection<string> ContextNames => _contexts.Keys.ToArray();
+
+    /// <summary>
+    /// A snapshot of the contexts this session holds, each with the name it is known by, in the
+    /// same order as <see cref="ContextNames"/>.
+    /// </summary>
+    /// <remarks>
+    /// The tab tools address every context's tabs with one index, so they need the contexts in an
+    /// order that holds still and the name to give each tab.
+    /// </remarks>
+    public IReadOnlyList<KeyValuePair<string, IBrowserContext>> HeldContexts
+        => _contexts.Select(e => new KeyValuePair<string, IBrowserContext>(e.Key, e.Value.Context)).ToArray();
 
     /// <summary>
     /// Returns the live browser, acquiring it lazily on first use: started here, or connected to

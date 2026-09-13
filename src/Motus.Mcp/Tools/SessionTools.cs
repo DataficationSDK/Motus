@@ -6,39 +6,49 @@ using ModelContextProtocol.Server;
 namespace Motus.Mcp;
 
 /// <summary>
-/// Tools for the browser around the page: the tabs of the active context and the
-/// isolated contexts themselves. Each context has its own cookies and storage, so
-/// separate contexts model separate users or logged-in and logged-out states. The
-/// tools that read or act on a page always target the active context's active tab.
+/// Tools for the tabs a session has open, and for saying which browser the session is driving. The
+/// tools that read or act on a page always target the active tab, so these are how the agent moves
+/// between the pages a session has open.
 /// </summary>
 /// <remarks>
 /// Like the other tools, failures are returned as a result with
 /// <see cref="CallToolResult.IsError"/> set and a message the model can act on,
-/// rather than thrown. Switching tab or context drops the refs from the previous
-/// snapshot, so the agent should snapshot again before addressing elements.
+/// rather than thrown. Switching tab drops the refs from the previous snapshot, so the
+/// agent should snapshot again before addressing elements.
 /// </remarks>
 [McpServerToolType]
 public sealed class SessionTools
 {
     [McpServerTool(Name = "tab_list", Title = "List tabs", Destructive = false, ReadOnly = true, Idempotent = true)]
-    [Description("Lists the open tabs of the active context, each with its zero-based index, URL, and title.")]
+    [Description("Lists every open tab this session has, across all its contexts, each with its zero-based index, "
+        + "URL, and title. The context a tab belongs to is named when more than one is open. The index is the one "
+        + "tab_select and tab_close take, and selecting a tab in another context switches to that context.")]
     public static async Task<CallToolResult> TabListAsync(
         ActivePageService pageService,
         CancellationToken cancellationToken)
     {
         try
         {
-            var pages = await pageService.ListTabsAsync(cancellationToken).ConfigureAwait(false);
-            if (pages.Count == 0)
+            var tabs = await pageService.ListTabsAsync(cancellationToken).ConfigureAwait(false);
+            if (tabs.Count == 0)
                 return ToolResultHelper.Text("No tabs are open.");
 
+            // Naming the context on every row of a session that only ever has one would be a column
+            // of the same word, so it is printed only once there is a choice to make.
+            var named = pageService.GetContextNames().Count > 1;
+
             var builder = new StringBuilder();
-            for (var i = 0; i < pages.Count; i++)
+            for (var i = 0; i < tabs.Count; i++)
             {
-                var title = await pages[i].TitleAsync().ConfigureAwait(false);
-                builder.Append('[').Append(i).Append("] ").Append(pages[i].Url);
+                // A tab that will not say what it is called is listed by its address. A tab still
+                // opening, or one whose renderer is busy, must not take the whole listing down with
+                // it: the listing is how an agent finds the tab it wants in the first place.
+                var title = await PageDescription.TryTitleAsync(tabs[i].Page).ConfigureAwait(false);
+                builder.Append('[').Append(i).Append("] ").Append(tabs[i].Page.Url);
                 if (!string.IsNullOrEmpty(title))
                     builder.Append(" | ").Append(title);
+                if (named)
+                    builder.Append(" | context: ").Append(tabs[i].ContextName);
                 builder.AppendLine();
             }
 
@@ -56,13 +66,17 @@ public sealed class SessionTools
     public static async Task<CallToolResult> TabOpenAsync(
         ActivePageService pageService,
         CancellationToken cancellationToken,
-        [Description("URL to open the new tab at. Omit to open a blank tab.")] string? url = null)
+        [Description("URL to open the new tab at. Omit to open a blank tab.")] string? url = null,
+        SecurityPolicy? policy = null)
     {
+        if ((policy ?? SecurityPolicy.Default).RefuseUrl(url) is { } refusal)
+            return ToolResultHelper.Error(refusal);
+
         try
         {
             var page = await pageService.OpenNewTabAsync(cancellationToken).ConfigureAwait(false);
             if (!string.IsNullOrEmpty(url))
-                await page.GotoAsync(url).ConfigureAwait(false);
+                await page.GotoAsync(url, pageService.Navigation).ConfigureAwait(false);
 
             pageService.InvalidateSnapshot(page);
             return ToolResultHelper.Text($"Opened tab at {(string.IsNullOrEmpty(url) ? "about:blank" : url)}");
@@ -74,8 +88,9 @@ public sealed class SessionTools
     }
 
     [McpServerTool(Name = "tab_select", Title = "Select a tab", Destructive = false)]
-    [Description("Makes the tab at the given zero-based index active. Indices come from tab_list; call it first "
-        + "if you are unsure of the current order.")]
+    [Description("Makes the tab at the given zero-based index active. A tab in another context switches the "
+        + "session to that context as well. Indices come from tab_list; call it first if you are unsure of the "
+        + "current order.")]
     public static async Task<CallToolResult> TabSelectAsync(
         [Description("Zero-based index of the tab to activate.")] int index,
         ActivePageService pageService,
@@ -94,8 +109,8 @@ public sealed class SessionTools
     }
 
     [McpServerTool(Name = "tab_close", Title = "Close a tab", Destructive = true)]
-    [Description("Closes the tab at the given zero-based index, or the active tab when no index is given. The "
-        + "next available tab becomes active.")]
+    [Description("Closes the tab at the given zero-based index, in whichever context it is open, or the active "
+        + "tab when no index is given. The next available tab becomes active.")]
     public static async Task<CallToolResult> TabCloseAsync(
         ActivePageService pageService,
         CancellationToken cancellationToken,
@@ -112,77 +127,38 @@ public sealed class SessionTools
         }
     }
 
-    [McpServerTool(Name = "context_list", Title = "List contexts", Destructive = false, ReadOnly = true, Idempotent = true)]
-    [Description("Lists the open browser contexts. The active context is marked with an asterisk.")]
-    public static CallToolResult ContextList(
-        ActivePageService pageService,
-        CancellationToken cancellationToken)
-    {
-        var active = pageService.GetActiveContextName();
-        var names = pageService.GetContextNames();
-        if (names.Count == 0)
-            return ToolResultHelper.Text($"No contexts are open yet; '{active}' becomes active on first use.");
-
-        var builder = new StringBuilder();
-        foreach (var name in names)
-            builder.Append(name == active ? "* " : "  ").AppendLine(name);
-
-        return ToolResultHelper.Text(builder.ToString().TrimEnd());
-    }
-
-    [McpServerTool(Name = "context_create", Title = "Create a context", Destructive = true)]
-    [Description("Creates a new isolated context with its own cookies and storage and makes it active. Fails if a "
-        + "context with that name already exists.")]
-    public static async Task<CallToolResult> ContextCreateAsync(
-        [Description("Name for the new context.")] string name,
+    [McpServerTool(Name = "browser_status", Title = "Browser status", Destructive = false, ReadOnly = true, Idempotent = true)]
+    [Description("Reports which browser the session is driving: whether it was started here or attached to, its "
+        + "endpoint when attached, and how many contexts and tabs are open.")]
+    public static async Task<CallToolResult> BrowserStatusAsync(
         ActivePageService pageService,
         CancellationToken cancellationToken)
     {
         try
         {
-            await pageService.CreateContextAsync(name, cancellationToken).ConfigureAwait(false);
-            return ToolResultHelper.Text($"Created context '{name}'.");
-        }
-        catch (Exception ex)
-        {
-            return ToolResultHelper.Error(ex.Message);
-        }
-    }
+            if (!pageService.IsBrowserLaunched)
+            {
+                return ToolResultHelper.Text(pageService.Endpoint is { } configured
+                    ? $"No browser yet. The first tool call that needs one will attach to {configured}."
+                    : "No browser yet. The first tool call that needs one will start it.");
+            }
 
-    [McpServerTool(Name = "context_select", Title = "Select a context", Destructive = false)]
-    [Description("Makes an existing context active. The tabs and page tools that follow act on its tabs.")]
-    public static CallToolResult ContextSelect(
-        [Description("Name of the context to activate.")] string name,
-        ActivePageService pageService,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            pageService.SelectContext(name);
-            return ToolResultHelper.Text($"Switched to context '{name}'.");
-        }
-        catch (Exception ex)
-        {
-            return ToolResultHelper.Error(ex.Message);
-        }
-    }
+            var tabs = await pageService.ListTabsAsync(cancellationToken).ConfigureAwait(false);
+            var contexts = pageService.GetContextNames();
 
-    [McpServerTool(Name = "context_close", Title = "Close a context", Destructive = true)]
-    [Description("Closes the named context and all its tabs. If the active context is closed, the default context "
-        + "becomes active.")]
-    public static async Task<CallToolResult> ContextCloseAsync(
-        [Description("Name of the context to close.")] string name,
-        ActivePageService pageService,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            await pageService.CloseContextAsync(name, cancellationToken).ConfigureAwait(false);
-            return ToolResultHelper.Text($"Closed context '{name}'.");
+            var builder = new StringBuilder();
+            builder.AppendLine(pageService.IsAttached
+                ? $"Attached to a running browser at {pageService.Endpoint}; it will keep running after this session."
+                : "Driving a browser started by this server; it will be closed when this session ends.");
+            builder.Append(contexts.Count).Append(contexts.Count == 1 ? " context" : " contexts")
+                .Append(" (active: ").Append(pageService.GetActiveContextName()).Append("), ")
+                .Append(tabs.Count).Append(tabs.Count == 1 ? " tab" : " tabs").Append(" open.");
+
+            return ToolResultHelper.Text(builder.ToString());
         }
         catch (Exception ex)
         {
-            return ToolResultHelper.Error(ex.Message);
+            return ToolResultHelper.Error($"Reading browser status failed: {ex.Message}");
         }
     }
 }

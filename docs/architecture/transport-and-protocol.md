@@ -1,20 +1,24 @@
 # Transport and Protocol Layer
 
-The transport and protocol layer is the lowest-level subsystem in Motus. It owns the WebSocket connection to the browser, serializes and deserializes protocol messages, and routes responses and events to their respective awaiters. Everything above this layer (the engine, page, and element APIs) calls `IMotusSession` and never touches raw JSON or WebSocket frames directly.
+The transport and protocol layer is the lowest-level subsystem in Motus. It owns the connection to the browser, serializes and deserializes protocol messages, and routes responses and events to their respective awaiters. Everything above this layer (the engine, page, and element APIs) calls `IMotusSession` and never touches raw JSON or transport frames directly.
 
-Two concrete transports exist: `CdpTransport` for Chromium-family browsers using the Chrome DevTools Protocol, and `BiDiTransport` for Firefox using the WebDriver BiDi protocol. Both share the same `ICdpSocket` abstraction for WebSocket I/O, and both expose the same `IMotusSession` interface to the engine layer, so the rest of Motus does not need to branch on transport type at runtime.
+Two concrete transports exist: `CdpTransport` for Chromium-family browsers using the Chrome DevTools Protocol, and `BiDiTransport` for Firefox using the WebDriver BiDi protocol. Both share the same `ICdpSocket` abstraction for byte-level I/O, and both expose the same `IMotusSession` interface to the engine layer, so the rest of Motus does not need to branch on transport type at runtime. `ICdpSocket` has two implementations: `CdpSocket` over a WebSocket, and `CdpPipeSocket` over a pair of pipes to a browser Motus started.
 
 ---
 
-## WebSocket Communication Design
+## Communication Design
 
-Motus connects directly to the browser's debugging WebSocket endpoint with no proxy, relay, or WebDriver HTTP server in the path. Chrome exposes a CDP WebSocket endpoint when launched with `--remote-debugging-port`; Firefox exposes a BiDi WebSocket endpoint on the same port. Motus opens a single `ClientWebSocket` to that endpoint and keeps it open for the lifetime of the browser instance.
+Motus talks to the browser directly, with no proxy, relay, or WebDriver HTTP server in the path. Which channel it uses depends on where the browser came from.
 
-This direct connection model means:
+**A Chromium browser Motus started on Unix is driven over a pipe.** `--remote-debugging-pipe` tells the browser to read commands on file descriptor 3 and write on 4, and Motus keeps those two open for the lifetime of the browser. The pipe is preferred because it carries a liveness signal a port does not: the browser exits when its end closes, so it cannot outlive the process that started it, even when that process is killed outright.
 
-- There is no HTTP round-trip per command. Latency is bounded by serialization and a single WebSocket frame pair.
+**Everything else is driven over a WebSocket.** Chrome exposes a CDP WebSocket endpoint when launched with `--remote-debugging-port`; Firefox exposes a BiDi WebSocket endpoint on the same port. Motus opens a single `ClientWebSocket` to that endpoint and keeps it open for the lifetime of the browser instance. This is the channel for a browser Motus attached to rather than started, for Firefox, and for a Chromium browser on Windows, where a child cannot be handed arbitrary descriptors.
+
+Either way:
+
+- There is no HTTP round-trip per command. Latency is bounded by serialization and a single message pair.
 - All multiplexing of pages and workers onto the single connection is handled in-process by the transport layer via session IDs (CDP) or browsing context IDs (BiDi).
-- The transport is solely responsible for detecting disconnect. When the browser closes without a clean WebSocket close handshake, the receive loop catches the resulting exception, faults all pending command awaiters, and raises the `Disconnected` event.
+- The transport is solely responsible for detecting disconnect. When the browser goes without a clean close, the receive loop catches the resulting exception, faults all pending command awaiters, and raises the `Disconnected` event.
 
 ---
 
@@ -27,6 +31,14 @@ This direct connection model means:
 Buffer management uses `ArrayPool<byte>.Shared` to avoid per-receive allocations. The receive buffer starts at 16 KB. When a frame would overflow the current buffer, `CdpSocket` rents a buffer twice the current size, copies the already-received bytes into the new buffer, and returns the old one to the pool. The loop continues until `result.EndOfMessage` is true, at which point the complete message is returned. On disposal, the buffer is returned to the pool and a best-effort graceful WebSocket close is attempted with a 5-second timeout.
 
 A `WebSocketMessageType.Close` frame from the browser results in `ReadOnlyMemory<byte>.Empty` being returned, which the receive loop in `CdpTransport` treats as a clean disconnect signal.
+
+### CdpPipeSocket
+
+`CdpPipeSocket` is the other implementation of `ICdpSocket`, used for a browser Motus started on Unix. It writes to the browser's descriptor 3 and reads from its descriptor 4, and frames every message as a JSON document followed by a single NUL byte in both directions.
+
+Nothing else marks where one message ends, so the read side buffers. A read is sized for throughput rather than for message boundaries: it routinely stops part way through a document and routinely carries the beginning of the next one. Bytes past the end of the message just handed out are kept and scanned again when the next read adds to them, and the message itself is copied into a buffer of its own so that shuffling the leftovers along cannot rewrite something the caller is still reading. Both buffers come from `ArrayPool<byte>.Shared` and grow by doubling.
+
+There is nothing to connect: the pipes are open before the socket wrapping them exists, so the launcher calls `CdpTransport.Start` rather than `ConnectAsync`. A read of zero bytes means the browser closed its end, and is reported as an empty message, which the receive loop treats the same as a clean WebSocket close.
 
 ### CdpTransport
 

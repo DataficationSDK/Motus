@@ -26,7 +26,8 @@ public sealed class McpSessionBundle : IAsyncDisposable
         loggerFactory ??= NullLoggerFactory.Instance;
 
         Sessions = new BrowserSessionManager(options, loggerFactory.CreateLogger<BrowserSessionManager>());
-        Dialogs = new DialogService();
+        Security = new SecurityPolicy(options);
+        Dialogs = new DialogService(options);
         Console = new ConsoleService();
         Network = new NetworkService();
         Pages = new ActivePageService(Sessions, Dialogs, Console, Network);
@@ -34,6 +35,9 @@ public sealed class McpSessionBundle : IAsyncDisposable
 
     /// <summary>Owns the browser and its named, isolated contexts.</summary>
     public BrowserSessionManager Sessions { get; }
+
+    /// <summary>Where tools may read and write, and whether they may attach or open a file URL.</summary>
+    public SecurityPolicy Security { get; }
 
     /// <summary>Captures the active page's dialog events.</summary>
     public DialogService Dialogs { get; }

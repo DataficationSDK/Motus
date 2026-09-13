@@ -25,6 +25,8 @@ foreach (IFrame frame in page.Frames)
 
 `page.Frames` is a flat list; `MainFrame` plus `ChildFrames` is the tree. `IFrame.ParentFrame` walks back up and is null for the main frame.
 
+Frames come in the order they attached. For frames that share a parent that is the order they appear in the page, unless the page inserted one later, in which case it goes on the end. A frame the browser moves into a process of its own keeps its place.
+
 Frames arrive as the page loads them, and a frame in its own process arrives as a separate event after its parent already knows about it. Code that reads `page.Frames` immediately after `GotoAsync` may see the tree before it is complete. Wait for the frame you want rather than assuming it is there:
 
 ```csharp
@@ -129,18 +131,25 @@ The isolated world belongs to the frame's current document. Navigating the frame
 
 ## Through the MCP server
 
-A page snapshot describes each `iframe` element but not what is inside it, so an agent selects a frame before it can perceive or act on its content:
+A page snapshot contains the frames the page hosts, each printed inside the `iframe` element that holds it and marked with its index:
 
 ```
-frame_list                  lists the frames in document order, index 0 is the page
+- Iframe "Payment frame" [ref=e14] [frame=1]
+  - button "Pay now" [ref=f1e2]
+```
+
+Refs inside frame N read `fNeM`, and any interaction tool takes one and acts inside that frame, so reading and clicking need nothing else. Ten frames are read by default; `max_frames` on `snapshot` changes that, and the snapshot says how many frames it left out.
+
+Two tools remain for what a ref cannot express:
+
+```
+frame_list                  lists the frames, index 0 is the page, each after its parent
 frame_select <index>        scopes the session to that frame; 0 returns to the page
 ```
 
-Scope covers `snapshot`, `evaluate`, and the `wait_for` text conditions. The refs a scoped snapshot hands out keep working for every interaction tool afterwards, and keep addressing the frame they came from even after the scope moves on. Selection resets on navigation and on switching tab or context, since the frame it named is gone by then.
+Scope is what `evaluate` and the `wait_for` text conditions need, since neither names an element. It also narrows `snapshot` to that one frame, described on its own with plain refs, and it decides where a selector is searched. Refs need no scope: one keeps addressing the document it was read from even after the scope moves on. Selection resets on navigation and on switching tab or context, since the frame it named is gone by then.
 
 The coordinate tools stay in page coordinates whatever is selected, because their input is dispatched at the page level and the browser decides which frame is under the point.
-
-A page snapshot says how many frames its tree does not describe, so an agent that reads an empty-looking `iframe` is told where the rest of the content is rather than left to conclude it is missing.
 
 ---
 

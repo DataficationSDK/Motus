@@ -109,6 +109,83 @@ public class SessionToolsUnitTests
         Assert.IsFalse(service.Tabs[0].CloseCalled);
     }
 
+    /// <summary>
+    /// One index runs across every context the session holds, context by context, so a tab is
+    /// addressable wherever it is rather than only while its context is the active one.
+    /// </summary>
+    [TestMethod]
+    public async Task TabList_NumbersEveryContextsTabsInOneSequence()
+    {
+        var service = new FakeSessionPageService(Tab("https://a.test", "A"), Tab("https://b.test", "B"));
+        service.AddTabIn("work", "https://c.test");
+
+        var result = await SessionTools.TabListAsync(service, Ct);
+
+        var text = TextOf(result);
+        StringAssert.Contains(text, "[0] https://a.test | A | context: default");
+        StringAssert.Contains(text, "[1] https://b.test | B | context: default");
+        StringAssert.Contains(text, "[2] https://c.test | context: work");
+    }
+
+    /// <summary>
+    /// With one context there is no choice to make, so naming it on every row would be a column of
+    /// the same word.
+    /// </summary>
+    [TestMethod]
+    public async Task TabList_WithOneContext_DoesNotNameIt()
+    {
+        var service = new FakeSessionPageService(Tab("https://a.test", "A"));
+
+        var text = TextOf(await SessionTools.TabListAsync(service, Ct));
+
+        Assert.IsFalse(text.Contains("context:", StringComparison.Ordinal), text);
+    }
+
+    /// <summary>
+    /// Naming a tab says where the session should be working. Bringing the tab to the front and
+    /// leaving the session in the context it came from would make every call that followed act on a
+    /// page somewhere else.
+    /// </summary>
+    [TestMethod]
+    public async Task TabSelect_ATabInAnotherContext_SwitchesToThatContext()
+    {
+        var service = new FakeSessionPageService(Tab("https://a.test"));
+        var elsewhere = service.AddTabIn("work", "https://c.test");
+
+        var result = await SessionTools.TabSelectAsync(1, service, Ct);
+
+        Assert.IsFalse(result.IsError ?? false, TextOf(result));
+        Assert.AreEqual(1, elsewhere.BringToFrontCount);
+        Assert.AreEqual("work", service.GetActiveContextName());
+        CollectionAssert.Contains(service.SelectedContexts, "work");
+    }
+
+    [TestMethod]
+    public async Task TabSelect_ATabInTheActiveContext_LeavesTheContextAlone()
+    {
+        var service = new FakeSessionPageService(Tab("https://a.test"), Tab("https://b.test"));
+
+        await SessionTools.TabSelectAsync(1, service, Ct);
+
+        Assert.AreEqual(0, service.SelectedContexts.Count,
+            "a tab in the active context is no reason to switch context.");
+    }
+
+    [TestMethod]
+    public async Task TabClose_ATabInAnotherContext_ClosesIt()
+    {
+        var service = new FakeSessionPageService(Tab("https://a.test"));
+        var elsewhere = service.AddTabIn("work", "https://c.test");
+
+        var result = await SessionTools.TabCloseAsync(
+            pageService: service,
+            cancellationToken: Ct,
+            index: 1);
+
+        Assert.IsFalse(result.IsError ?? false, TextOf(result));
+        Assert.IsTrue(elsewhere.CloseCalled);
+    }
+
     [TestMethod]
     public async Task TabClose_OutOfRange_ReturnsError()
     {
@@ -131,7 +208,7 @@ public class SessionToolsUnitTests
         var service = new FakeSessionPageService(Tab("https://a.test"));
         service.Contexts.Add("userB");
 
-        var result = SessionTools.ContextList(service, Ct);
+        var result = ContextTools.ContextList(service, Ct);
 
         Assert.IsFalse(result.IsError ?? false);
         var text = TextOf(result);
@@ -144,7 +221,7 @@ public class SessionToolsUnitTests
     {
         var service = new FakeSessionPageService(Tab("https://a.test"));
 
-        var result = await SessionTools.ContextCreateAsync("userB", service, Ct);
+        var result = await ContextTools.ContextCreateAsync("userB", service, Ct);
 
         Assert.IsFalse(result.IsError ?? false);
         CollectionAssert.Contains(service.CreatedContexts, "userB");
@@ -154,9 +231,9 @@ public class SessionToolsUnitTests
     public async Task ContextCreate_DuplicateName_ReturnsError()
     {
         var service = new FakeSessionPageService(Tab("https://a.test"));
-        await SessionTools.ContextCreateAsync("userB", service, Ct);
+        await ContextTools.ContextCreateAsync("userB", service, Ct);
 
-        var result = await SessionTools.ContextCreateAsync("userB", service, Ct);
+        var result = await ContextTools.ContextCreateAsync("userB", service, Ct);
 
         Assert.IsTrue(result.IsError);
         StringAssert.Contains(TextOf(result), "already exists");
@@ -168,7 +245,7 @@ public class SessionToolsUnitTests
         var service = new FakeSessionPageService(Tab("https://a.test"));
         service.Contexts.Add("userB");
 
-        var result = SessionTools.ContextSelect("userB", service, Ct);
+        var result = ContextTools.ContextSelect("userB", service, Ct);
 
         Assert.IsFalse(result.IsError ?? false);
         CollectionAssert.Contains(service.SelectedContexts, "userB");
@@ -179,7 +256,7 @@ public class SessionToolsUnitTests
     {
         var service = new FakeSessionPageService(Tab("https://a.test"));
 
-        var result = SessionTools.ContextSelect("ghost", service, Ct);
+        var result = ContextTools.ContextSelect("ghost", service, Ct);
 
         Assert.IsTrue(result.IsError);
         StringAssert.Contains(TextOf(result), "No open context");
@@ -189,11 +266,28 @@ public class SessionToolsUnitTests
     public async Task ContextClose_ExistingName_Succeeds()
     {
         var service = new FakeSessionPageService(Tab("https://a.test"));
-        await SessionTools.ContextCreateAsync("userB", service, Ct);
+        await ContextTools.ContextCreateAsync("userB", service, Ct);
 
-        var result = await SessionTools.ContextCloseAsync("userB", service, Ct);
+        var result = await ContextTools.ContextCloseAsync("userB", service, Ct);
 
         Assert.IsFalse(result.IsError ?? false);
         CollectionAssert.Contains(service.ClosedContexts, "userB");
+    }
+
+    // --- tab_open: the local filesystem ---
+
+    [TestMethod]
+    public async Task TabOpen_AtAFileUrl_IsRefusedWithoutOpeningATab()
+    {
+        var service = new FakeSessionPageService(Tab("https://a.test"));
+
+        var result = await SessionTools.TabOpenAsync(
+            pageService: service,
+            cancellationToken: Ct,
+            url: "file:///etc/hosts");
+
+        Assert.IsTrue(result.IsError);
+        StringAssert.Contains(TextOf(result), "file:// navigation is disabled");
+        Assert.AreEqual(0, service.OpenedTabs);
     }
 }

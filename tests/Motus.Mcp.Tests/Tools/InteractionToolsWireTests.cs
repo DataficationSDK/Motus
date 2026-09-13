@@ -38,9 +38,9 @@ public class InteractionToolsWireTests
         {
             var tools = (await client.ListToolsAsync(cancellationToken: ct)).ToDictionary(t => t.Name);
 
-            AssertProperties(tools["select_option"], has: ["ref", "values"]);
-            AssertProperties(tools["set_checked"], has: ["ref", "checked"]);
-            AssertProperties(tools["press"], has: ["ref", "key"]);
+            AssertProperties(tools["select_option"], has: ["ref", "values", "snapshot"]);
+            AssertProperties(tools["set_checked"], has: ["ref", "checked", "snapshot"]);
+            AssertProperties(tools["press"], has: ["ref", "key", "snapshot"]);
             AssertProperties(tools["upload_files"], has: ["ref", "paths"]);
             AssertProperties(tools["press_key"], has: ["key"]);
             AssertProperties(tools["wait_for_element"], has: ["ref", "state"]);
@@ -57,6 +57,11 @@ public class InteractionToolsWireTests
 
         CollectionAssert.DoesNotContain(properties, "pageService");
         CollectionAssert.DoesNotContain(properties, "cancellationToken");
+
+        // The server supplies these; advertising them would invite an agent to set its own
+        // boundaries, or to pass something for a parameter it has no value for.
+        CollectionAssert.DoesNotContain(properties, "policy");
+        CollectionAssert.DoesNotContain(properties, "server");
     }
 
     private static async Task WithClientAsync(Func<McpClient, CancellationToken, Task> body)

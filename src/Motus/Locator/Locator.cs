@@ -619,7 +619,7 @@ internal sealed class Locator : ILocator
             options?.HasText ?? _hasText,
             options?.Has ?? _has,
             options?.HasNot ?? _hasNot,
-            _defaultTimeout,
+            options?.Timeout ?? _defaultTimeout,
             options?.PierceShadow ?? _pierceShadow,
             _parentSteps, _childSelector);
 
@@ -682,7 +682,18 @@ internal sealed class Locator : ILocator
 
     // --- Action Methods ---
 
-    public async Task ClickAsync(double? timeout = null)
+    public Task ClickAsync(double? timeout = null) => ClickCoreAsync(options: null, timeout);
+
+    public Task ClickAsync(MouseButtonOptions options, double? timeout = null)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        return ClickCoreAsync(options, timeout);
+    }
+
+    // One path for both clicks: the button and the modifiers only change what the mouse is told to
+    // send, so the actionability checks and the center-of-the-box aim stay the same for a
+    // right-click or a modified click as for a plain one.
+    private async Task ClickCoreAsync(MouseButtonOptions? options, double? timeout)
     {
         using var cts = BuildActionCts(timeout);
         await RunWithHooksAsync("click", async () =>
@@ -692,7 +703,7 @@ internal sealed class Locator : ILocator
                 ActionabilityFlags.Visible | ActionabilityFlags.Enabled | ActionabilityFlags.Stable | ActionabilityFlags.ReceivesEvents,
                 _selector, cts.Token).ConfigureAwait(false);
             var box = await GetBoundingBoxOrThrowAsync(objectId, cts.Token).ConfigureAwait(false);
-            await _page.Mouse.ClickAsync(box.X + box.Width / 2, box.Y + box.Height / 2).ConfigureAwait(false);
+            await _page.Mouse.ClickAsync(box.X + box.Width / 2, box.Y + box.Height / 2, options).ConfigureAwait(false);
         }).ConfigureAwait(false);
     }
 
@@ -756,7 +767,7 @@ internal sealed class Locator : ILocator
 
     public async Task TypeAsync(string text, KeyboardTypeOptions? options = null)
     {
-        using var cts = BuildActionCts(null);
+        using var cts = BuildActionCts(options?.Timeout);
         await RunWithHooksAsync("type", async () =>
         {
             var objectId = await ActionabilityChecker.WaitForActionabilityAsync(
@@ -770,7 +781,7 @@ internal sealed class Locator : ILocator
 
     public async Task PressAsync(string key, KeyboardPressOptions? options = null)
     {
-        using var cts = BuildActionCts(null);
+        using var cts = BuildActionCts(options?.Timeout);
         await RunWithHooksAsync("press", async () =>
         {
             var objectId = await ActionabilityChecker.WaitForActionabilityAsync(
@@ -826,9 +837,12 @@ internal sealed class Locator : ILocator
             await UncheckAsync(timeout).ConfigureAwait(false);
     }
 
-    public async Task<IReadOnlyList<string>> SelectOptionAsync(params string[] values)
+    public Task<IReadOnlyList<string>> SelectOptionAsync(params string[] values)
+        => SelectOptionAsync(values, timeout: null);
+
+    public async Task<IReadOnlyList<string>> SelectOptionAsync(string[] values, double? timeout)
     {
-        using var cts = BuildActionCts(null);
+        using var cts = BuildActionCts(timeout);
         return await RunWithHooksAsync("selectOption", async () =>
         {
             var objectId = await ActionabilityChecker.WaitForActionabilityAsync(

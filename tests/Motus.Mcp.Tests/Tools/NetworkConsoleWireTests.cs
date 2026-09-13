@@ -25,7 +25,7 @@ public class NetworkConsoleWireTests
             foreach (var expected in new[]
             {
                 "route_fulfill", "route_abort", "route_continue", "unroute", "route_list",
-                "network_requests", "console_messages",
+                "network_requests", "network_request", "console_messages",
             })
                 CollectionAssert.Contains(names, expected);
         });
@@ -43,8 +43,9 @@ public class NetworkConsoleWireTests
             AssertProperties(tools["route_continue"], has: ["url_pattern", "url", "method", "headers", "post_data"]);
             AssertProperties(tools["unroute"], has: ["url_pattern"]);
             AssertProperties(tools["route_list"], has: []);
-            AssertProperties(tools["network_requests"], has: []);
-            AssertProperties(tools["console_messages"], has: []);
+            AssertProperties(tools["network_requests"], has: ["since"]);
+            AssertProperties(tools["network_request"], has: ["sequence"]);
+            AssertProperties(tools["console_messages"], has: ["since"]);
         });
     }
 
@@ -72,7 +73,7 @@ public class NetworkConsoleWireTests
         var serverToClient = new Pipe();
 
         var hostTask = McpServerHost.RunAsync(
-            new McpServerLaunchOptions(),
+            new McpServerLaunchOptions { Capabilities = [ToolCapabilities.Routing] },
             builder => builder.WithStreamServerTransport(
                 clientToServer.Reader.AsStream(),
                 serverToClient.Writer.AsStream()),

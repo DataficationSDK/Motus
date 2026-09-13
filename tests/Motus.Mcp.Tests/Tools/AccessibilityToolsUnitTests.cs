@@ -11,13 +11,19 @@ public class AccessibilityToolsUnitTests
 {
     private static readonly CancellationToken Ct = CancellationToken.None;
 
-    // Two element nodes (backend ids 5 and 7) take refs e1 and e2 in document order;
-    // a third violation has no backend node and so maps to no ref.
+    // Two element nodes: an unnamed image (backend id 5), which the snapshot does not give a ref
+    // because it is neither interactive nor named, and an unnamed button (backend id 7), which
+    // takes e1 because a button is always worth targeting. A third violation has no backend
+    // node at all.
     private static AccessibilitySnapshot TwoElementSnapshot() => new(
         Roots:
         [
             new AccessibilityNode("1", "img", "", null, null, new Dictionary<string, string?>(), [], BackendDOMNodeId: 5),
-            new AccessibilityNode("2", "button", "", null, null, new Dictionary<string, string?>(), [], BackendDOMNodeId: 7),
+            new AccessibilityNode("2", "button", "", null, null, new Dictionary<string, string?>(),
+                [
+                    new AccessibilityNode("3", "StaticText", "Go", null, null, new Dictionary<string, string?>(), [], BackendDOMNodeId: 9),
+                ],
+                BackendDOMNodeId: 7),
         ],
         IgnoredCount: 0,
         DiagnosticMessage: null);
@@ -26,7 +32,7 @@ public class AccessibilityToolsUnitTests
         Violations:
         [
             new AccessibilityViolation("a11y-alt-text", AccessibilityViolationSeverity.Error,
-                "Image has no alt text.", "img", "", BackendDOMNodeId: 5, Selector: null),
+                "Image has no alt text.", "img", "", BackendDOMNodeId: 5, Selector: "img:nth-of-type(1)"),
             new AccessibilityViolation("a11y-empty-button", AccessibilityViolationSeverity.Warning,
                 "Button has no accessible name.", "button", "", BackendDOMNodeId: 7, Selector: null),
             new AccessibilityViolation("a11y-document-language", AccessibilityViolationSeverity.Error,
@@ -50,8 +56,13 @@ public class AccessibilityToolsUnitTests
             ? null
             : violation.GetProperty("ref").GetString();
 
+    private static string? StringOf(JsonElement violation, string property)
+        => violation.GetProperty(property).ValueKind == JsonValueKind.Null
+            ? null
+            : violation.GetProperty(property).GetString();
+
     [TestMethod]
-    public async Task Audit_MapsElementViolationsToRefs_AndLeavesPageLevelUnref()
+    public async Task Audit_MapsElementViolationsToRefs_AndDescribesTheRest()
     {
         var page = new FakeToolPage(TwoElementSnapshot()) { AuditResult = ThreeViolations() };
         var service = new FakeActivePageService(page);
@@ -64,13 +75,22 @@ public class AccessibilityToolsUnitTests
         Assert.IsFalse(result.IsError ?? false);
         Assert.AreEqual(3, result.StructuredContent!.Value.GetProperty("violationCount").GetInt32());
 
+        // The snapshot gave the unnamed image no ref, and the audit does not print one just for
+        // the violation's sake: the role, name, and selector are what identify it.
         var altText = ByRule(result, "a11y-alt-text");
         Assert.AreEqual("Error", altText.GetProperty("severity").GetString());
-        Assert.AreEqual("e1", RefOf(altText));
+        Assert.IsNull(RefOf(altText));
+        Assert.AreEqual("img", StringOf(altText, "nodeRole"));
+        Assert.AreEqual("img:nth-of-type(1)", StringOf(altText, "selector"));
+        Assert.IsNull(StringOf(altText, "nodeText"));
 
-        Assert.AreEqual("e2", RefOf(ByRule(result, "a11y-empty-button")));
+        // The button is interactive, so it has a ref, and its text says which button it is.
+        var emptyButton = ByRule(result, "a11y-empty-button");
+        Assert.AreEqual("e1", RefOf(emptyButton));
+        Assert.AreEqual("Go", StringOf(emptyButton, "nodeText"));
+        Assert.IsNull(StringOf(emptyButton, "selector"));
 
-        // The page-level violation has no addressable element, so its ref is null.
+        // The page-level violation has no element at all, so its ref is null.
         Assert.IsNull(RefOf(ByRule(result, "a11y-document-language")));
     }
 

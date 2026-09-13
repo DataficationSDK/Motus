@@ -61,14 +61,29 @@ public class FrameToolsIntegrationTests
     /// The frames arrive as events after the navigation settles, and the nested one only after its
     /// parent's session is armed, so both levels are waited for rather than assumed.
     /// </summary>
-    private async Task WaitForFramesAsync()
+    private async Task WaitForFramesAsync() => await WaitForFramesAsync(4, settled: null);
+
+    /// <summary>
+    /// Waits for <paramref name="count"/> frames, and for every frame but the page itself to carry
+    /// <paramref name="settled"/> in its URL when one is given. A frame is listed as soon as it
+    /// attaches, which is before it says where it is.
+    /// </summary>
+    private async Task WaitForFramesAsync(int count, string? settled)
     {
-        var deadline = DateTime.UtcNow.AddSeconds(20);
+        // Longer than the browser needs on an idle machine, because the frame served from a second
+        // origin is stitched in through a session of its own and a loaded machine makes every round
+        // trip of that slower.
+        var deadline = DateTime.UtcNow.AddSeconds(60);
         while (DateTime.UtcNow < deadline)
         {
             var frames = await _pages!.ListFramesAsync();
-            if (frames.Count >= 4)
+            if (frames.Count >= count
+                && frames.Skip(1).All(f => settled is null
+                    ? !string.IsNullOrEmpty(f.Frame.Url)
+                    : f.Frame.Url.Contains(settled, StringComparison.Ordinal)))
+            {
                 return;
+            }
 
             await Task.Delay(100);
         }
@@ -92,6 +107,46 @@ public class FrameToolsIntegrationTests
         return -1;
     }
 
+    /// <summary>
+    /// The list has to be the same list from one call to the next, and it has to be the order the
+    /// frames appear in the page. It used to be read out of a hash table, so an agent that listed
+    /// the frames, acted, and listed them again could be handed a different order with nothing on
+    /// the page having changed.
+    /// </summary>
+    [TestMethod]
+    public async Task FrameList_PrintsTheFramesInPageOrder_AndTheSameOrderTwiceRunning()
+    {
+        var page = await _pages!.GetOrCreateActivePageAsync();
+        await page.GotoAsync(_server!.OrderedUrl);
+        await WaitForFramesAsync(7, settled: "?i=");
+
+        var first = TextOf(await FrameTools.FrameListAsync(_pages, CancellationToken.None));
+        var second = TextOf(await FrameTools.FrameListAsync(_pages, CancellationToken.None));
+
+        CollectionAssert.AreEqual(
+            new[] { "0", "1", "2", "3", "4", "5" },
+            MarkersIn(first),
+            "The frames are not listed in the order they appear in the page.");
+
+        Assert.AreEqual(first, second, "Two calls in a row listed the frames differently.");
+    }
+
+    /// <summary>
+    /// Which of the ordered fixture's frames each line names, in the order the lines came out.
+    /// </summary>
+    private static string[] MarkersIn(string listing)
+    {
+        var markers = new List<string>();
+        foreach (var line in listing.Split('\n'))
+        {
+            var at = line.IndexOf("?i=", StringComparison.Ordinal);
+            if (at >= 0)
+                markers.Add(line[(at + 3)..(at + 4)]);
+        }
+
+        return markers.ToArray();
+    }
+
     [TestMethod]
     public async Task FrameList_NamesTheFrameInItsOwnProcessAndTheOneInsideIt()
     {
@@ -103,17 +158,81 @@ public class FrameToolsIntegrationTests
     }
 
     [TestMethod]
-    public async Task PageSnapshot_DoesNotContainTheFramesContent_ButSaysWhereToFindIt()
+    public async Task PageSnapshot_ContainsTheContentOfAFrameInItsOwnProcess()
     {
-        var text = TextOf(await CoreTools.SnapshotAsync(
+        var remote = await IndexOfAsync("/middle.html");
+
+        var text = TextOf(await SnapshotAsync());
+
+        // "Go" is the accessible name of the button inside that frame and appears nowhere in the
+        // page's own document, so matching it says the frame's own tree was read and printed.
+        StringAssert.Contains(text, "button \"Go\"");
+        StringAssert.Contains(text, $"[ref=f{remote}e",
+            "an element inside frame " + remote + " is addressed through it");
+    }
+
+    [TestMethod]
+    public async Task PageSnapshot_ReachesAFrameNestedInsideAFrameInItsOwnProcess()
+    {
+        var remote = await IndexOfAsync("/middle.html");
+        var deep = await IndexOfAsync("/deep.html");
+
+        var text = TextOf(await SnapshotAsync());
+
+        var remoteLine = LineWith(text, $"[ref=f{remote}e");
+        var deepLine = LineWith(text, $"[ref=f{deep}e");
+
+        StringAssert.Contains(deepLine, "\"deep\"");
+        Assert.IsTrue(
+            Indent(deepLine) > Indent(remoteLine),
+            "the second frame is printed inside the first, not beside it:\n" + text);
+    }
+
+    [TestMethod]
+    public async Task ARefFromThePageSnapshot_ClicksInsideAFrameTwoProcessesDeep()
+    {
+        var deep = await IndexOfAsync("/deep.html");
+        var text = TextOf(await SnapshotAsync());
+        var refId = RefOn(LineWith(text, $"[ref=f{deep}e"));
+
+        var clicked = await CoreTools.ClickAsync(
+            @ref: refId,
+            pageService: _pages!,
+            cancellationToken: CancellationToken.None,
+            @double: null);
+        Assert.IsFalse(clicked.IsError ?? false, TextOf(clicked));
+
+        var frames = await _pages!.ListFramesAsync();
+        Assert.AreEqual(1, await frames[deep].Frame.EvaluateAsync<int>("window.clicks"));
+    }
+
+    private Task<CallToolResult> SnapshotAsync()
+        => CoreTools.SnapshotAsync(
             pageService: _pages!,
             cancellationToken: CancellationToken.None,
             root_ref: null,
-            max_depth: null));
+            max_depth: null,
+            max_frames: null);
 
-        Assert.IsFalse(text.Contains("middle", StringComparison.Ordinal),
-            "the content of a frame in its own process is not in the page's tree");
-        StringAssert.Contains(text, "frame_select");
+    /// <summary>The first line of the snapshot containing the marker.</summary>
+    private static string LineWith(string text, string marker)
+    {
+        foreach (var line in text.Split('\n'))
+        {
+            if (line.Contains(marker, StringComparison.Ordinal))
+                return line;
+        }
+
+        Assert.Fail($"No line of the snapshot contains '{marker}'. Snapshot:\n{text}");
+        return string.Empty;
+    }
+
+    private static int Indent(string line) => line.Length - line.TrimStart(' ').Length;
+
+    private static string RefOn(string line)
+    {
+        var start = line.IndexOf("[ref=", StringComparison.Ordinal) + 5;
+        return line[start..line.IndexOf(']', start)];
     }
 
     [TestMethod]
@@ -121,11 +240,7 @@ public class FrameToolsIntegrationTests
     {
         await FrameTools.FrameSelectAsync(await IndexOfAsync("/middle.html"), _pages!, CancellationToken.None);
 
-        var text = TextOf(await CoreTools.SnapshotAsync(
-            pageService: _pages!,
-            cancellationToken: CancellationToken.None,
-            root_ref: null,
-            max_depth: null));
+        var text = TextOf(await SnapshotAsync());
 
         // "Go" is the accessible name of the button inside this frame and appears nowhere in the
         // page's own tree, so matching it says the tree really came from the frame.
@@ -138,11 +253,7 @@ public class FrameToolsIntegrationTests
     {
         var index = await IndexOfAsync("/middle.html");
         await FrameTools.FrameSelectAsync(index, _pages!, CancellationToken.None);
-        await CoreTools.SnapshotAsync(
-            pageService: _pages!,
-            cancellationToken: CancellationToken.None,
-            root_ref: null,
-            max_depth: null);
+        await SnapshotAsync();
 
         var refId = await FindRefAsync("button");
         var clicked = await CoreTools.ClickAsync(
@@ -192,11 +303,7 @@ public class FrameToolsIntegrationTests
         await FrameTools.FrameSelectAsync(await IndexOfAsync("/middle.html"), _pages!, CancellationToken.None);
         await FrameTools.FrameSelectAsync(0, _pages!, CancellationToken.None);
 
-        var text = TextOf(await CoreTools.SnapshotAsync(
-            pageService: _pages!,
-            cancellationToken: CancellationToken.None,
-            root_ref: null,
-            max_depth: null));
+        var text = TextOf(await SnapshotAsync());
 
         StringAssert.Contains(text, "main");
         Assert.IsFalse(text.Contains("Scoped to frame", StringComparison.Ordinal));

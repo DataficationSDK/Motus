@@ -40,6 +40,9 @@ public class CoreToolsWireTests
 
             CollectionAssert.Contains(properties, "ref");      // @ref is exposed as "ref"
             CollectionAssert.Contains(properties, "double");
+            CollectionAssert.Contains(properties, "button");
+            CollectionAssert.Contains(properties, "modifiers");
+            CollectionAssert.Contains(properties, "snapshot");
             CollectionAssert.DoesNotContain(properties, "pageService");
             CollectionAssert.DoesNotContain(properties, "cancellationToken");
             CollectionAssert.DoesNotContain(properties, "@ref");
@@ -56,7 +59,7 @@ public class CoreToolsWireTests
 
             var properties = type.JsonSchema.GetProperty("properties").EnumerateObject().Select(p => p.Name).ToArray();
 
-            foreach (var expected in new[] { "ref", "text", "submit", "slowly" })
+            foreach (var expected in new[] { "ref", "text", "submit", "slowly", "snapshot" })
                 CollectionAssert.Contains(properties, expected);
         });
     }

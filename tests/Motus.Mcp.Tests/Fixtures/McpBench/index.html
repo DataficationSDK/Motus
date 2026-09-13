@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>MCP Bench</title></head>
+<body>
+  <header><nav><a href="/other.html">Other page</a> | <a href="/other.html" target="_blank">Open in new tab</a></nav></header>
+  <main>
+    <h1>Checkout</h1>
+    <div class="wrap"><div class="row"><div class="col"><div class="card"><div class="inner">
+      <form id="f" onsubmit="event.preventDefault(); document.getElementById('status').textContent='Submitted ' + document.getElementById('email').value;">
+        <label for="email">Email</label>
+        <input id="email" type="email" placeholder="you@example.com">
+        <label for="plan">Plan</label>
+        <select id="plan"><option value="free">Free</option><option value="pro">Pro</option></select>
+        <label><input id="tos" type="checkbox"> I agree</label>
+        <button type="submit">Submit</button>
+      </form>
+    </div></div></div></div></div>
+    <p id="status" role="status"></p>
+    <button id="alert-btn" onclick="alert('Are you sure?'); document.getElementById('status').textContent='after alert';">Delete account</button>
+    <button id="err-btn" onclick="console.error('boom from button'); throw new Error('uncaught boom');">Break things</button>
+    <button id="late-btn" onclick="setTimeout(()=>{const b=document.createElement('button'); b.textContent='Late button'; document.body.appendChild(b);}, 1500)">Load more</button>
+    <ul>
+      <li><div><div><span>Item one</span></div></div></li>
+      <li><div><div><span>Item two</span></div></div></li>
+      <li><div><div><span>Item three</span></div></div></li>
+    </ul>
+    <canvas id="c" width="200" height="80"></canvas>
+    <iframe src="/frame.html" title="Payment frame" width="300" height="80"></iframe>
+  </main>
+  <script>
+    const canvas = document.getElementById('c');
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#36c'; ctx.fillRect(20, 20, 80, 40);
+    // A right-click on a canvas leaves no trace of its own: the drawing does not change and the
+    // menu that would appear belongs to the browser, not the page. Counting the event gives a test
+    // something to read back, and preventing the default keeps a headed run from opening a menu.
+    window.contextMenuCount = 0;
+    canvas.addEventListener('contextmenu', (event) => { event.preventDefault(); window.contextMenuCount++; });
+  </script>
+</body>
+</html>

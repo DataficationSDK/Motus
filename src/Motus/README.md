@@ -4,11 +4,11 @@ Core browser automation engine for the [Motus](https://github.com/DataficationSD
 
 ## Overview
 
-Motus communicates directly with Chromium-based browsers over CDP and Firefox over WebDriver BiDi via WebSocket, with no Node.js sidecar or process boundary. Source-generated protocol bindings enable NativeAOT compatibility. The framework's own features are built on the same public plugin interfaces available to third-party authors.
+Motus communicates directly with Chromium-based browsers over CDP and Firefox over WebDriver BiDi, with no Node.js sidecar or process boundary. Source-generated protocol bindings enable NativeAOT compatibility. The framework's own features are built on the same public plugin interfaces available to third-party authors.
 
 ### Features
 
-- **Direct WebSocket communication** with Chromium (CDP) and Firefox (WebDriver BiDi)
+- **Direct protocol communication** with Chromium (CDP) and Firefox (WebDriver BiDi)
 - **Source-generated protocol bindings** for NativeAOT and trimming support
 - **Plugin system** where all built-in selector strategies, lifecycle hooks, wait conditions, and reporters use the same `IPluginContext` as extensions
 - **Browser pool** for parallel test execution with configurable concurrency and proactive replenishment on crash

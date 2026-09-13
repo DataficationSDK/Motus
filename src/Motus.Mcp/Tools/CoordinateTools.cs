@@ -37,20 +37,23 @@ public sealed class CoordinateTools
     {
         try
         {
-            if (!TryParseButton(button, out var parsedButton))
-                return ToolResultHelper.Error($"Unknown button '{button}'. Use left, right, or middle.");
-            if (!TryParseModifiers(modifiers, out var parsedModifiers, out var badModifier))
-                return ToolResultHelper.Error($"Unknown modifier '{badModifier}'. Use Alt, Control, Meta, or Shift.");
+            if (ToolArguments.Button(button, out var parsedButton) is { } unknownButton)
+                return unknownButton;
+            if (ToolArguments.Modifiers(modifiers, out var parsedModifiers) is { } unknownModifier)
+                return unknownModifier;
 
             var page = await pageService.GetOrCreateActivePageAsync(cancellationToken).ConfigureAwait(false);
             var options = new MouseButtonOptions(Button: parsedButton, Modifiers: parsedModifiers);
 
-            if (@double == true)
-                await page.Mouse.DblClickAsync(x, y, options).ConfigureAwait(false);
-            else
-                await page.Mouse.ClickAsync(x, y, options).ConfigureAwait(false);
+            return await ActionRunner.RunAsync(pageService, page, cancellationToken, async _ =>
+            {
+                if (@double == true)
+                    await page.Mouse.DblClickAsync(x, y, options).ConfigureAwait(false);
+                else
+                    await page.Mouse.ClickAsync(x, y, options).ConfigureAwait(false);
 
-            return ToolResultHelper.Text($"{(@double == true ? "Double-clicked" : "Clicked")} at ({x}, {y})");
+                return ToolResultHelper.Text($"{(@double == true ? "Double-clicked" : "Clicked")} at ({x}, {y})");
+            }).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -93,11 +96,14 @@ public sealed class CoordinateTools
         try
         {
             var page = await pageService.GetOrCreateActivePageAsync(cancellationToken).ConfigureAwait(false);
-            // The wheel event is dispatched at the current pointer position, so
-            // position the pointer first.
-            await page.Mouse.MoveAsync(x, y).ConfigureAwait(false);
-            await page.Mouse.WheelAsync(delta_x, delta_y).ConfigureAwait(false);
-            return ToolResultHelper.Text($"Scrolled ({delta_x}, {delta_y}) at ({x}, {y})");
+            return await ActionRunner.RunAsync(pageService, page, cancellationToken, async _ =>
+            {
+                // The wheel event is dispatched at the current pointer position, so
+                // position the pointer first.
+                await page.Mouse.MoveAsync(x, y).ConfigureAwait(false);
+                await page.Mouse.WheelAsync(delta_x, delta_y).ConfigureAwait(false);
+                return ToolResultHelper.Text($"Scrolled ({delta_x}, {delta_y}) at ({x}, {y})");
+            }).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -131,14 +137,14 @@ public sealed class CoordinateTools
 
     [McpServerTool(Name = "drag", Title = "Drag and drop", Destructive = true)]
     [Description("Drags from one point to another with trusted input: press, intermediate moves, release. "
-        + "Address the endpoints either by refs from the latest snapshot (start_ref/end_ref) or by viewport "
+        + "Address the endpoints either by elements (start_ref/end_ref, each a ref or a selector) or by viewport "
         + "coordinates (start_x/start_y/end_x/end_y); coordinates work on canvas drop-zones that have no refs. "
         + "Intermediate moves are always emitted because drag libraries commonly require observed movement.")]
     public static async Task<CallToolResult> DragAsync(
         ActivePageService pageService,
         CancellationToken cancellationToken,
-        [Description("The ref of the element to drag, from the latest snapshot.")] string? start_ref = null,
-        [Description("The ref of the drop target, from the latest snapshot.")] string? end_ref = null,
+        [Description("The element to drag. " + ToolDescriptions.Target)] string? start_ref = null,
+        [Description("The drop target. " + ToolDescriptions.Target)] string? end_ref = null,
         [Description("The x coordinate to drag from, in CSS pixels.")] int? start_x = null,
         [Description("The y coordinate to drag from, in CSS pixels.")] int? start_y = null,
         [Description("The x coordinate to drop at, in CSS pixels.")] int? end_x = null,
@@ -166,8 +172,9 @@ public sealed class CoordinateTools
             if (hasRefs)
             {
                 var snapshots = pageService.GetSnapshotService(page);
-                var start = await CenterOfAsync(snapshots, start_ref!).ConfigureAwait(false);
-                var end = await CenterOfAsync(snapshots, end_ref!).ConfigureAwait(false);
+                var scope = pageService.GetActiveFrame();
+                var start = await CenterOfAsync(snapshots, scope, start_ref!, pageService.ActionTimeout).ConfigureAwait(false);
+                var end = await CenterOfAsync(snapshots, scope, end_ref!, pageService.ActionTimeout).ConfigureAwait(false);
                 (sx, sy) = start;
                 (ex, ey) = end;
                 fromText = start_ref!;
@@ -183,16 +190,19 @@ public sealed class CoordinateTools
 
             var moveSteps = Math.Max(1, steps ?? 10);
 
-            await page.Mouse.MoveAsync(sx, sy).ConfigureAwait(false);
-            await page.Mouse.DownAsync().ConfigureAwait(false);
+            return await ActionRunner.RunAsync(pageService, page, cancellationToken, async token =>
+            {
+                await page.Mouse.MoveAsync(sx, sy).ConfigureAwait(false);
+                await page.Mouse.DownAsync().ConfigureAwait(false);
 
-            if (hold_ms is > 0)
-                await Task.Delay(hold_ms.Value, cancellationToken).ConfigureAwait(false);
+                if (hold_ms is > 0)
+                    await Task.Delay(hold_ms.Value, token).ConfigureAwait(false);
 
-            await page.Mouse.MoveAsync(ex, ey, new MouseMoveOptions(Steps: moveSteps)).ConfigureAwait(false);
-            await page.Mouse.UpAsync().ConfigureAwait(false);
+                await page.Mouse.MoveAsync(ex, ey, new MouseMoveOptions(Steps: moveSteps)).ConfigureAwait(false);
+                await page.Mouse.UpAsync().ConfigureAwait(false);
 
-            return ToolResultHelper.Text($"Dragged {fromText} to {toText}");
+                return ToolResultHelper.Text($"Dragged {fromText} to {toText}");
+            }).ConfigureAwait(false);
         }
         catch (SnapshotNotTakenException)
         {
@@ -214,8 +224,11 @@ public sealed class CoordinateTools
         try
         {
             var page = await pageService.GetOrCreateActivePageAsync(cancellationToken).ConfigureAwait(false);
-            await page.Mouse.MoveAsync(x, y).ConfigureAwait(false);
-            return ToolResultHelper.Text(okText);
+            return await ActionRunner.RunAsync(pageService, page, cancellationToken, async _ =>
+            {
+                await page.Mouse.MoveAsync(x, y).ConfigureAwait(false);
+                return ToolResultHelper.Text(okText);
+            }).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -223,53 +236,12 @@ public sealed class CoordinateTools
         }
     }
 
-    private static async Task<(double X, double Y)> CenterOfAsync(PageSnapshotService snapshots, string @ref)
+    private static async Task<(double X, double Y)> CenterOfAsync(
+        PageSnapshotService snapshots, IFrame? scope, string @ref, double? timeout)
     {
-        var locator = snapshots.ResolveRef(@ref);
-        var box = await locator.BoundingBoxAsync().ConfigureAwait(false)
+        var locator = snapshots.ResolveRef(@ref, scope);
+        var box = await locator.BoundingBoxAsync(timeout).ConfigureAwait(false)
             ?? throw new InvalidOperationException($"Element {@ref} has no visible bounding box.");
         return (box.X + box.Width / 2, box.Y + box.Height / 2);
-    }
-
-    private static bool TryParseButton(string? button, out MouseButton parsed)
-    {
-        switch (button?.ToLowerInvariant())
-        {
-            case null or "" or "left":
-                parsed = MouseButton.Left;
-                return true;
-            case "right":
-                parsed = MouseButton.Right;
-                return true;
-            case "middle":
-                parsed = MouseButton.Middle;
-                return true;
-            default:
-                parsed = MouseButton.Left;
-                return false;
-        }
-    }
-
-    private static bool TryParseModifiers(string[]? modifiers, out KeyModifier parsed, out string? badModifier)
-    {
-        parsed = KeyModifier.None;
-        badModifier = null;
-        if (modifiers is null)
-            return true;
-
-        foreach (var modifier in modifiers)
-        {
-            if (!Enum.TryParse<KeyModifier>(modifier, ignoreCase: true, out var flag)
-                || flag is KeyModifier.None
-                || !Enum.IsDefined(flag))
-            {
-                badModifier = modifier;
-                return false;
-            }
-
-            parsed |= flag;
-        }
-
-        return true;
     }
 }

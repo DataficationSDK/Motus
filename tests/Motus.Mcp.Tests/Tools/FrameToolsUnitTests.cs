@@ -129,6 +129,46 @@ public class FrameToolsUnitTests
     }
 
     [TestMethod]
+    public async Task Selector_WhileAFrameIsSelected_SearchesThatFrame()
+    {
+        var (service, page, child) = PageWithAFrame();
+
+        await FrameTools.FrameSelectAsync(1, service, CancellationToken.None);
+        await CoreTools.ClickAsync(
+            @ref: "#pay",
+            pageService: service,
+            cancellationToken: CancellationToken.None,
+            @double: null);
+
+        Assert.AreEqual("#pay", child.ResolvedSelector,
+            "a selector means the document the session is looking at, and no snapshot was needed to say so");
+        Assert.IsNull(page.ResolvedSelector);
+    }
+
+    [TestMethod]
+    public async Task Selector_AfterTheScopeMovesBackToThePage_SearchesThePage()
+    {
+        var (service, page, child) = PageWithAFrame();
+
+        await FrameTools.FrameSelectAsync(1, service, CancellationToken.None);
+        await CoreTools.SnapshotAsync(
+            pageService: service,
+            cancellationToken: CancellationToken.None,
+            root_ref: null,
+            max_depth: null);
+        await FrameTools.FrameSelectAsync(0, service, CancellationToken.None);
+        await CoreTools.ClickAsync(
+            @ref: "#pay",
+            pageService: service,
+            cancellationToken: CancellationToken.None,
+            @double: null);
+
+        Assert.AreEqual("#pay", page.ResolvedSelector,
+            "the scope moved back, so a selector describes an element of the page again");
+        Assert.IsNull(child.ResolvedSelector);
+    }
+
+    [TestMethod]
     public async Task Ref_FromAScopedSnapshot_KeepsResolvingAfterTheScopeMovesBack()
     {
         var (service, page, child) = PageWithAFrame();

@@ -18,8 +18,12 @@ public interface IPage : IAsyncDisposable
     IFrame MainFrame { get; }
 
     /// <summary>
-    /// Gets all frames in the page, including the main frame.
+    /// Gets all frames in the page, including the main frame, in the order they attached.
     /// </summary>
+    /// <remarks>
+    /// For frames that share a parent, attach order is the order their elements appear in the page,
+    /// unless the page inserted one later, in which case it goes on the end.
+    /// </remarks>
     IReadOnlyList<IFrame> Frames { get; }
 
     /// <summary>
@@ -90,8 +94,16 @@ public interface IPage : IAsyncDisposable
     event EventHandler<PageErrorEventArgs>? PageError;
 
     /// <summary>
-    /// Raised when a popup page is opened.
+    /// Raised when this page opens another one, through <c>window.open</c> or a link with
+    /// <c>target="_blank"</c>. The new page is also in <see cref="IBrowserContext.Pages"/>.
     /// </summary>
+    /// <remarks>
+    /// The page handed over is ready to be driven: its domains are enabled and its frame tree is
+    /// read, so a handler can navigate it, wait on it, or close it without any further step. It
+    /// may still be on <c>about:blank</c> at that moment, since the browser opens the tab before
+    /// the document it was asked for arrives, so wait on the page rather than reading its URL
+    /// straight away.
+    /// </remarks>
     event EventHandler<IPage>? Popup;
 
     /// <summary>

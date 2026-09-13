@@ -71,7 +71,7 @@ public class PageSessionWireTests
         var serverToClient = new Pipe();
 
         var hostTask = McpServerHost.RunAsync(
-            new McpServerLaunchOptions(),
+            new McpServerLaunchOptions { Capabilities = [ToolCapabilities.Contexts] },
             builder => builder.WithStreamServerTransport(
                 clientToServer.Reader.AsStream(),
                 serverToClient.Writer.AsStream()),

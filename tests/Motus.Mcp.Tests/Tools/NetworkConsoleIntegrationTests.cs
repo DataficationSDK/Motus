@@ -58,7 +58,7 @@ public class NetworkConsoleIntegrationTests
         // and block a second pattern. Both rules are registered on the active context.
         var headers = new Dictionary<string, string> { ["Access-Control-Allow-Origin"] = "*" };
         AssertOk(
-            await NetworkTools.RouteFulfillAsync(
+            await RoutingTools.RouteFulfillAsync(
                 url_pattern: "*api*",
                 pageService: pages,
                 networkService: network,
@@ -68,14 +68,14 @@ public class NetworkConsoleIntegrationTests
                 content_type: "application/json",
                 headers: headers),
             "route_fulfill");
-        AssertOk(await NetworkTools.RouteAbortAsync(
+        AssertOk(await RoutingTools.RouteAbortAsync(
             url_pattern: "*blocked*",
             pageService: pages,
             networkService: network,
             cancellationToken: ct,
             error_code: "blockedbyclient"), "route_abort");
 
-        var routes = await NetworkTools.RouteListAsync(pages, network, ct);
+        var routes = await RoutingTools.RouteListAsync(pages, network, ct);
         StringAssert.Contains(TextOf(routes), "*api*");
         StringAssert.Contains(TextOf(routes), "*blocked*");
 

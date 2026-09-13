@@ -10,7 +10,7 @@
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
     <PackageId>Motus</PackageId>
     <Title>Motus</Title>
-    <Description>Motus browser automation engine. Communicates with Chromium over CDP via WebSocket with no Node.js dependency.</Description>
+    <Description>Motus browser automation engine. Communicates with Chromium over CDP with no Node.js dependency.</Description>
     <PublishAot>true</PublishAot>
     <IsAotCompatible>true</IsAotCompatible>
   </PropertyGroup>

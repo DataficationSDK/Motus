@@ -67,20 +67,122 @@ public sealed record McpServerLaunchOptions
     /// </summary>
     public bool NaturalMouseMotion { get; init; }
 
+    /// <summary>
+    /// Extra command-line arguments handed to the browser the session starts. They are appended to
+    /// the arguments the server sets itself, and are how a flag a particular environment needs
+    /// reaches the browser: <c>--no-sandbox</c> in a container running as root, for instance.
+    /// </summary>
+    public IReadOnlyList<string>? BrowserArgs { get; init; }
+
+    /// <summary>
+    /// A profile directory the browser keeps its cookies, history, and signed-in sessions in, so
+    /// one session picks up where the last left off instead of starting clean each time.
+    /// </summary>
+    public string? UserDataDir { get; init; }
+
+    /// <summary>
+    /// Cookies and local storage to seed every context the session creates with. The host reads
+    /// this from wherever it keeps saved state and passes the parsed value through.
+    /// </summary>
+    public StorageState? StorageState { get; init; }
+
+    /// <summary>The proxy every context the session creates sends its traffic through.</summary>
+    public ProxySettings? Proxy { get; init; }
+
+    /// <summary>The user agent string every context the session creates reports.</summary>
+    public string? UserAgent { get; init; }
+
+    /// <summary>The locale every context the session creates reports, such as <c>en-GB</c>.</summary>
+    public string? Locale { get; init; }
+
+    /// <summary>
+    /// The time zone every context the session creates reports, such as <c>Europe/Berlin</c>.
+    /// </summary>
+    public string? TimezoneId { get; init; }
+
+    /// <summary>
+    /// How long an element action waits, in milliseconds, before giving up. Null leaves the
+    /// framework default in place. Nothing holds a context-wide default for this, so the tools
+    /// read it from <c>ActivePageService.ActionTimeout</c> and pass it on each call.
+    /// </summary>
+    public double? ActionTimeout { get; init; }
+
+    /// <summary>
+    /// How long a navigation waits, in milliseconds, before giving up. Null leaves the framework
+    /// default in place. Carried to the tools the same way as <see cref="ActionTimeout"/>.
+    /// </summary>
+    public int? NavigationTimeout { get; init; }
+
+    /// <summary>
+    /// How long an action waits, in milliseconds, after the browser has accepted it, for the page
+    /// to show what the action did, so the result can name the page it landed on or the tab it
+    /// opened. Null means <see cref="DefaultSettleMilliseconds"/>; zero reports the page as it
+    /// stands the instant the action returns.
+    /// </summary>
+    /// <remarks>
+    /// The browser acknowledges a click before it has followed the link the click was on, so a
+    /// result written straight away would describe the page the agent has just left. The wait is
+    /// paid by every action, which is why it is short and why it is settable: a local page settles
+    /// in far less, and a slow one may need more.
+    /// </remarks>
+    public int? SettleTimeout { get; init; }
+
+    /// <summary>The settle wait used when <see cref="SettleTimeout"/> is not set.</summary>
+    public const int DefaultSettleMilliseconds = 500;
+
+    /// <summary>
+    /// What becomes of a JavaScript dialog the page raises: <c>accept</c> answers it, <c>dismiss</c>
+    /// cancels it, and <c>ask</c> leaves it pending for the agent to answer with a tool call.
+    /// Defaults to <c>ask</c>.
+    /// </summary>
+    public string Dialogs { get; init; } = "ask";
+
+    /// <summary>
+    /// The optional tool groups this server adds to its catalog, by the names on
+    /// <see cref="ToolCapabilities"/>. Left null or empty, the catalog is the always-on set.
+    /// </summary>
+    /// <remarks>
+    /// Naming a group only ever adds to the catalog. Nothing here can take a tool away, so a
+    /// client written against the default set keeps working whatever else is asked for.
+    /// </remarks>
+    public IReadOnlyList<string>? Capabilities { get; init; }
+
     /// <summary>Maps these options onto the browser launch options.</summary>
     internal LaunchOptions ToLaunchOptions() => new()
     {
         Headless = Headless,
         ExecutablePath = ExecutablePath,
         Channel = Channel,
-        // Viewport emulation only controls the CSS viewport; a headed window
-        // that is smaller would clip it, so size the window to match.
-        Args = Headless ? null : [$"--window-size={Viewport.Width},{Viewport.Height}"],
+        Args = BuildBrowserArgs(),
+        UserDataDir = UserDataDir,
         // Performance telemetry is collected for every session: the observer is
         // injected at page creation and metrics are gathered after each navigation,
         // so get_performance has data to return. The overhead is negligible.
         Performance = new PerformanceOptions { Enable = true },
     };
+
+    /// <summary>
+    /// The browser command line: the window sizing a headed session needs, then whatever the host
+    /// asked for. Null when there is nothing to pass, which is what the launcher reads as "no extra
+    /// arguments" rather than an empty command line.
+    /// </summary>
+    /// <remarks>
+    /// Viewport emulation only controls the CSS viewport; a headed window that is smaller would
+    /// clip it, so the window is sized to match. Host arguments come last so one of them can
+    /// override that sizing.
+    /// </remarks>
+    private IReadOnlyList<string>? BuildBrowserArgs()
+    {
+        var args = new List<string>();
+
+        if (!Headless)
+            args.Add($"--window-size={Viewport.Width},{Viewport.Height}");
+
+        if (BrowserArgs is not null)
+            args.AddRange(BrowserArgs);
+
+        return args.Count == 0 ? null : args;
+    }
 
     /// <summary>Maps these options onto the options for connecting to a running browser.</summary>
     internal ConnectOptions ToConnectOptions() => new()
@@ -101,5 +203,35 @@ public sealed record McpServerLaunchOptions
             : new RecordVideoOptions { Dir = RecordVideoDir, Size = Viewport },
         ShowCursor = ShowCursor,
         NaturalMouseMotion = NaturalMouseMotion,
+        UserAgent = UserAgent,
+        Locale = Locale,
+        TimezoneId = TimezoneId,
+        Proxy = Proxy,
+        StorageState = StorageState,
     };
+
+    // The boundaries the server keeps around the machine it runs on. These describe the server
+    // rather than the browser, so they are read by SecurityPolicy rather than mapped onto any of
+    // the option records above.
+
+    /// <summary>
+    /// Where tools that write a file put it. A path a tool is given is resolved inside this
+    /// directory and may not escape it. Left null, a directory for this run is named under the
+    /// system temporary directory and created by the first write.
+    /// </summary>
+    public string? OutputDirectory { get; init; }
+
+    /// <summary>
+    /// When true, tools read and write anywhere on the machine and may open <c>file:</c> URLs.
+    /// Defaults to false: an agent acts partly on instructions that came from the pages it visited,
+    /// so the machine it runs on is not open to it by default.
+    /// </summary>
+    public bool AllowUnrestrictedFileAccess { get; init; }
+
+    /// <summary>
+    /// When true, the attach tool may point the session at a browser that is already running.
+    /// Defaults to false, and is implied by <see cref="Endpoint"/>: choosing a browser that holds
+    /// somebody's signed-in sessions is the operator's decision rather than the agent's.
+    /// </summary>
+    public bool AllowAttach { get; init; }
 }

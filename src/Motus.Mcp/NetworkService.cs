@@ -15,17 +15,25 @@ namespace Motus.Mcp;
 /// context and survives navigation and tab switches, and a closed-and-collected
 /// context drops its rules automatically through the weak table. The request log is
 /// page-level: <see cref="SubscribePage"/> follows the active tab exactly as the
-/// dialog and console subscriptions do, and the bounded log drains on read.
+/// dialog and console subscriptions do, and the bounded log is read by cursor rather
+/// than emptied, so a read that never reached the agent can be made again.
 /// </remarks>
 public sealed class NetworkService
 {
     private const int Capacity = 250;
 
+    /// <summary>How much of a request body is kept. A form post is small; an upload is not.</summary>
+    private const int PostDataLimit = 2000;
+
+    /// <summary>How long a single response-body fetch may take before it is given up on.</summary>
+    private static readonly TimeSpan BodyTimeout = TimeSpan.FromSeconds(5);
+
     private readonly ConditionalWeakTable<IBrowserContext, RouteTable> _routes = new();
 
     private readonly object _logLock = new();
-    private readonly Queue<NetworkEntry> _log = new();
+    private readonly Queue<LoggedRequest> _log = new();
 
+    private long _next = 1;
     private IPage? _subscribedPage;
 
     // --- route mocking (context-level) ---
@@ -149,35 +157,177 @@ public sealed class NetworkService
         page.RequestFailed += OnRequestFailed;
     }
 
-    /// <summary>Returns the logged requests in arrival order and clears the log.</summary>
-    public IReadOnlyList<NetworkEntry> DrainRequests()
+    /// <summary>
+    /// The sequence number the next logged request will be given.
+    /// </summary>
+    public long NextSequence
+    {
+        get { lock (_logLock) return _next; }
+    }
+
+    /// <summary>
+    /// Returns the logged requests from <paramref name="since"/> onwards in arrival order,
+    /// leaving the log as it is.
+    /// </summary>
+    /// <param name="since">
+    /// The sequence number to read from, or null for everything the log still holds.
+    /// </param>
+    public LogSlice<NetworkEntry> ReadRequests(long? since = null)
     {
         lock (_logLock)
         {
-            var drained = _log.ToArray();
-            _log.Clear();
-            return drained;
+            var from = since is { } cursor && cursor > 1 ? cursor : 1;
+            var oldest = _log.Count == 0 ? _next : _log.Peek().Entry.Sequence;
+            var dropped = oldest > from ? (int)(oldest - from) : 0;
+
+            var entries = new List<NetworkEntry>();
+            foreach (var logged in _log)
+            {
+                if (logged.Entry.Sequence >= from)
+                    entries.Add(logged.Entry);
+            }
+
+            return new LogSlice<NetworkEntry>(entries, _next, dropped);
+        }
+    }
+
+    /// <summary>
+    /// Returns the logged request with the given sequence number, or null when the log never held
+    /// it or has since evicted it.
+    /// </summary>
+    public NetworkEntry? FindRequest(long sequence)
+    {
+        lock (_logLock)
+        {
+            foreach (var logged in _log)
+            {
+                if (logged.Entry.Sequence == sequence)
+                    return logged.Entry;
+            }
+
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Reads the response body of a logged request from the browser, or returns null when the log
+    /// has no response for that sequence number and when the browser can no longer produce one.
+    /// </summary>
+    /// <remarks>
+    /// The body is not captured when the request is logged, because a page that downloads a file
+    /// would put the file in the server's memory for as long as the log held the entry. It is
+    /// fetched on request instead, which is why it can fail: the browser keeps response data for a
+    /// while and then evicts it, and everything from a document the page has navigated away from
+    /// goes at once. The fetch is bounded, since the page it belongs to may have stopped answering
+    /// since the request was made.
+    /// </remarks>
+    public async Task<string?> TryReadBodyAsync(long sequence, CancellationToken cancellationToken = default)
+    {
+        IResponse? response;
+        lock (_logLock)
+            response = _log.FirstOrDefault(logged => logged.Entry.Sequence == sequence)?.Response;
+
+        if (response is null)
+            return null;
+
+        using var bounded = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        bounded.CancelAfter(BodyTimeout);
+
+        try
+        {
+            return await response.TextAsync(bounded.Token).ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            // Every failure here means the same thing to the caller: the browser did not hand the
+            // body over. Which way it declined is not something an agent can act on differently.
+            return null;
         }
     }
 
     private void OnResponse(object? sender, ResponseEventArgs e)
     {
         var request = e.Response.Request;
-        Add(new NetworkEntry(request.Method, e.Response.Status, e.Response.Url, request.ResourceType, Failed: false));
+        var entry = new NetworkEntry(
+            Sequence: 0, request.Method, e.Response.Status, e.Response.Url, request.ResourceType, Failed: false)
+        {
+            RequestHeaders = Capture(request.Headers),
+            ResponseHeaders = Capture(e.Response.Headers),
+            PostData = CapturePostData(request),
+        };
+
+        Add(entry, e.Response);
     }
 
     private void OnRequestFailed(object? sender, RequestEventArgs e)
-        => Add(new NetworkEntry(e.Request.Method, Status: null, e.Request.Url, e.Request.ResourceType, Failed: true));
+    {
+        var entry = new NetworkEntry(
+            Sequence: 0, e.Request.Method, Status: null, e.Request.Url, e.Request.ResourceType, Failed: true)
+        {
+            RequestHeaders = Capture(e.Request.Headers),
+            PostData = CapturePostData(e.Request),
+        };
 
-    private void Add(NetworkEntry entry)
+        Add(entry, response: null);
+    }
+
+    /// <summary>
+    /// Copies a header collection as it stands. Headers arrive with the event and are already in
+    /// memory, so this costs nothing at capture time and means a later read does not depend on
+    /// the request object still being meaningful.
+    /// </summary>
+    private static IReadOnlyList<KeyValuePair<string, string>> Capture(IHeaderCollection? headers)
+    {
+        if (headers is null)
+            return [];
+
+        try
+        {
+            var copied = new List<KeyValuePair<string, string>>();
+            foreach (var header in headers)
+                copied.Add(new KeyValuePair<string, string>(header.Key, string.Join(", ", header.Value)));
+
+            return copied;
+        }
+        catch (Exception)
+        {
+            // A transport that cannot describe the headers is not a reason to lose the entry.
+            return [];
+        }
+    }
+
+    private static string? CapturePostData(IRequest request)
+    {
+        try
+        {
+            var data = request.PostData;
+            if (string.IsNullOrEmpty(data))
+                return null;
+
+            return data.Length <= PostDataLimit ? data : data[..PostDataLimit] + "...";
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    private void Add(NetworkEntry entry, IResponse? response)
     {
         lock (_logLock)
         {
             if (_log.Count >= Capacity)
                 _log.Dequeue();
-            _log.Enqueue(entry);
+            _log.Enqueue(new LoggedRequest(entry with { Sequence = _next++ }, response));
         }
     }
+
+    /// <summary>
+    /// A log entry and the response object it came from. The response is held apart from the entry
+    /// because it is a live browser handle rather than something to print: it is what makes a body
+    /// readable later, and it is not part of what a reader is handed.
+    /// </summary>
+    private sealed record LoggedRequest(NetworkEntry Entry, IResponse? Response);
 
     private enum RuleKind
     {
@@ -203,13 +353,36 @@ public sealed class NetworkService
 public sealed record RouteInfo(string Pattern, string Kind);
 
 /// <summary>A single logged request/response.</summary>
+/// <param name="Sequence">The entry's position in the log, counting from one and never reused.</param>
 /// <param name="Method">The HTTP method.</param>
 /// <param name="Status">The response status code, or null when the request failed.</param>
 /// <param name="Url">The request URL.</param>
 /// <param name="ResourceType">The resource type (e.g. document, script, fetch).</param>
 /// <param name="Failed">Whether the request failed or was aborted.</param>
-public sealed record NetworkEntry(string Method, int? Status, string Url, string ResourceType, bool Failed)
+public sealed record NetworkEntry(
+    long Sequence, string Method, int? Status, string Url, string ResourceType, bool Failed)
 {
+    /// <summary>The headers the browser sent, as they were at the moment the entry was logged.</summary>
+    public IReadOnlyList<KeyValuePair<string, string>> RequestHeaders { get; init; } = [];
+
+    /// <summary>The headers that came back, empty for a request that never got a response.</summary>
+    public IReadOnlyList<KeyValuePair<string, string>> ResponseHeaders { get; init; } = [];
+
+    /// <summary>The request body, truncated when it is long, or null when the request had none.</summary>
+    public string? PostData { get; init; }
+
+    /// <summary>The value of a response header, or null when the response did not carry it.</summary>
+    public string? ResponseHeader(string name)
+    {
+        foreach (var header in ResponseHeaders)
+        {
+            if (string.Equals(header.Key, name, StringComparison.OrdinalIgnoreCase))
+                return header.Value;
+        }
+
+        return null;
+    }
+
     /// <summary>Renders the entry as a single <c>METHOD STATUS URL (type)</c> line.</summary>
     public override string ToString()
     {

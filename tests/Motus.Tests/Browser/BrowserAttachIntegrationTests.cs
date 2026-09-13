@@ -42,7 +42,10 @@ public class BrowserAttachIntegrationTests
         }
 
         _port = AllocateFreePort();
-        _userDataDir = Path.Combine(Path.GetTempPath(), "motus-attach-test-" + Guid.NewGuid().ToString("N")[..8]);
+        // Named the way the launcher names its own profiles, so one pattern finds every browser a
+        // test run can leave behind rather than every browser but this one.
+        _userDataDir = Path.Combine(
+            Path.GetTempPath(), "motus-profile-attach-test-" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(_userDataDir);
 
         var psi = new ProcessStartInfo
@@ -54,7 +57,7 @@ public class BrowserAttachIntegrationTests
             CreateNoWindow = true
         };
 
-        foreach (var arg in ChromiumArgs.Build(new LaunchOptions { Headless = true }, _port, _userDataDir))
+        foreach (var arg in ChromiumArgs.Build(new LaunchOptions { Headless = true }, _userDataDir, _port))
             psi.ArgumentList.Add(arg);
 
         _process = Process.Start(psi);
@@ -63,7 +66,7 @@ public class BrowserAttachIntegrationTests
         // Redirected streams nobody reads fill and then block the browser writing to them.
         BrowserOutputDrain.Start(_process.StandardOutput, _process.StandardError);
 
-        await CdpEndpointPoller.WaitForEndpointAsync(_port, StartupTimeout, CancellationToken.None);
+        await new CdpEndpointPoller().WaitForEndpointAsync(_port, StartupTimeout, CancellationToken.None);
     }
 
     [TestCleanup]
@@ -246,6 +249,62 @@ public class BrowserAttachIntegrationTests
         var retired = await WaitForAsync(() => !context.Pages.Contains(opened));
         Assert.IsTrue(retired, "A page closed while attached never went away.");
         Assert.IsTrue(opened.IsClosed, "The retired page does not report itself closed.");
+    }
+
+    /// <summary>
+    /// Declining adoption says what to take over, not what to watch. A tab opened by a page of a
+    /// context the caller created is the caller's tab whoever started the browser.
+    /// </summary>
+    [TestMethod]
+    public async Task WithAdoptionDisabled_APopupFromItsOwnContext_IsTracked()
+    {
+        await using var browser = await MotusLauncher.ConnectAsync(
+            HttpEndpoint, new ConnectOptions { AdoptExistingTargets = false });
+
+        var context = await browser.NewContextAsync();
+        var opener = await context.NewPageAsync();
+        await opener.GotoAsync("data:text/html,<h1>opener</h1>");
+
+        var announced = new TaskCompletionSource<IPage>(TaskCreationOptions.RunContinuationsAsynchronously);
+        opener.Popup += (_, popup) => announced.TrySetResult(popup);
+
+        var opened = await opener.EvaluateAsync<string>(
+            "window.open('about:blank', '_blank') ? 'opened' : 'blocked'");
+        Assert.AreEqual("opened", opened, "The browser refused to open the tab.");
+
+        Assert.IsTrue(await WaitForAsync(() => context.Pages.Count == 2),
+            "The tab the page opened never became a page of its context.");
+
+        var completed = await Task.WhenAny(announced.Task, Task.Delay(SettleTimeout));
+        Assert.AreSame(announced.Task, completed, "The opener was never told about the tab it opened.");
+    }
+
+    /// <summary>
+    /// The other half of that promise: a tab belonging to whoever else is using the browser is
+    /// still not taken over by a caller who declined adoption.
+    /// </summary>
+    [TestMethod]
+    public async Task WithAdoptionDisabled_ATabOpenedElsewhere_IsNotAdopted()
+    {
+        await using var declined = await MotusLauncher.ConnectAsync(
+            HttpEndpoint, new ConnectOptions { AdoptExistingTargets = false });
+
+        // A second handle stands in for whoever else is using the browser: what it opens lands in
+        // a browser context the first handle did not create.
+        await using var other = await MotusLauncher.ConnectAsync(HttpEndpoint, new ConnectOptions());
+        var elsewhere = other.Contexts.First(c => c.Pages.Count > 0);
+        var before = elsewhere.Pages.Count;
+
+        await elsewhere.Pages[0].EvaluateAsync<bool>("(() => { window.open('about:blank'); return true; })()");
+
+        Assert.IsTrue(await WaitForAsync(() => elsewhere.Pages.Count > before),
+            "The tab opened elsewhere never appeared, so there is nothing to have declined.");
+
+        // Long enough for an adoption to have landed if one were coming.
+        await Task.Delay(1000);
+
+        Assert.AreEqual(0, declined.Contexts.Count,
+            "A tab Motus did not open was taken over by a handle that declined adoption.");
     }
 
     private static async Task<bool> WaitForAsync(Func<bool> condition)

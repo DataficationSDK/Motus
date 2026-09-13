@@ -70,13 +70,14 @@ public static class McpHttpServerHost
         var registry = new McpSessionRegistry();
         builder.Services.AddSingleton(registry);
 
-        // The tools resolve these four services by type. Each call returns the bundle for the
-        // session the call belongs to, so concurrent clients never see each other's browser. The
-        // bundle owns the instances' lifetimes, so none of these is disposed by the per-call scope.
+        // The tools resolve these services by type. Each call returns the bundle for the session
+        // the call belongs to, so concurrent clients never see each other's browser. The bundle
+        // owns the instances' lifetimes, so none of these is disposed by the per-call scope.
         builder.Services.AddTransient(_ => registry.RequireCurrent().Pages);
         builder.Services.AddTransient(_ => registry.RequireCurrent().Dialogs);
         builder.Services.AddTransient(_ => registry.RequireCurrent().Console);
         builder.Services.AddTransient(_ => registry.RequireCurrent().Network);
+        builder.Services.AddTransient(_ => registry.RequireCurrent().Security);
 
         var launchOptions = options.LaunchOptions;
 
@@ -109,7 +110,7 @@ public static class McpHttpServerHost
                     }
                 };
             });
-        mcpBuilder.AddMotusTools();
+        mcpBuilder.AddMotusTools(launchOptions);
 
         var app = builder.Build();
 

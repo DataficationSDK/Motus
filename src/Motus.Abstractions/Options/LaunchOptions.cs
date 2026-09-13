@@ -26,10 +26,16 @@ public sealed record LaunchOptions
     /// <summary>Path to a user data directory for the browser profile.</summary>
     public string? UserDataDir { get; init; }
 
-    /// <summary>Whether to handle the SIGINT signal.</summary>
+    /// <summary>
+    /// Whether the browser is closed when this process is interrupted, which means SIGINT on Unix
+    /// and Ctrl+C on Windows.
+    /// </summary>
     public bool HandleSIGINT { get; init; } = true;
 
-    /// <summary>Whether to handle the SIGTERM signal.</summary>
+    /// <summary>
+    /// Whether the browser is closed when this process is asked to end, which means SIGTERM or
+    /// SIGHUP. Unix only, since Windows has neither signal.
+    /// </summary>
     public bool HandleSIGTERM { get; init; } = true;
 
     /// <summary>If specified, default arguments that should be filtered out.</summary>

@@ -6,9 +6,9 @@ using ModelContextProtocol.Server;
 namespace Motus.Mcp;
 
 /// <summary>
-/// Tools for looking inside the frames of a page. A page snapshot describes each <c>iframe</c>
-/// element but not what is inside it, so a frame has to be selected before its content can be
-/// perceived or acted on.
+/// Tools for naming and scoping to the frames of a page. A page snapshot already prints what is
+/// inside each frame, so reading and clicking need nothing from here; what still needs a frame
+/// named is evaluating script in it, waiting for text in it, and reading one frame on its own.
 /// </summary>
 /// <remarks>
 /// Selection works like tabs and contexts: <c>frame_select</c> sets the scope and the calls that
@@ -17,6 +17,9 @@ namespace Motus.Mcp;
 /// working for every interaction tool afterwards. It resets on navigation and on switching tab or
 /// context, since the frame it named is gone by then.
 ///
+/// The index a frame has here is the index its refs carry in a page snapshot, so <c>f2e5</c> and
+/// <c>frame_select 2</c> name the same document.
+///
 /// The coordinate tools stay in page coordinates whatever is selected. Their input is dispatched at
 /// the page level and the browser decides for itself which frame is under the point.
 /// </remarks>
@@ -24,8 +27,11 @@ namespace Motus.Mcp;
 public sealed class FrameTools
 {
     [McpServerTool(Name = "frame_list", Title = "List frames", Destructive = false, ReadOnly = true, Idempotent = true)]
-    [Description("Lists the frames of the active page in document order, each with its zero-based index, nesting "
-        + "depth, URL, and name. Index 0 is the page itself. The scoped frame is marked with an asterisk.")]
+    [Description("Lists the frames of the active page, each with its zero-based index, nesting depth, URL, and "
+        + "name. Index 0 is the page itself and a frame is listed after the frame that holds it, with frames at "
+        + "the same level in the order they attached, which is the order they appear in the page unless the page "
+        + "inserted one later. The scoped frame is marked with an asterisk. The index is the one a page snapshot "
+        + "prints as [frame=N] and puts in front of the refs inside it.")]
     public static async Task<CallToolResult> FrameListAsync(
         ActivePageService pageService,
         CancellationToken cancellationToken)
@@ -65,9 +71,10 @@ public sealed class FrameTools
     }
 
     [McpServerTool(Name = "frame_select", Title = "Select a frame", Destructive = false)]
-    [Description("Scopes snapshot, evaluate, and the text waits to the frame at the given zero-based index, so "
-        + "its content becomes addressable. Index 0 returns to the page. Indices come from frame_list. Take a "
-        + "snapshot afterwards: refs from the previous scope do not carry over.")]
+    [Description("Scopes snapshot, evaluate, and the text waits to the frame at the given zero-based index. "
+        + "Clicking and typing inside a frame need no scope: a page snapshot prints every frame and its refs "
+        + "reach into them. Index 0 returns to the page. Indices come from frame_list. Take a snapshot "
+        + "afterwards: refs from the previous scope do not carry over.")]
     public static async Task<CallToolResult> FrameSelectAsync(
         [Description("Zero-based index of the frame to scope to, from frame_list. 0 is the page itself.")] int index,
         ActivePageService pageService,

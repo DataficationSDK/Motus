@@ -10,8 +10,9 @@ namespace Motus.Mcp.Tests.Tools;
 /// can be exercised without a browser. The snapshot registry, gating, and
 /// invalidation run for real against the fake page.
 /// </summary>
-internal sealed class FakeActivePageService(FakeToolPage page)
-    : ActivePageService(new BrowserSessionManager(new McpServerLaunchOptions()))
+internal sealed class FakeActivePageService(
+    FakeToolPage page, DialogService? dialogService = null, McpServerLaunchOptions? options = null)
+    : ActivePageService(new BrowserSessionManager(options ?? new McpServerLaunchOptions()), dialogService)
 {
     public FakeToolPage Page { get; } = page;
 
@@ -33,6 +34,9 @@ internal sealed class FakeToolPage(AccessibilitySnapshot snapshot) : IPage
 
     /// <summary>The last backend node id resolved through <see cref="LocatorByBackendNodeId"/>.</summary>
     public long? ResolvedBackendNodeId { get; private set; }
+
+    /// <summary>The last selector resolved through <see cref="Locator"/>.</summary>
+    public string? ResolvedSelector { get; private set; }
 
     /// <summary>The <c>FullPage</c> flag of the last screenshot request.</summary>
     public bool? ScreenshotFullPage { get; private set; }
@@ -140,6 +144,9 @@ internal sealed class FakeToolPage(AccessibilitySnapshot snapshot) : IPage
     /// <summary>Raises the <see cref="PageError"/> event, as the browser would on an uncaught error.</summary>
     public void RaisePageError(string message, string? stack = null)
         => PageError?.Invoke(this, new PageErrorEventArgs(message, stack));
+
+    /// <summary>Raises the <see cref="Popup"/> event, as the browser would when the page opens a window.</summary>
+    public void RaisePopup(IPage popup) => Popup?.Invoke(this, popup);
 
     /// <summary>Raises the <see cref="Response"/> event, as the browser would when a response arrives.</summary>
     public void RaiseResponse(IResponse response) => Response?.Invoke(this, new ResponseEventArgs(response));
@@ -294,7 +301,12 @@ internal sealed class FakeToolPage(AccessibilitySnapshot snapshot) : IPage
     public Task<string> ContentAsync() => throw new NotImplementedException();
     public Task SetContentAsync(string html, NavigationOptions? options = null) => throw new NotImplementedException();
     public Task<string> TitleAsync() => Task.FromResult(PageTitle);
-    public ILocator Locator(string selector, LocatorOptions? options = null) => throw new NotImplementedException();
+    public ILocator Locator(string selector, LocatorOptions? options = null)
+    {
+        ResolvedSelector = selector;
+        return RecordingLocator;
+    }
+
     public ILocator GetByRole(string role, string? name = null) => throw new NotImplementedException();
     public ILocator GetByText(string text, bool? exact = null) => throw new NotImplementedException();
     public ILocator GetByLabel(string text, bool? exact = null) => throw new NotImplementedException();
@@ -380,9 +392,29 @@ internal sealed class FakeToolLocator : ILocator
     public string? EvaluatedElementExpression { get; private set; }
     public JsonElement ElementEvaluateReturn { get; set; }
 
+    /// <summary>The options of the last click, or null when it was a plain left click.</summary>
+    public MouseButtonOptions? ClickOptions { get; private set; }
+
+    /// <summary>The timeout the last type carried, or null when it was given none.</summary>
+    public double? TypeTimeout { get; private set; }
+
+    /// <summary>The timeout the last press carried, or null when it was given none.</summary>
+    public double? PressTimeout { get; private set; }
+
+    /// <summary>The timeout the last option selection carried, or null when it was given none.</summary>
+    public double? SelectOptionTimeout { get; private set; }
+
     public Task ClickAsync(double? timeout = null)
     {
         ClickCount++;
+        ClickOptions = null;
+        return Task.CompletedTask;
+    }
+
+    public Task ClickAsync(MouseButtonOptions options, double? timeout = null)
+    {
+        ClickCount++;
+        ClickOptions = options;
         return Task.CompletedTask;
     }
 
@@ -401,12 +433,14 @@ internal sealed class FakeToolLocator : ILocator
     public Task TypeAsync(string text, KeyboardTypeOptions? options = null)
     {
         TypedValue = text;
+        TypeTimeout = options?.Timeout;
         return Task.CompletedTask;
     }
 
     public Task PressAsync(string key, KeyboardPressOptions? options = null)
     {
         PressedKeys.Add(key);
+        PressTimeout = options?.Timeout;
         return Task.CompletedTask;
     }
 
@@ -438,8 +472,12 @@ internal sealed class FakeToolLocator : ILocator
     }
 
     public Task<IReadOnlyList<string>> SelectOptionAsync(params string[] values)
+        => SelectOptionAsync(values, timeout: null);
+
+    public Task<IReadOnlyList<string>> SelectOptionAsync(string[] values, double? timeout)
     {
         SelectedValues = values;
+        SelectOptionTimeout = timeout;
         return Task.FromResult<IReadOnlyList<string>>(values);
     }
 
@@ -751,10 +789,15 @@ internal sealed class FakeRequest(string method = "GET", string url = "https://e
     public string Url { get; } = url;
     public string Method { get; } = method;
     public string ResourceType { get; } = resourceType;
-    public string? PostData => null;
+
+    /// <summary>The request body, which the log captures when there is one.</summary>
+    public string? PostData { get; init; }
+
+    /// <summary>The headers the log copies; empty unless a test sets them.</summary>
+    public IHeaderCollection Headers { get; init; } = new FakeHeaders();
+
     public bool IsNavigationRequest => false;
     public IResponse? Response => null;
-    public IHeaderCollection Headers => throw new NotImplementedException();
     public IFrame Frame => throw new NotImplementedException();
 }
 
@@ -766,11 +809,44 @@ internal sealed class FakeResponse(IRequest request, int status = 200, string? u
     public IRequest Request { get; } = request;
     public string StatusText => "OK";
     public bool Ok => Status is >= 200 and <= 299;
-    public IHeaderCollection Headers => throw new NotImplementedException();
+
+    /// <summary>The headers the log copies; empty unless a test sets them.</summary>
+    public IHeaderCollection Headers { get; init; } = new FakeHeaders();
+
+    /// <summary>The body <see cref="TextAsync"/> hands back, or null to model one the browser has dropped.</summary>
+    public string? Body { get; init; }
+
     public IFrame Frame => throw new NotImplementedException();
     public Task<byte[]> BodyAsync(CancellationToken ct = default) => throw new NotImplementedException();
-    public Task<string> TextAsync(CancellationToken ct = default) => throw new NotImplementedException();
+
+    public Task<string> TextAsync(CancellationToken ct = default)
+        => Body is null
+            ? Task.FromException<string>(new InvalidOperationException("No resource with given identifier found"))
+            : Task.FromResult(Body);
+
     public Task<T> JsonAsync<T>(CancellationToken ct = default) => throw new NotImplementedException();
+}
+
+/// <summary>A fixed set of headers, as the request log reads them off a request or a response.</summary>
+internal sealed class FakeHeaders(KeyValuePair<string, string>[]? entries = null) : IHeaderCollection
+{
+    public string this[string name] => GetAll(name).FirstOrDefault() ?? string.Empty;
+
+    private readonly KeyValuePair<string, string>[] _headers = entries ?? [];
+
+    public IReadOnlyList<string> GetAll(string name)
+        => _headers.Where(h => string.Equals(h.Key, name, StringComparison.OrdinalIgnoreCase))
+            .Select(h => h.Value)
+            .ToArray();
+
+    public bool Contains(string name) => GetAll(name).Count > 0;
+
+    public IEnumerator<KeyValuePair<string, IReadOnlyList<string>>> GetEnumerator()
+        => _headers
+            .Select(h => new KeyValuePair<string, IReadOnlyList<string>>(h.Key, [h.Value]))
+            .GetEnumerator();
+
+    System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
 }
 
 /// <summary>
@@ -779,14 +855,21 @@ internal sealed class FakeResponse(IRequest request, int status = 200, string? u
 /// set of context names, so the tools' own index validation, active-page tracking, and
 /// error mapping run for real without a browser.
 /// </summary>
+/// <remarks>
+/// Each tab records the context it belongs to, because the tab index runs across every context the
+/// session holds and selecting a tab in another one is supposed to move the session there.
+/// </remarks>
 internal sealed class FakeSessionPageService : ActivePageService
 {
     private readonly List<FakeToolPage> _pages;
+    private readonly Dictionary<FakeToolPage, string> _contextOf = [];
 
     public FakeSessionPageService(params FakeToolPage[] pages)
         : base(new BrowserSessionManager(new McpServerLaunchOptions()))
     {
         _pages = pages.Length == 0 ? [NewPage()] : [.. pages];
+        foreach (var page in _pages)
+            _contextOf[page] = BrowserSessionManager.DefaultContextName;
     }
 
     /// <summary>The simulated open context names; the first is the implicit default.</summary>
@@ -810,8 +893,23 @@ internal sealed class FakeSessionPageService : ActivePageService
         return Task.FromResult<IPage>(open);
     }
 
-    protected override Task<IReadOnlyList<IPage>> GetActiveContextPagesAsync(CancellationToken cancellationToken)
-        => Task.FromResult<IReadOnlyList<IPage>>(_pages.Where(p => !p.IsClosed).Cast<IPage>().ToArray());
+    protected override Task<IReadOnlyList<TabEntry>> GetOpenTabsAsync(CancellationToken cancellationToken)
+        => Task.FromResult<IReadOnlyList<TabEntry>>(
+            _pages.Where(p => !p.IsClosed)
+                .Select(p => new TabEntry(p, _contextOf[p]))
+                .ToArray());
+
+    /// <summary>Adds a tab to a context other than the one that is active.</summary>
+    public FakeToolPage AddTabIn(string context, string url)
+    {
+        if (!Contexts.Contains(context))
+            Contexts.Add(context);
+
+        var page = new FakeToolPage(new AccessibilitySnapshot([], 0, null)) { PageUrl = url };
+        _pages.Add(page);
+        _contextOf[page] = context;
+        return page;
+    }
 
     public override Task<IPage> OpenNewTabAsync(CancellationToken cancellationToken = default)
     {
@@ -820,6 +918,9 @@ internal sealed class FakeSessionPageService : ActivePageService
         SelectPage(page);
         return Task.FromResult<IPage>(page);
     }
+
+    /// <summary>The context each listed tab belongs to, by tab.</summary>
+    public string ContextOf(FakeToolPage page) => _contextOf[page];
 
     public override Task CreateContextAsync(string name, CancellationToken cancellationToken = default)
     {
@@ -862,6 +963,7 @@ internal sealed class FakeSessionPageService : ActivePageService
     {
         var page = NewPage();
         _pages.Add(page);
+        _contextOf[page] = ActiveContext;
         return page;
     }
 }
@@ -880,6 +982,9 @@ internal sealed class FakeToolFrame(FakeToolPage page, string url, FakeToolFrame
 
     /// <summary>The last backend node id addressed through this frame.</summary>
     public long? ResolvedBackendNodeId { get; private set; }
+
+    /// <summary>The last selector resolved through this frame.</summary>
+    public string? ResolvedSelector { get; private set; }
 
     /// <summary>The expressions evaluated in this frame.</summary>
     public List<string> Evaluated { get; } = [];
@@ -926,7 +1031,12 @@ internal sealed class FakeToolFrame(FakeToolPage page, string url, FakeToolFrame
         return Task.FromResult(default(T)!);
     }
 
-    public ILocator Locator(string selector, LocatorOptions? options = null) => page.RecordingLocator;
+    public ILocator Locator(string selector, LocatorOptions? options = null)
+    {
+        ResolvedSelector = selector;
+        return page.RecordingLocator;
+    }
+
     public ILocator GetByRole(string role, string? name = null) => page.RecordingLocator;
     public ILocator GetByText(string text, bool? exact = null) => page.RecordingLocator;
     public ILocator GetByLabel(string text, bool? exact = null) => page.RecordingLocator;

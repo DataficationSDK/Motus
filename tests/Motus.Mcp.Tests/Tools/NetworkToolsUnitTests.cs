@@ -18,7 +18,7 @@ public class NetworkToolsUnitTests
         var network = new NetworkService();
         var headers = new Dictionary<string, string> { ["X-Test"] = "1" };
 
-        var result = await NetworkTools.RouteFulfillAsync(
+        var result = await RoutingTools.RouteFulfillAsync(
             url_pattern: "*api*",
             pageService: pages,
             networkService: network,
@@ -46,7 +46,7 @@ public class NetworkToolsUnitTests
         var pages = new FakeNetworkPageService();
         var network = new NetworkService();
 
-        var result = await NetworkTools.RouteAbortAsync(
+        var result = await RoutingTools.RouteAbortAsync(
             url_pattern: "*track*",
             pageService: pages,
             networkService: network,
@@ -66,7 +66,7 @@ public class NetworkToolsUnitTests
         var pages = new FakeNetworkPageService();
         var network = new NetworkService();
 
-        var result = await NetworkTools.RouteContinueAsync(
+        var result = await RoutingTools.RouteContinueAsync(
             url_pattern: "*api*",
             pageService: pages,
             networkService: network,
@@ -89,7 +89,7 @@ public class NetworkToolsUnitTests
     {
         var pages = new FakeNetworkPageService();
         var network = new NetworkService();
-        await NetworkTools.RouteFulfillAsync(
+        await RoutingTools.RouteFulfillAsync(
             url_pattern: "*api*",
             pageService: pages,
             networkService: network,
@@ -99,7 +99,7 @@ public class NetworkToolsUnitTests
             content_type: null,
             headers: null);
 
-        var result = await NetworkTools.UnrouteAsync("*api*", pages, network, Ct);
+        var result = await RoutingTools.UnrouteAsync("*api*", pages, network, Ct);
 
         Assert.IsFalse(result.IsError ?? false);
         StringAssert.Contains(TextOf(result), "Removed");
@@ -111,7 +111,7 @@ public class NetworkToolsUnitTests
         var pages = new FakeNetworkPageService();
         var network = new NetworkService();
 
-        var result = await NetworkTools.UnrouteAsync("*api*", pages, network, Ct);
+        var result = await RoutingTools.UnrouteAsync("*api*", pages, network, Ct);
 
         Assert.IsFalse(result.IsError ?? false);
         StringAssert.Contains(TextOf(result), "No mock");
@@ -123,7 +123,7 @@ public class NetworkToolsUnitTests
         var pages = new FakeNetworkPageService();
         var network = new NetworkService();
 
-        var result = await NetworkTools.RouteListAsync(pages, network, Ct);
+        var result = await RoutingTools.RouteListAsync(pages, network, Ct);
 
         Assert.IsFalse(result.IsError ?? false);
         StringAssert.Contains(TextOf(result), "No mocks");
@@ -134,7 +134,7 @@ public class NetworkToolsUnitTests
     {
         var pages = new FakeNetworkPageService();
         var network = new NetworkService();
-        await NetworkTools.RouteFulfillAsync(
+        await RoutingTools.RouteFulfillAsync(
             url_pattern: "*api*",
             pageService: pages,
             networkService: network,
@@ -143,14 +143,14 @@ public class NetworkToolsUnitTests
             body: null,
             content_type: null,
             headers: null);
-        await NetworkTools.RouteAbortAsync(
+        await RoutingTools.RouteAbortAsync(
             url_pattern: "*track*",
             pageService: pages,
             networkService: network,
             cancellationToken: Ct,
             error_code: null);
 
-        var result = await NetworkTools.RouteListAsync(pages, network, Ct);
+        var result = await RoutingTools.RouteListAsync(pages, network, Ct);
 
         var text = TextOf(result);
         StringAssert.Contains(text, "*api* -> Fulfill");
@@ -169,7 +169,7 @@ public class NetworkToolsUnitTests
     }
 
     [TestMethod]
-    public void NetworkRequests_RendersAndDrainsTheLog()
+    public void NetworkRequests_NumbersEachLine_AndRepeatsOnASecondRead()
     {
         var network = new NetworkService();
         var page = new FakeToolPage(new AccessibilitySnapshot([], 0, null));
@@ -178,9 +178,90 @@ public class NetworkToolsUnitTests
 
         var result = NetworkTools.NetworkRequests(network, Ct);
 
-        StringAssert.Contains(TextOf(result), "GET 200 https://api.test/x (fetch)");
-        // Draining clears, so a second read reports nothing.
-        StringAssert.Contains(TextOf(NetworkTools.NetworkRequests(network, Ct)), "No requests");
+        StringAssert.Contains(TextOf(result), "[1] GET 200 https://api.test/x (fetch)");
+        StringAssert.Contains(TextOf(result), "next=2");
+        // Reading no longer empties the log, so the same read can be made again.
+        StringAssert.Contains(TextOf(NetworkTools.NetworkRequests(network, Ct)), "[1] GET 200");
+    }
+
+    [TestMethod]
+    public void NetworkRequests_WithSince_ReturnsOnlyWhatFollowedTheCursor()
+    {
+        var network = new NetworkService();
+        var page = new FakeToolPage(new AccessibilitySnapshot([], 0, null));
+        network.SubscribePage(page);
+        page.RaiseResponse(new FakeResponse(new FakeRequest("GET", "https://api.test/first")));
+        page.RaiseResponse(new FakeResponse(new FakeRequest("GET", "https://api.test/second")));
+
+        var text = TextOf(NetworkTools.NetworkRequests(network, Ct, since: 2));
+
+        StringAssert.Contains(text, "/second");
+        Assert.IsFalse(text.Contains("/first", StringComparison.Ordinal), text);
+        StringAssert.Contains(TextOf(NetworkTools.NetworkRequests(network, Ct, since: 3)), "No requests");
+    }
+
+    [TestMethod]
+    public async Task NetworkRequest_ReportsHeadersBodyAndTheMissingSequence()
+    {
+        var network = new NetworkService();
+        var page = new FakeToolPage(new AccessibilitySnapshot([], 0, null));
+        network.SubscribePage(page);
+
+        var request = new FakeRequest("POST", "https://api.test/orders", "fetch")
+        {
+            PostData = "{\"id\":7}",
+            Headers = new FakeHeaders([new("accept", "application/json")]),
+        };
+        page.RaiseResponse(new FakeResponse(request, status: 201)
+        {
+            Headers = new FakeHeaders([new("content-type", "application/json")]),
+            Body = "{\"ok\":true}",
+        });
+
+        var text = TextOf(await NetworkTools.NetworkRequestAsync(1, network, Ct));
+
+        StringAssert.Contains(text, "[1] POST 201 https://api.test/orders (fetch)");
+        StringAssert.Contains(text, "  accept: application/json");
+        StringAssert.Contains(text, "  content-type: application/json");
+        StringAssert.Contains(text, "Request body:");
+        StringAssert.Contains(text, "{\"id\":7}");
+        StringAssert.Contains(text, "{\"ok\":true}");
+
+        var missing = await NetworkTools.NetworkRequestAsync(42, network, Ct);
+        Assert.IsTrue(missing.IsError ?? false);
+        StringAssert.Contains(TextOf(missing), "No request with sequence 42");
+    }
+
+    [TestMethod]
+    public async Task NetworkRequest_WhenTheBodyIsGone_SaysSoRatherThanFailing()
+    {
+        var network = new NetworkService();
+        var page = new FakeToolPage(new AccessibilitySnapshot([], 0, null));
+        network.SubscribePage(page);
+        page.RaiseResponse(new FakeResponse(new FakeRequest("GET", "https://api.test/x")));
+
+        var result = await NetworkTools.NetworkRequestAsync(1, network, Ct);
+
+        Assert.IsFalse(result.IsError ?? false, TextOf(result));
+        StringAssert.Contains(TextOf(result), "Response body: the browser no longer has it");
+    }
+
+    [TestMethod]
+    public async Task NetworkRequest_DoesNotFetchABodyItWouldNotPrint()
+    {
+        var network = new NetworkService();
+        var page = new FakeToolPage(new AccessibilitySnapshot([], 0, null));
+        network.SubscribePage(page);
+        page.RaiseResponse(new FakeResponse(new FakeRequest("GET", "https://cdn.test/logo.png", "image"))
+        {
+            Headers = new FakeHeaders([new("content-type", "image/png")]),
+            Body = "binary",
+        });
+
+        var text = TextOf(await NetworkTools.NetworkRequestAsync(1, network, Ct));
+
+        StringAssert.Contains(text, "Response body: not shown, because it is image/png.");
+        Assert.IsFalse(text.Contains("binary", StringComparison.Ordinal), text);
     }
 
     [TestMethod]
@@ -189,7 +270,7 @@ public class NetworkToolsUnitTests
         var pages = new ThrowingContextService();
         var network = new NetworkService();
 
-        var result = await NetworkTools.RouteFulfillAsync(
+        var result = await RoutingTools.RouteFulfillAsync(
             url_pattern: "*api*",
             pageService: pages,
             networkService: network,
@@ -213,5 +294,44 @@ public class NetworkToolsUnitTests
 
         public override Task<IBrowserContext> GetOrCreateActiveContextAsync(CancellationToken cancellationToken = default)
             => throw new InvalidOperationException("boom");
+    }
+
+    // --- interception and the local filesystem ---
+
+    [TestMethod]
+    public async Task RouteFulfill_RedirectingToAFileUrl_IsRefusedWithoutRegistering()
+    {
+        var pages = new FakeNetworkPageService();
+        var network = new NetworkService();
+
+        var result = await RoutingTools.RouteFulfillAsync(
+            url_pattern: "*api*",
+            pageService: pages,
+            networkService: network,
+            cancellationToken: Ct,
+            status: 302,
+            headers: new Dictionary<string, string> { ["Location"] = "file:///etc/hosts" });
+
+        Assert.IsTrue(result.IsError);
+        StringAssert.Contains(TextOf(result), "file:// navigation is disabled");
+        Assert.AreEqual(0, pages.Context.RoutedPatterns.Count);
+    }
+
+    [TestMethod]
+    public async Task RouteContinue_OverridingTheUrlWithAFileUrl_IsRefusedWithoutRegistering()
+    {
+        var pages = new FakeNetworkPageService();
+        var network = new NetworkService();
+
+        var result = await RoutingTools.RouteContinueAsync(
+            url_pattern: "*api*",
+            pageService: pages,
+            networkService: network,
+            cancellationToken: Ct,
+            url: "file:///etc/hosts");
+
+        Assert.IsTrue(result.IsError);
+        StringAssert.Contains(TextOf(result), "file:// navigation is disabled");
+        Assert.AreEqual(0, pages.Context.RoutedPatterns.Count);
     }
 }

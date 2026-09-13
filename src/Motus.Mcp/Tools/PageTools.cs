@@ -22,16 +22,20 @@ public sealed class PageTools
     [Description("Navigates the active tab back one entry in its history. Reports when there was no entry to go to.")]
     public static async Task<CallToolResult> GoBackAsync(
         ActivePageService pageService,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        [Description("Append a snapshot of the page after the action.")] bool? snapshot = null)
     {
         try
         {
             var page = await pageService.GetOrCreateActivePageAsync(cancellationToken).ConfigureAwait(false);
-            var response = await page.GoBackAsync().ConfigureAwait(false);
-            pageService.InvalidateSnapshot(page);
-            return ToolResultHelper.Text(response is null
-                ? "No previous history entry; the page did not change."
-                : $"Navigated back to {page.Url}");
+            return await ActionRunner.RunAsync(pageService, page, cancellationToken, async _ =>
+            {
+                var response = await page.GoBackAsync(pageService.Navigation).ConfigureAwait(false);
+                pageService.InvalidateSnapshot(page);
+                return ToolResultHelper.Text(response is null
+                    ? "No previous history entry; the page did not change."
+                    : $"Navigated back to {await PageDescription.OfAsync(page).ConfigureAwait(false)}");
+            }, snapshot == true).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -43,16 +47,20 @@ public sealed class PageTools
     [Description("Navigates the active tab forward one entry in its history. Reports when there was no entry to go to.")]
     public static async Task<CallToolResult> GoForwardAsync(
         ActivePageService pageService,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        [Description("Append a snapshot of the page after the action.")] bool? snapshot = null)
     {
         try
         {
             var page = await pageService.GetOrCreateActivePageAsync(cancellationToken).ConfigureAwait(false);
-            var response = await page.GoForwardAsync().ConfigureAwait(false);
-            pageService.InvalidateSnapshot(page);
-            return ToolResultHelper.Text(response is null
-                ? "No next history entry; the page did not change."
-                : $"Navigated forward to {page.Url}");
+            return await ActionRunner.RunAsync(pageService, page, cancellationToken, async _ =>
+            {
+                var response = await page.GoForwardAsync(pageService.Navigation).ConfigureAwait(false);
+                pageService.InvalidateSnapshot(page);
+                return ToolResultHelper.Text(response is null
+                    ? "No next history entry; the page did not change."
+                    : $"Navigated forward to {await PageDescription.OfAsync(page).ConfigureAwait(false)}");
+            }, snapshot == true).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -64,14 +72,18 @@ public sealed class PageTools
     [Description("Reloads the active tab and waits for it to finish loading.")]
     public static async Task<CallToolResult> ReloadAsync(
         ActivePageService pageService,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        [Description("Append a snapshot of the page after the action.")] bool? snapshot = null)
     {
         try
         {
             var page = await pageService.GetOrCreateActivePageAsync(cancellationToken).ConfigureAwait(false);
-            await page.ReloadAsync().ConfigureAwait(false);
-            pageService.InvalidateSnapshot(page);
-            return ToolResultHelper.Text($"Reloaded {page.Url}");
+            return await ActionRunner.RunAsync(pageService, page, cancellationToken, async _ =>
+            {
+                await page.ReloadAsync(pageService.Navigation).ConfigureAwait(false);
+                pageService.InvalidateSnapshot(page);
+                return ToolResultHelper.Text($"Reloaded {page.Url}");
+            }, snapshot == true).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -112,35 +124,43 @@ public sealed class PageTools
     [McpServerTool(Name = "evaluate", Title = "Evaluate JavaScript", Destructive = true)]
     [Description("Evaluates a JavaScript expression and returns its result as structured JSON under a \"result\" "
         + "key, so an expression may return a value of any shape: a number, a string, an array, or an object. "
-        + "With no ref it runs in the page, or in the scoped frame when one is selected; with a ref it runs "
-        + "against that element, passed as the function's argument. Results that cannot be serialized "
+        + "With no ref it runs in the page, or in the scoped frame when one is selected; with a ref or a "
+        + "selector it runs against that element, passed as the function's argument. Results that cannot be serialized "
         + "(undefined, functions, DOM nodes) come back as null.")]
     public static async Task<CallToolResult> EvaluateAsync(
         [Description("The JavaScript expression to evaluate.")] string expression,
         ActivePageService pageService,
         CancellationToken cancellationToken,
-        [Description("An element ref from the latest snapshot to evaluate against. Omit to evaluate in the page "
-            + "or the scoped frame.")] string? @ref = null)
+        [Description("The element to evaluate against. Omit to evaluate in the page or the scoped frame. "
+            + ToolDescriptions.Target)] string? @ref = null)
     {
+        if (ToolArguments.Missing("expression", expression) is { } missing)
+            return missing;
+
         try
         {
             var page = await pageService.GetOrCreateActivePageAsync(cancellationToken).ConfigureAwait(false);
 
-            if (string.IsNullOrEmpty(@ref))
+            // An expression runs in the page, so it can open a dialog like any click, and a page
+            // already stopped on one will not run it at all.
+            return await ActionRunner.RunAsync(pageService.Dialogs, cancellationToken, async _ =>
             {
-                // The frame's main world, not an isolated one: an agent evaluating here is reading
-                // what the application defined, and an isolated world is precisely where that is
-                // not visible.
-                var scope = pageService.GetActiveFrame();
-                var pageResult = scope is null
-                    ? await page.EvaluateAsync<JsonElement>(expression).ConfigureAwait(false)
-                    : await scope.EvaluateAsync<JsonElement>(expression).ConfigureAwait(false);
-                return EvaluationResult(pageResult);
-            }
+                if (string.IsNullOrEmpty(@ref))
+                {
+                    // The frame's main world, not an isolated one: an agent evaluating here is reading
+                    // what the application defined, and an isolated world is precisely where that is
+                    // not visible.
+                    var scope = pageService.GetActiveFrame();
+                    var pageResult = scope is null
+                        ? await page.EvaluateAsync<JsonElement>(expression).ConfigureAwait(false)
+                        : await scope.EvaluateAsync<JsonElement>(expression).ConfigureAwait(false);
+                    return EvaluationResult(pageResult);
+                }
 
-            var locator = pageService.GetSnapshotService(page).ResolveRef(@ref);
-            var elementResult = await locator.EvaluateWithElementAsync<JsonElement>(expression).ConfigureAwait(false);
-            return EvaluationResult(elementResult);
+                var locator = pageService.GetSnapshotService(page).ResolveRef(@ref, pageService.GetActiveFrame());
+                var elementResult = await locator.EvaluateWithElementAsync<JsonElement>(expression).ConfigureAwait(false);
+                return EvaluationResult(elementResult);
+            }).ConfigureAwait(false);
         }
         catch (SnapshotNotTakenException)
         {

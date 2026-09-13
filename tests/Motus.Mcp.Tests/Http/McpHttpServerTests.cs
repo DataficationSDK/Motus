@@ -25,7 +25,8 @@ public class McpHttpServerTests
         var toolNames = (await client.ListToolsAsync(cancellationToken: cts.Token)).Select(t => t.Name).ToArray();
 
         // A representative tool from each registered class, proving the shared registration runs
-        // over HTTP exactly as it does over stdio.
+        // over HTTP exactly as it does over stdio, and that the optional groups the server was
+        // started with reach it too.
         foreach (var expected in new[]
                  {
                      "navigate", "snapshot", "click", "select_option", "tab_list", "go_back",
@@ -88,7 +89,15 @@ public class McpHttpServerTests
 
     private static Task<McpHttpServerHost.RunningServer> StartAsync(CancellationToken ct, string? token = null)
         => McpHttpServerHost.StartForTestingAsync(
-            new McpHttpServerOptions { Host = "127.0.0.1", Port = 0, Token = token },
+            new McpHttpServerOptions
+            {
+                Host = "127.0.0.1",
+                Port = 0,
+                Token = token,
+                // Every optional group, so the advertisement check above can name a tool from each
+                // registered class.
+                LaunchOptions = new McpServerLaunchOptions { Capabilities = ToolCapabilities.All },
+            },
             ct);
 
     private static async Task<McpClient> ConnectAsync(

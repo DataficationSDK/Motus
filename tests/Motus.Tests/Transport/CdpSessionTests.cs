@@ -54,7 +54,7 @@ public class CdpSessionTests
             TestJsonContext.Default.TestResponse,
             CancellationToken.None);
 
-        _socket.Enqueue("""{"id":1,"result":{"frameId":"frame-1"}}""");
+        _socket.EnqueueRaw("""{"id":1,"result":{"frameId":"frame-1"}}""");
 
         var response = await sendTask;
         Assert.AreEqual("frame-1", response.FrameId);
@@ -73,7 +73,7 @@ public class CdpSessionTests
             TestJsonContext.Default.TestResponse,
             CancellationToken.None);
 
-        _socket.Enqueue("""{"id":1,"result":{"frameId":"frame-1"}}""");
+        _socket.EnqueueRaw("""{"id":1,"result":{"frameId":"frame-1"}}""");
 
         var response = await sendTask;
         Assert.AreEqual("frame-1", response.FrameId);
@@ -90,7 +90,7 @@ public class CdpSessionTests
             TestJsonContext.Default.TestParams,
             CancellationToken.None);
 
-        _socket.Enqueue("""{"id":1,"result":{}}""");
+        _socket.EnqueueRaw("""{"id":1,"result":{}}""");
 
         await sendTask;
         Assert.AreEqual(1, _socket.SentMessages.Count);
@@ -108,7 +108,7 @@ public class CdpSessionTests
             TestJsonContext.Default.TestResponse,
             CancellationToken.None);
 
-        _socket.Enqueue("""{"id":1,"result":{"frameId":"frame-1"}}""");
+        _socket.EnqueueRaw("""{"id":1,"result":{"frameId":"frame-1"}}""");
 
         await sendTask;
 

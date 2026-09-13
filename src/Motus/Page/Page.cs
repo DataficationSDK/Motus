@@ -17,6 +17,14 @@ internal sealed partial class Page : IPage
 
     private readonly ConcurrentDictionary<string, Frame> _frames = new();
 
+    // The frame ids in the order the frames attached. The map above is keyed for lookup, and a
+    // hash table hands its values back in an order that is neither attach order nor document
+    // order and that reshuffles when an entry is added or removed, so the order callers see has to
+    // be kept separately. Every write to either collection goes through EnsureFrame or RemoveFrame
+    // and takes this lock, because frames arrive on the page session pump and on a pump of their
+    // own for every frame the browser puts in its own process.
+    private readonly List<string> _frameOrder = [];
+
     private readonly ConcurrentDictionary<string, int> _frameIdToExecutionContext = new();
 
     // Frames that render in their own process are reached over a session of their own. A frame
@@ -63,7 +71,7 @@ internal sealed partial class Page : IPage
             ? frame
             : throw new InvalidOperationException("Main frame has not been initialized.");
 
-    public IReadOnlyList<IFrame> Frames => _frames.Values.ToList();
+    public IReadOnlyList<IFrame> Frames => OrderedFrames().ToList<IFrame>();
 
     public string Url => _mainFrameId is not null && _frames.TryGetValue(_mainFrameId, out var f)
         ? f.Url
@@ -118,6 +126,12 @@ internal sealed partial class Page : IPage
     internal Touchscreen TouchscreenInternal => _touchscreen;
 
     internal void SetVideoRecorder(VideoRecorder recorder) => _videoRecorder = recorder;
+
+    /// <summary>
+    /// Tells listeners that this page opened another one. Raised by the context once the new page
+    /// is ready to be driven, so a handler can act on it without waiting for anything else.
+    /// </summary>
+    internal void RaisePopup(Abstractions.IPage popup) => Popup?.Invoke(this, popup);
 
     // Upload payloads are staged on disk and read lazily by the browser, so the
     // backing directories must survive until the page goes away (see
@@ -204,7 +218,7 @@ internal sealed partial class Page : IPage
     private void RecordFrameTreeNode(PageFrameTreeNode node, IMotusSession source)
     {
         var info = node.Frame;
-        var frame = _frames.GetOrAdd(info.Id, id => new Frame(this, id, info.ParentId));
+        var frame = EnsureFrame(info.Id, info.ParentId);
         frame.Url = info.Url;
         frame.Name = info.Name;
 
@@ -274,7 +288,66 @@ internal sealed partial class Page : IPage
         _frames.TryGetValue(frameId, out frame);
 
     internal IReadOnlyList<IFrame> GetChildFrames(string parentFrameId) =>
-        _frames.Values.Where(f => f.ParentFrameId == parentFrameId).ToList<IFrame>();
+        OrderedFrames().Where(f => f.ParentFrameId == parentFrameId).ToList<IFrame>();
+
+    /// <summary>
+    /// Records a frame, or returns the one already recorded under that id.
+    /// </summary>
+    /// <remarks>
+    /// Every path that learns of a frame comes through here, so a frame joins the order once, when
+    /// it attaches, whichever of the frame tree, a navigation and an attach event reached it first.
+    /// </remarks>
+    private Frame EnsureFrame(string frameId, string? parentFrameId)
+    {
+        lock (_frameOrder)
+        {
+            if (_frames.TryGetValue(frameId, out var existing))
+                return existing;
+
+            var frame = new Frame(this, frameId, parentFrameId);
+            _frames[frameId] = frame;
+
+            // A frame whose place was held for it is being handed back after a change of process,
+            // so it keeps the slot it had rather than going on the end.
+            if (!_frameOrder.Contains(frameId))
+                _frameOrder.Add(frameId);
+
+            return frame;
+        }
+    }
+
+    /// <summary>
+    /// Drops a frame from the page, returning it when it was there.
+    /// </summary>
+    /// <param name="frameId">The frame to drop.</param>
+    private Frame? RemoveFrame(string frameId)
+    {
+        lock (_frameOrder)
+        {
+            _frameOrder.Remove(frameId);
+            _frames.TryRemove(frameId, out var frame);
+            return frame;
+        }
+    }
+
+    /// <summary>
+    /// The page's frames in the order they attached, which for frames that share a parent is the
+    /// order their elements appear in the document unless the page inserted one later.
+    /// </summary>
+    private List<Frame> OrderedFrames()
+    {
+        lock (_frameOrder)
+        {
+            var frames = new List<Frame>(_frameOrder.Count);
+            foreach (var id in _frameOrder)
+            {
+                if (_frames.TryGetValue(id, out var frame))
+                    frames.Add(frame);
+            }
+
+            return frames;
+        }
+    }
 
     internal int? GetExecutionContextId(string frameId) =>
         _frameIdToExecutionContext.TryGetValue(frameId, out var id) ? id : null;

@@ -109,9 +109,9 @@ public class PageSessionIntegrationTests
         AssertOk(await PageTools.ReloadAsync(service, ct), "reload");
 
         // Contexts: create, switch back to default, and close.
-        AssertOk(await SessionTools.ContextCreateAsync("userB", service, ct), "context_create");
-        AssertOk(SessionTools.ContextSelect(BrowserSessionManager.DefaultContextName, service, ct), "context_select");
-        AssertOk(await SessionTools.ContextCloseAsync("userB", service, ct), "context_close");
+        AssertOk(await ContextTools.ContextCreateAsync("userB", service, ct), "context_create");
+        AssertOk(ContextTools.ContextSelect(BrowserSessionManager.DefaultContextName, service, ct), "context_select");
+        AssertOk(await ContextTools.ContextCloseAsync("userB", service, ct), "context_close");
     }
 
     private static void AssertOk(CallToolResult result, string label)

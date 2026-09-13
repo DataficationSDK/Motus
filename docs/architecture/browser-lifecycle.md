@@ -24,7 +24,7 @@ The launch sequence runs in the following order:
 
 3. **Firefox detection.** `IsFirefoxChannel` returns `true` when the channel is `BrowserChannel.Firefox` or when the resolved executable filename contains `"firefox"` (case-insensitive). This flag drives every subsequent branch.
 
-4. **Port allocation.** `AllocateFreePort()` binds a `TcpListener` on `IPAddress.Loopback:0`, reads the OS-assigned port from `LocalEndpoint`, then immediately stops the listener. The port is passed to the browser as the remote debugging port.
+4. **Transport choice.** A Chromium browser on Unix is driven over a pipe: `--remote-debugging-pipe` tells the browser to read commands on file descriptor 3 and write on 4, and the browser exits when its end of that pipe closes, so it cannot outlive the process that started it. Firefox has no pipe mode, and Windows offers no way to hand a child arbitrary descriptors, so both keep a debugging port. When a port is needed, `AllocateFreePort()` binds a `TcpListener` on `IPAddress.Loopback:0`, reads the OS-assigned port from `LocalEndpoint`, then immediately stops the listener.
 
 5. **Profile directory.**
    - For Chromium channels: if `options.UserDataDir` is `null`, a temporary directory is created at `{Path.GetTempPath()}/motus-profile-{8-char guid}`. The `ownsTempDir` flag is set to `true` so the directory is deleted on cleanup.
@@ -32,11 +32,14 @@ The launch sequence runs in the following order:
 
 6. **Process start.** A `ProcessStartInfo` is built with `UseShellExecute = false`, `RedirectStandardOutput = true`, and `RedirectStandardError = true`. Arguments are added via `ArgumentList` (not `Arguments`) so that paths with spaces are handled correctly without manual quoting. For Firefox, environment variables from `FirefoxArgs.Build` are also applied.
 
+   A browser on the pipe transport is started through `/bin/sh -c 'exec "$0" "$@" 3<&0 4>&1 1>/dev/null'`, because the process API offers no way to give a child an arbitrary file descriptor. The shell copies this process's end of the redirected standard input onto descriptor 3 and of the redirected standard output onto descriptor 4, points standard output at nothing so the browser's own logging cannot be mistaken for protocol traffic, and then replaces itself with the browser, so the process handle still refers to the browser. Standard output then carries CDP rather than diagnostics, and only standard error is drained.
+
 7. **Transport connection.**
-   - **Chromium:** `CdpEndpointPoller.WaitForEndpointAsync` polls the `/json/version` HTTP endpoint on the allocated port until the browser is ready, then returns a WebSocket URL. A `CdpTransport` wraps a `CdpSocket` and connects to that URL. An optional `SlowMo` delay (milliseconds) is wired into the transport.
+   - **Chromium on a pipe:** a `CdpTransport` wraps a `CdpPipeSocket` over the redirected streams and is started rather than connected, since the pipes are already open. Each message is a JSON document followed by a NUL byte in both directions. There is no endpoint to discover and nothing to poll.
+   - **Chromium on a port:** `CdpEndpointPoller.WaitForEndpointAsync` polls the `/json/version` HTTP endpoint on the allocated port until the browser is ready, then returns a WebSocket URL. A `CdpTransport` wraps a `CdpSocket` and connects to that URL. An optional `SlowMo` delay (milliseconds) is wired into the transport.
    - **Firefox:** `FirefoxEndpointReader.WaitForEndpointAsync` reads the process's stderr stream to discover the WebSocket BiDi endpoint. A `BiDiTransport` connects and negotiates an initial session.
 
-8. **Browser object construction.** A `Browser` instance is created with the transport, session registry, process handle, temp dir path (if owned), and signal-handler flags. `InitializeAsync` then sends `Browser.getVersion` over the browser-level CDP/BiDi session to populate `IBrowser.Version` and sets `IsConnected = true`.
+8. **Browser object construction.** A `Browser` instance is created with the transport, session registry, process handle, temp dir path (if owned), signal-handler flags, and on Windows a job object that ends the browser when this process's handles close. `InitializeAsync` then sends `Browser.getVersion` over the browser-level CDP/BiDi session to populate `IBrowser.Version` and sets `IsConnected = true`.
 
 **Error handling:** if any step after process start throws, the process is killed with `entireProcessTree: true`, disposed, and the temp directory deleted before the exception propagates.
 
@@ -275,10 +278,18 @@ Both handlers are guarded by an `Interlocked.CompareExchange` on `_disconnectedF
 
 When a browser is launched (not connected), signal handlers are registered if the corresponding `LaunchOptions` flags are set:
 
-- `HandleSIGINT` (default `true`): hooks `Console.CancelKeyPress`, cancels the event (preventing immediate process exit), and calls `CloseAsync` asynchronously.
-- `HandleSIGTERM` (default `true`): hooks `AppDomain.CurrentDomain.ProcessExit` and calls `CloseAsync` asynchronously.
+- `HandleSIGINT` (default `true`): registers for SIGINT on Unix, and hooks `Console.CancelKeyPress` on Windows, where Ctrl+C arrives as a console control event instead.
+- `HandleSIGTERM` (default `true`): registers for SIGTERM and SIGHUP on Unix. A closed terminal ends a process the same way a kill does and leaves the same browser behind, so it is covered by the same flag. Windows has neither signal, so this flag does nothing there.
 
-Both handlers are removed in `DisposeAsync` via `UnregisterSignalHandlers`. Signal handlers are never registered for browsers obtained via `ConnectAsync`.
+The handler closes the browser and waits for it, up to five seconds, then ends the browser process outright if the close has not finished. The wait is the point: a handler that starts the close and returns would let the process end with the close half sent, and the browser would keep running with nothing left that knows about it.
+
+None of the signals is cancelled, so each keeps its ordinary meaning and the process still ends on it. What the handler changes is the order, closing the browser first while there is still something running that knows about it.
+
+Signals rather than `AppDomain.CurrentDomain.ProcessExit`, because that event does not fire for a signal on Unix at all. A process sent SIGTERM or SIGINT is ended by the operating system and nothing managed runs on the way out, so a browser left to that event is a browser left running.
+
+Handlers are released in `CloseAsync`, `DisconnectAsync` and `DisposeAsync` via `UnregisterSignalHandlers`. Signal handlers are never registered for browsers obtained via `ConnectAsync`, because a browser Motus did not start is not Motus's to end.
+
+SIGKILL cannot be caught by anything, so none of the above applies to it. What covers that case is the transport: a browser driven over a pipe sees its end close when this process dies, however it died, and exits. That is also why a browser context Motus creates in a browser it started is not marked `disposeOnDetach`. A browser that answers a detach by disposing contexts does not also act on the connection having closed, and would keep running with nothing left in it.
 
 ---
 
