@@ -258,13 +258,17 @@ public static class MotusLauncher
         // caller's timeout and no step can extend it.
         var poller = new CdpEndpointPoller();
 
+        // The poller keeps a deadline of its own and the budget above cancels it at the same
+        // moment, so which of the two speaks first is a matter of timing. Both mean the same thing
+        // and are reported in the same words.
         Uri wsEndpoint;
         try
         {
             wsEndpoint = await ResolveWebSocketEndpointAsync(endpoint, timeout, poller, readyCts.Token)
                 .ConfigureAwait(false);
         }
-        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        catch (Exception ex) when (ex is MotusTimeoutException
+                                   || (ex is OperationCanceledException && !ct.IsCancellationRequested))
         {
             throw new MotusTimeoutException(
                 timeoutDuration: timeout,
