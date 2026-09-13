@@ -88,9 +88,9 @@ public class ToolArgumentTests
     [TestMethod]
     public async Task ContextTools_WithoutAName_NameTheArgument()
     {
-        AssertRequires("name", await SessionTools.ContextCreateAsync(null!, Pages(), Ct));
-        AssertRequires("name", SessionTools.ContextSelect(null!, Pages(), Ct));
-        AssertRequires("name", await SessionTools.ContextCloseAsync(null!, Pages(), Ct));
+        AssertRequires("name", await ContextTools.ContextCreateAsync(null!, Pages(), Ct));
+        AssertRequires("name", ContextTools.ContextSelect(null!, Pages(), Ct));
+        AssertRequires("name", await ContextTools.ContextCloseAsync(null!, Pages(), Ct));
     }
 
     [TestMethod]
@@ -99,13 +99,13 @@ public class ToolArgumentTests
         var pages = new FakeNetworkPageService();
         var network = new NetworkService();
 
-        AssertRequires("url_pattern", await NetworkTools.RouteFulfillAsync(
+        AssertRequires("url_pattern", await RoutingTools.RouteFulfillAsync(
             null!, pages, network, Ct, status: null, body: null, content_type: null, headers: null));
-        AssertRequires("url_pattern", await NetworkTools.RouteAbortAsync(
+        AssertRequires("url_pattern", await RoutingTools.RouteAbortAsync(
             null!, pages, network, Ct, error_code: null));
-        AssertRequires("url_pattern", await NetworkTools.RouteContinueAsync(
+        AssertRequires("url_pattern", await RoutingTools.RouteContinueAsync(
             null!, pages, network, Ct, url: null, method: null, headers: null, post_data: null));
-        AssertRequires("url_pattern", await NetworkTools.UnrouteAsync(null!, pages, network, Ct));
+        AssertRequires("url_pattern", await RoutingTools.UnrouteAsync(null!, pages, network, Ct));
     }
 
     [TestMethod]
@@ -131,9 +131,9 @@ public class ToolArgumentTests
             await InteractionTools.UploadFilesAsync(null!, null!, Pages(), Ct),
             await InteractionTools.WaitForElementAsync(null!, null!, Pages(), Ct),
             await PageTools.EvaluateAsync(null!, Pages(), Ct, @ref: null),
-            await SessionTools.ContextCreateAsync(null!, Pages(), Ct),
-            SessionTools.ContextSelect(null!, Pages(), Ct),
-            await SessionTools.ContextCloseAsync(null!, Pages(), Ct),
+            await ContextTools.ContextCreateAsync(null!, Pages(), Ct),
+            ContextTools.ContextSelect(null!, Pages(), Ct),
+            await ContextTools.ContextCloseAsync(null!, Pages(), Ct),
             await BrowserTools.BrowserAttachAsync(null!, Pages(), Ct),
         };
 

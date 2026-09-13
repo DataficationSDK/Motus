@@ -110,7 +110,7 @@ public static class McpHttpServerHost
                     }
                 };
             });
-        mcpBuilder.AddMotusTools();
+        mcpBuilder.AddMotusTools(launchOptions);
 
         var app = builder.Build();
 

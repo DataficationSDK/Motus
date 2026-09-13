@@ -239,14 +239,17 @@ public class ActivePageService
     }
 
     /// <summary>
-    /// Lists the frames of the active page in document order, the main frame first, each with how
-    /// deeply it is nested. The index of each entry is what <see cref="SelectFrameAsync"/> takes.
+    /// Lists the frames of the active page, the main frame first and every other frame after the
+    /// one that holds it, each with how deeply it is nested. The index of each entry is what
+    /// <see cref="SelectFrameAsync"/> takes.
     /// </summary>
     /// <remarks>
     /// The tree is walked from the main frame rather than read from <see cref="IPage.Frames"/>, so
-    /// the order is the order of the documents rather than the order they happened to be
-    /// discovered in. A frame that arrives late, which is the ordinary case for one the browser
-    /// puts in its own process, would otherwise land in an arbitrary place in the list.
+    /// a frame always follows its parent rather than landing wherever it happened to be discovered.
+    /// A frame that arrives late, which is the ordinary case for one the browser puts in its own
+    /// process, would otherwise turn up in an arbitrary place in the list. Frames that share a
+    /// parent are still in the order the engine holds them, which is not necessarily the order
+    /// their elements appear in the document.
     /// </remarks>
     public virtual async Task<IReadOnlyList<FrameEntry>> ListFramesAsync(CancellationToken cancellationToken = default)
     {

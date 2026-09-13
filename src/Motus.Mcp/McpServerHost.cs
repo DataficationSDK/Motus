@@ -56,7 +56,7 @@ public static class McpServerHost
 
         var mcpBuilder = builder.Services.AddMcpServer(McpServerConfiguration.ConfigureServerOptions);
         configureTransport(mcpBuilder);
-        mcpBuilder.AddMotusTools();
+        mcpBuilder.AddMotusTools(options);
 
         using var host = builder.Build();
 

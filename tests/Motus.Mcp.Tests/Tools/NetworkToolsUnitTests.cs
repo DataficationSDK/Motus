@@ -18,7 +18,7 @@ public class NetworkToolsUnitTests
         var network = new NetworkService();
         var headers = new Dictionary<string, string> { ["X-Test"] = "1" };
 
-        var result = await NetworkTools.RouteFulfillAsync(
+        var result = await RoutingTools.RouteFulfillAsync(
             url_pattern: "*api*",
             pageService: pages,
             networkService: network,
@@ -46,7 +46,7 @@ public class NetworkToolsUnitTests
         var pages = new FakeNetworkPageService();
         var network = new NetworkService();
 
-        var result = await NetworkTools.RouteAbortAsync(
+        var result = await RoutingTools.RouteAbortAsync(
             url_pattern: "*track*",
             pageService: pages,
             networkService: network,
@@ -66,7 +66,7 @@ public class NetworkToolsUnitTests
         var pages = new FakeNetworkPageService();
         var network = new NetworkService();
 
-        var result = await NetworkTools.RouteContinueAsync(
+        var result = await RoutingTools.RouteContinueAsync(
             url_pattern: "*api*",
             pageService: pages,
             networkService: network,
@@ -89,7 +89,7 @@ public class NetworkToolsUnitTests
     {
         var pages = new FakeNetworkPageService();
         var network = new NetworkService();
-        await NetworkTools.RouteFulfillAsync(
+        await RoutingTools.RouteFulfillAsync(
             url_pattern: "*api*",
             pageService: pages,
             networkService: network,
@@ -99,7 +99,7 @@ public class NetworkToolsUnitTests
             content_type: null,
             headers: null);
 
-        var result = await NetworkTools.UnrouteAsync("*api*", pages, network, Ct);
+        var result = await RoutingTools.UnrouteAsync("*api*", pages, network, Ct);
 
         Assert.IsFalse(result.IsError ?? false);
         StringAssert.Contains(TextOf(result), "Removed");
@@ -111,7 +111,7 @@ public class NetworkToolsUnitTests
         var pages = new FakeNetworkPageService();
         var network = new NetworkService();
 
-        var result = await NetworkTools.UnrouteAsync("*api*", pages, network, Ct);
+        var result = await RoutingTools.UnrouteAsync("*api*", pages, network, Ct);
 
         Assert.IsFalse(result.IsError ?? false);
         StringAssert.Contains(TextOf(result), "No mock");
@@ -123,7 +123,7 @@ public class NetworkToolsUnitTests
         var pages = new FakeNetworkPageService();
         var network = new NetworkService();
 
-        var result = await NetworkTools.RouteListAsync(pages, network, Ct);
+        var result = await RoutingTools.RouteListAsync(pages, network, Ct);
 
         Assert.IsFalse(result.IsError ?? false);
         StringAssert.Contains(TextOf(result), "No mocks");
@@ -134,7 +134,7 @@ public class NetworkToolsUnitTests
     {
         var pages = new FakeNetworkPageService();
         var network = new NetworkService();
-        await NetworkTools.RouteFulfillAsync(
+        await RoutingTools.RouteFulfillAsync(
             url_pattern: "*api*",
             pageService: pages,
             networkService: network,
@@ -143,14 +143,14 @@ public class NetworkToolsUnitTests
             body: null,
             content_type: null,
             headers: null);
-        await NetworkTools.RouteAbortAsync(
+        await RoutingTools.RouteAbortAsync(
             url_pattern: "*track*",
             pageService: pages,
             networkService: network,
             cancellationToken: Ct,
             error_code: null);
 
-        var result = await NetworkTools.RouteListAsync(pages, network, Ct);
+        var result = await RoutingTools.RouteListAsync(pages, network, Ct);
 
         var text = TextOf(result);
         StringAssert.Contains(text, "*api* -> Fulfill");
@@ -270,7 +270,7 @@ public class NetworkToolsUnitTests
         var pages = new ThrowingContextService();
         var network = new NetworkService();
 
-        var result = await NetworkTools.RouteFulfillAsync(
+        var result = await RoutingTools.RouteFulfillAsync(
             url_pattern: "*api*",
             pageService: pages,
             networkService: network,
@@ -304,7 +304,7 @@ public class NetworkToolsUnitTests
         var pages = new FakeNetworkPageService();
         var network = new NetworkService();
 
-        var result = await NetworkTools.RouteFulfillAsync(
+        var result = await RoutingTools.RouteFulfillAsync(
             url_pattern: "*api*",
             pageService: pages,
             networkService: network,
@@ -323,7 +323,7 @@ public class NetworkToolsUnitTests
         var pages = new FakeNetworkPageService();
         var network = new NetworkService();
 
-        var result = await NetworkTools.RouteContinueAsync(
+        var result = await RoutingTools.RouteContinueAsync(
             url_pattern: "*api*",
             pageService: pages,
             networkService: network,

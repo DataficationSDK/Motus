@@ -2,13 +2,13 @@
 
 Motus ships a [Model Context Protocol](https://modelcontextprotocol.io) server so AI agents can drive a real browser through the same engine that powers the test framework. The server is not a separate download. It is a verb on the CLI tool: `motus mcp`. Once `Motus.Cli` is installed as a global tool, any MCP client (Claude Code, Claude Desktop, or anything that speaks the protocol) can launch the server and call its tools.
 
-The server exposes browser automation as structured tools: navigate a page, take an accessibility snapshot, click and type against elements, intercept network traffic, run accessibility and performance audits, record traces, and generate Page Object Model code. Perception is built on the browser's accessibility tree rather than raw pixels, so an agent reasons over a compact, labeled element list and addresses elements by stable reference.
+The server exposes browser automation as structured tools: navigate a page, take an accessibility snapshot, click and type against elements, read the console and network logs, run accessibility and performance audits, and generate Page Object Model code. Coordinate input, request mocking, isolated contexts, and recording are there too, asked for by name with `--caps`. Perception is built on the browser's accessibility tree rather than raw pixels, so an agent reasons over a compact, labeled element list and addresses elements by stable reference.
 
 ---
 
 ## Prerequisites
 
-- [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0) or later. The tool targets `net8.0` and rolls forward, so a machine with only the .NET 10 runtime works as well.
+- [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0) or later. The tool ships builds for `net8.0` and `net10.0`, and the `net8.0` build rolls forward, so any runtime from 8 upwards works.
 - The `Motus.Cli` global tool.
 - A browser. `motus install` downloads Chromium; the server can also drive an already-installed Chrome, Edge, or Firefox.
 
@@ -95,34 +95,59 @@ printf '%s\n' \
   | motus mcp
 ```
 
-The server responds with an `initialize` result identifying itself as `motus`, followed by a `tools/list` result enumerating every available tool. A navigate-then-snapshot exchange exercises a live browser end to end: send a `tools/call` for `navigate` with a `url`, wait for the browser to launch, then a `tools/call` for `snapshot`. The snapshot result is an indented accessibility tree with a `[ref=...]` on each addressable node, which is what an agent uses to target elements.
+The server responds with an `initialize` result identifying itself as `motus`, followed by a `tools/list` result enumerating the tools this server was started with. Adding `--caps` to the command at the end of that pipeline is how to see what a group adds. A navigate-then-snapshot exchange exercises a live browser end to end: send a `tools/call` for `navigate` with a `url`, wait for the browser to launch, then a `tools/call` for `snapshot`. The snapshot result is an indented accessibility tree with a `[ref=...]` on each addressable node, which is what an agent uses to target elements.
 
 ---
 
 ## Tools
 
-The server groups its tools by capability. Each tool returns structured content and never throws across the protocol boundary; failures come back as an error result the agent can read.
+Every tool the server advertises is described to the client the moment it connects, whether the agent ever calls it or not, so a catalog costs something in every conversation before any work is done. What an agent needs to read a page, act on it, and find out what happened is therefore always there, and the rest is grouped and named on `--caps`. Each tool returns structured content and never throws across the protocol boundary; failures come back as an error result the agent can read.
+
+### Always available
+
+These 34 tools are the working set. They need no option and cannot be turned off.
 
 | Area | Tools |
 |---|---|
-| Navigation | `navigate`, `go_back`, `go_forward`, `reload`, `wait_for` |
+| Navigation | `navigate`, `go_back`, `go_forward`, `reload` |
 | Perception | `snapshot`, `screenshot`, `audit_accessibility`, `get_performance` |
-| Interaction | `click`, `type`, `press`, `press_key`, `hover`, `focus`, `clear`, `select_option`, `set_checked`, `scroll_into_view`, `upload_files`, `wait_for_element` |
-| Coordinate interaction | `click_xy`, `hover_xy`, `move_xy`, `scroll_xy`, `drag`, `resize` |
-| Tabs and contexts | `tab_list`, `tab_open`, `tab_select`, `tab_close`, `context_list`, `context_create`, `context_select`, `context_close` |
+| Interaction | `click`, `type`, `press`, `press_key`, `hover`, `focus`, `clear`, `select_option`, `set_checked`, `scroll_into_view`, `upload_files`, `wait_for_element`, `wait_for` |
+| Tabs | `tab_list`, `tab_open`, `tab_select`, `tab_close` |
+| Browser | `browser_status` |
 | Frames | `frame_list`, `frame_select` |
-| Browser | `browser_attach`, `browser_status` |
 | Scripting | `evaluate` |
 | Dialogs | `handle_dialog` |
-| Network | `route_fulfill`, `route_abort`, `route_continue`, `unroute`, `route_list`, `network_requests`, `network_request` |
-| Console | `console_messages` |
-| Recording and codegen | `generate_pom`, `trace_start`, `trace_stop`, `har_start`, `har_stop`, `video_start`, `video_stop` |
+| Logs | `console_messages`, `network_requests`, `network_request` |
+| Code generation | `generate_pom` |
+
+### Added on request
+
+The groups below are the ones a session either leans on throughout or never touches at all, which is what makes them worth naming rather than carrying everywhere.
+
+| Group | Turned on by | Tools |
+|---|---|---|
+| Coordinate interaction | `--caps coordinates` | `click_xy`, `hover_xy`, `move_xy`, `scroll_xy`, `drag`, `resize` |
+| Recording | `--caps recording` | `trace_start`, `trace_stop`, `har_start`, `har_stop`, `video_start`, `video_stop` |
+| Isolated contexts | `--caps contexts` | `context_list`, `context_create`, `context_select`, `context_close` |
+| Request mocking | `--caps routing` | `route_fulfill`, `route_abort`, `route_continue`, `unroute`, `route_list` |
+| A browser that is already running | `--allow-attach` or `--connect` | `browser_attach` |
+
+Ask for more than one group with commas or by repeating the flag, whichever reads better in the client configuration:
+
+```bash
+claude mcp add motus -- motus mcp --caps coordinates,recording
+claude mcp add motus -- motus mcp --caps coordinates --caps recording
+```
+
+Naming a group only ever adds to the catalog. There is no way to drop a tool from the always-available set, so an agent written against the default server keeps working against any other.
+
+Attaching is the exception to the pattern, because it is already governed by an option: `browser_attach` is listed when the server was started with `--allow-attach` or `--connect`, and left out otherwise. A tool that is going to refuse every call teaches an agent to keep trying it, and saying nothing is clearer than refusing repeatedly.
 
 Elements are addressed by the `ref` values returned in a snapshot, or by a selector. Take a `snapshot`, then pass a node's `ref` to `click`, `type`, or another interaction tool. References are relative to the most recent snapshot, so take a fresh snapshot after the page changes.
 
 Anywhere a `ref` is accepted, a selector is accepted in its place: CSS by default (`#submit`, `button.primary`), or prefixed with `xpath=`, `text=`, `role=`, or `data-testid=`. A selector needs no snapshot at all, so it is what to reach for when the refs in hand have gone stale, or when you already know a stable selector for the element and would rather say it than look it up. Anything shaped like a ref (`e5`, or `f1e5` for an element inside a frame) is read as one, so a ref the latest snapshot no longer holds still comes back as a stale ref rather than as a selector that matched nothing. A selector is searched in the selected frame when one is selected, and in the page otherwise.
 
-`click` also takes `button` (`left`, `right`, or `middle`) and `modifiers` (any of `Alt`, `Control`, `Meta`, `Shift`), so a context menu or a ctrl-click is reachable on an element rather than only at a coordinate. Both run the same actionability checks as a plain click: the element has to be visible, enabled, settled, and receiving events first. A double-click is left-button only; use `click_xy` for a double-click with a button or modifiers.
+`click` also takes `button` (`left`, `right`, or `middle`) and `modifiers` (any of `Alt`, `Control`, `Meta`, `Shift`), so a context menu or a ctrl-click is reachable on an element rather than only at a coordinate. Both run the same actionability checks as a plain click: the element has to be visible, enabled, settled, and receiving events first. A double-click is left-button only; for a double-click with a button or modifiers, use `click_xy` from the coordinate group.
 
 ### What a snapshot contains
 
@@ -227,7 +252,7 @@ The browser does not hand frames over with the page, so each one is read separat
 
 Two tools remain for the things a ref cannot do:
 
-1. `frame_list` lists the frames in document order with their nesting depth. Index 0 is the page itself, and each index is the one the snapshot printed as `[frame=N]`.
+1. `frame_list` lists the frames with their nesting depth, each one after the frame that holds it. Index 0 is the page itself, and each index is the one the snapshot printed as `[frame=N]`. Frames at the same level come in the order the browser reports them, which is not always the order they appear in the page.
 2. `frame_select <index>` scopes the session to one frame. `frame_select 0` returns to the page.
 
 Scope is what `evaluate` and the `wait_for` text conditions need, since those name no element and so have no frame of their own to work from. It also narrows `snapshot`, which then describes that one frame on its own with plain `e1`, `e2` refs, and it decides where a selector is searched. Refs need no scope either way: a ref keeps addressing the document it was read from, even after the scope moves on. Selection resets on navigation and on switching tab or context, since the frame it named is gone by then.
@@ -244,18 +269,24 @@ By default the server starts a browser and ends it on shutdown. Pointed at a bro
 motus mcp --connect http://127.0.0.1:9222
 ```
 
-An agent can also attach at any point with `browser_attach`, which is what to reach for when the endpoint is not known at the time the MCP client is configured. That tool refuses unless the server was started with `--allow-attach` or `--connect`: a browser that is already running may hold somebody's signed-in sessions, so which browser the session drives stays the operator's decision. `browser_status` reports which browser is being driven and whether the server started it. Attaching closes the browser the server started, if any, and drops snapshot refs, route rules, and captured console output, so take a fresh snapshot afterwards.
+An agent can also attach at any point with `browser_attach`, which is what to reach for when the endpoint is not known at the time the MCP client is configured. That tool is in the catalog only when the server was started with `--allow-attach` or `--connect`: a browser that is already running may hold somebody's signed-in sessions, so which browser the session drives stays the operator's decision. `browser_status`, which reports which browser is being driven and whether the server started it, is always there. Attaching closes the browser the server started, if any, and drops snapshot refs, route rules, and captured console output, so take a fresh snapshot afterwards.
+
+```bash
+motus mcp --allow-attach
+```
 
 Two consequences are worth knowing:
 
-- **Options that describe starting a browser have nothing to act on.** `--headless`, `--channel`, `--executable-path`, `--browser-arg`, `--user-data-dir`, `--viewport`, `--storage-state`, `--user-agent`, `--locale`, `--timezone`, the proxy options, `--record-video` and `--show-cursor` bind either at launch or at context creation, and an attached session does neither: it adopts the context the browser is already using. The server says so on startup rather than ignoring them silently. The `resize` tool still changes a page's viewport at runtime.
+- **Options that describe starting a browser have nothing to act on.** `--headless`, `--channel`, `--executable-path`, `--browser-arg`, `--user-data-dir`, `--viewport`, `--storage-state`, `--user-agent`, `--locale`, `--timezone`, the proxy options, `--record-video` and `--show-cursor` bind either at launch or at context creation, and an attached session does neither: it adopts the context the browser is already using. The server says so on startup rather than ignoring them silently. The `resize` tool still changes a page's viewport at runtime, with `--caps coordinates`.
 - **`--http` with `--connect` means clients share one browser.** The HTTP transport otherwise gives each connected client its own isolated browser. Pointed at one endpoint, every session drives the same browser, and so shares its tabs and cookies.
 
-`tab_close` and `context_close` mean more against an attached browser: they discard somebody's working state rather than scratch state. An adopted context is never disposed by the server, so its windows survive even when the session lets go of it.
+`tab_close`, and `context_close` where the contexts group is on, mean more against an attached browser: they discard somebody's working state rather than scratch state. An adopted context is never disposed by the server, so its windows survive even when the session lets go of it.
 
 A debugging port grants complete control of the browser and every session inside it. [Attaching to a Running Browser](attaching-to-a-running-browser.md) covers that in full, along with how to start a browser with the port open.
 
 ### Coordinate interaction
+
+Start the server with `--caps coordinates` for the tools in this section.
 
 Some applications render their interface to a `<canvas>` or another custom surface, so the accessibility tree has nothing to address and ref-based tools have nothing to bind to. When that happens, `snapshot` says so explicitly and the coordinate tools take over. The workflow is perception by screenshot instead of by tree:
 
@@ -268,6 +299,8 @@ All coordinate input is dispatched as trusted browser-level events, exactly like
 `drag` accepts either elements (`start_ref`/`end_ref`, each a ref or a selector) or coordinates (`start_x`/`start_y`/`end_x`/`end_y`), one addressing mode per call, so it works on semantic DOM and canvas surfaces alike. Intermediate pointer moves are always emitted, with `steps` and `hold_ms` available for libraries that threshold or debounce drag starts.
 
 ### Video recording
+
+Start the server with `--caps recording` for the tools in this section, and for `trace_start`, `trace_stop`, `har_start`, and `har_stop` alongside them.
 
 `video_start` and `video_stop` record the active page to a video file, following the same start/stop convention as traces and HARs: stopping finalizes the file and returns its path, and an omitted path is auto-generated in the server's output directory. The capture runs at the viewport's resolution.
 
@@ -287,25 +320,26 @@ To record everything without per-page tool calls, launch the server with `--reco
 |---|---|---|
 | `--connect` | _(none)_ | Drive a browser that is already running instead of starting one. Takes the debugging endpoint it was started with (`http://127.0.0.1:9222`) or its CDP WebSocket URL. The browser is never closed by the server, and the options that describe starting one no longer apply. |
 | `--headless` | `true` | Run the browser without a visible window. Pass `--headless false` to watch the agent drive a real window. |
-| `--channel` | `chromium` | Browser to drive: `chromium`, `chrome`, `edge`, or `firefox`. A channel named here has to be installed: the server stops with an error rather than starting a different browser in its place. Snapshot refs need a Chromium-based browser, because the accessibility tree they are built from is read over the Chrome DevTools Protocol; on Firefox the `snapshot` tool says so rather than describing the page, and the coordinate tools (`click_xy`, `hover_xy`, `drag`, `scroll_xy`) still work against a screenshot. |
+| `--channel` | `chromium` | Browser to drive: `chromium`, `chrome`, `edge`, or `firefox`. A channel named here has to be installed: the server stops with an error rather than starting a different browser in its place. Snapshot refs need a Chromium-based browser, because the accessibility tree they are built from is read over the Chrome DevTools Protocol; on Firefox the `snapshot` tool says so rather than describing the page, and the coordinate tools still work against a screenshot, which makes `--caps coordinates` worth adding for a Firefox session. |
 | `--executable-path` | _(none)_ | Start this browser binary instead of resolving one from `--channel`. Pins a session to an exact build, and is the way past a channel the server cannot find. |
 | `--browser-arg` | _(none)_ | An extra command-line argument for the browser. Attach the value with `=`, and repeat the flag for more than one: `--browser-arg=--no-sandbox --browser-arg=--disable-dev-shm-usage`. Chromium refuses to start as root, so a container usually needs `--no-sandbox`. |
 | `--user-data-dir` | _(none)_ | Browser profile directory. Cookies, history, and signed-in sessions persist in it between runs instead of every session starting clean. |
 | `--storage-state` | _(none)_ | Seed every context with the cookies and local storage saved in this file, as written by `IBrowserContext.StorageStateAsync`. |
-| `--viewport` | `1280x800` | Viewport size for every page, as `WIDTHxHEIGHT`. The `resize` tool changes it per page at runtime. |
+| `--viewport` | `1280x800` | Viewport size for every page, as `WIDTHxHEIGHT`. The `resize` tool changes it per page at runtime when the coordinate group is on. |
 | `--user-agent` | _(browser default)_ | User agent string every page reports. |
 | `--locale` | _(browser default)_ | Locale every page formats dates, numbers, and sorted text with, such as `en-GB`. |
 | `--timezone` | _(machine default)_ | Time zone every page reports, such as `Europe/Berlin`. |
 | `--proxy-server` | _(none)_ | Send browser traffic through this proxy, such as `http://127.0.0.1:8080`. |
 | `--proxy-bypass` | _(none)_ | Comma-separated hosts that skip the proxy, such as `localhost,*.internal`. Needs `--proxy-server`. |
-| `--timeout` | _(framework default)_ | How long an element action waits for its target, in milliseconds. Applies to every ref-addressed tool. |
+| `--timeout` | _(framework default)_ | How long an element action waits for its target, in milliseconds. Most element tools take it; `select_option`, `press`, `press_key`, and typing with `slowly` keep the framework default, because the calls behind them accept no timeout. |
 | `--navigation-timeout` | _(framework default)_ | How long a navigation waits to finish, in milliseconds. Applies to `navigate`, `reload`, `go_back`, `go_forward`, and `tab_open`. |
 | `--settle` | `500` | How long an action waits, after the browser accepts it, for the page to show what it did before the result is written, in milliseconds. Every action pays it, so keep it short; `0` describes the page the instant the action returns. |
 | `--dialogs` | `ask` | What becomes of a JavaScript dialog the page raises: `accept` answers it, `dismiss` cancels it, and `ask` leaves it pending for `handle_dialog`. |
 | `--record-video` | _(none)_ | Record a video of every page into this directory, one MJPEG AVI per page, finalized when the page closes. |
 | `--show-cursor` | `false` | Draw an on-screen pseudo-cursor in screenshots and recordings. It follows the element's CSS cursor style and shows a click effect. Enables `--natural-mouse` unless that is set explicitly. |
 | `--natural-mouse` | `--show-cursor` | Move the mouse along a curved, eased path instead of jumping to the target, so motion looks human and the page receives a realistic event stream. Pass `--natural-mouse false` to keep the cursor without it. Adds latency to every move. |
-| `--config` | _(none)_ | Read defaults from this `motus.config.json` file, which is how a suite's settings are reused instead of restated. It fills in `--headless`, `--channel`, `--executable-path`, `--viewport`, `--locale`, and `--timeout`; anything given on the command line wins over it. |
+| `--caps` | _(none)_ | Optional tool groups to add to the catalog: `coordinates`, `recording`, `contexts`, `routing`. Separate them with commas or repeat the flag. The always-available tools are there whatever this says, so naming a group only adds to what the agent can call. |
+| `--config` | _(none)_ | Read defaults from this `motus.config.json` file, which is how a suite's settings are reused instead of restated. It fills in `--headless`, `--channel`, `--executable-path`, `--viewport`, `--locale`, `--timeout`, and `--caps` (as `mcp.caps`, an array of group names); anything given on the command line wins over it. |
 | `--http` | `false` | Serve over Streamable HTTP for concurrent remote clients instead of stdio. |
 | `--host` | `127.0.0.1` | Interface to bind when `--http` is set. |
 | `--port` | `8931` | TCP port to listen on when `--http` is set. |
@@ -347,7 +381,7 @@ An agent driving this server acts partly on instructions that came from the page
 - **Writes land in one directory.** `trace_stop`, `har_stop` and `video_start` resolve the path they are given inside the output directory, which is a directory for this run under the system temporary directory unless `--output-dir` names another. The directory is printed to standard error at startup, and every result that writes a file echoes the absolute path it wrote, so an artifact is always findable. An absolute path, a path that climbs out with `..`, and a path that follows a symbolic link out are each refused.
 - **Reads come from the client's roots.** `upload_files` reads a file only from inside one of the roots the MCP client reported for the session. A client that reports none leaves the server's own working directory and the output directory.
 - **`file://` is blocked.** `navigate`, `tab_open`, and the route tools refuse a `file:` URL, including one reached through a redirect a mock sets up. Without this, a page could talk an agent into reading the machine's files back through a snapshot.
-- **Attaching needs an option.** `browser_attach` refuses unless the server was started with `--allow-attach` or `--connect`. The tool stays listed either way, so an agent that needs it can say what to restart with rather than reporting a capability Motus does not have.
+- **Attaching needs an option.** `browser_attach` appears in the catalog only when the server was started with `--allow-attach` or `--connect`, and refuses the call as well if it is ever reached without one. Which browser a session drives is the operator's decision: one that is already running may hold somebody's signed-in sessions.
 
 `--allow-unrestricted-file-access` lifts the first three together. `--allow-attach` lifts the fourth.
 

@@ -245,7 +245,7 @@ On Windows, `motus install` also grants the browser's directory the read and exe
 
 ### MCP Server for AI Agents
 
-Motus exposes its browser engine to AI agents through a [Model Context Protocol](https://modelcontextprotocol.io) server, shipped as the `motus mcp` verb on the CLI tool. Agents navigate, snapshot the accessibility tree, click and type against referenced elements, act at raw coordinates on canvas surfaces (including drag and drop), intercept network traffic, run accessibility and performance audits, record traces, HARs, and videos, and generate Page Object Model code, all over stdio or Streamable HTTP.
+Motus exposes its browser engine to AI agents through a [Model Context Protocol](https://modelcontextprotocol.io) server, shipped as the `motus mcp` verb on the CLI tool. Agents navigate, snapshot the accessibility tree, click and type against referenced elements, read the console and network logs, run accessibility and performance audits, and generate Page Object Model code, all over stdio or Streamable HTTP. Coordinate input on canvas surfaces (including drag and drop), request interception, isolated contexts, and recording traces, HARs, and videos are named with `--caps`, so a catalog only carries what a session needs.
 
 Register it with Claude Code against the installed tool:
 

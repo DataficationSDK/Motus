@@ -16,6 +16,24 @@ public static class McpCommand
     /// <summary>What <c>--dialogs</c> accepts. Listed once so the help text and the error agree.</summary>
     private static readonly string[] DialogPolicies = ["accept", "dismiss", "ask"];
 
+    /// <summary>The tool group names, for the help text and the error that lists them.</summary>
+    private static string KnownCapabilities => string.Join(", ", ToolCapabilities.All);
+
+    private static string UnknownCapabilityMessage(string name)
+        => $"Unknown --caps value '{name}'. Use one or more of: {KnownCapabilities}.";
+
+    /// <summary>
+    /// Reads the tool group names out of what was typed. A group may be named on a flag of its
+    /// own or in a comma-separated list, because both spellings are natural and a client
+    /// configuration that gets it wrong is awkward to debug from inside an agent.
+    /// </summary>
+    private static string[] SplitCapabilities(IEnumerable<string>? tokens)
+        => tokens is null
+            ? []
+            : tokens
+                .SelectMany(token => token.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                .ToArray();
+
     public static Command Build()
     {
         var headlessOpt = new Option<bool>("--headless")
@@ -155,6 +173,22 @@ public static class McpCommand
             Description = "Read defaults from this motus.config.json file. Anything given on the command line "
                 + "wins over it",
         };
+        var capsOpt = new Option<string[]>("--caps")
+        {
+            Description = "Add optional tool groups to the catalog: " + KnownCapabilities + ". Separate them "
+                + "with commas or repeat the flag. The tools an agent needs to read and drive a page are "
+                + "always there; these are added to them",
+            Arity = ArgumentArity.ZeroOrMore,
+            AllowMultipleArgumentsPerToken = true,
+        };
+        capsOpt.Validators.Add(result =>
+        {
+            foreach (var name in SplitCapabilities(result.GetValueOrDefault<string[]?>()))
+            {
+                if (!ToolCapabilities.IsKnown(name))
+                    result.AddError(UnknownCapabilityMessage(name));
+            }
+        });
         var outputDirOpt = new Option<string?>("--output-dir")
         {
             Description = "Directory that tools writing a file (trace_stop, har_stop, video_start) resolve "
@@ -201,6 +235,7 @@ public static class McpCommand
             settleOpt,
             dialogsOpt,
             configOpt,
+            capsOpt,
             outputDirOpt,
             allowFileAccessOpt,
             allowAttachOpt,
@@ -232,6 +267,15 @@ public static class McpCommand
             }
 
             bool Typed(Option option) => parseResult.GetResult(option) is { Implicit: false };
+
+            if (!TryResolveCapabilities(
+                    Typed(capsOpt) ? parseResult.GetValue(capsOpt) : config?.Mcp?.Caps,
+                    out var caps,
+                    out var capsError))
+            {
+                await Console.Error.WriteLineAsync(capsError);
+                return 1;
+            }
 
             var headless = Typed(headlessOpt)
                 ? parseResult.GetValue(headlessOpt)
@@ -364,6 +408,7 @@ public static class McpCommand
                 OutputDirectory = outputDirectory,
                 AllowUnrestrictedFileAccess = parseResult.GetValue(allowFileAccessOpt),
                 AllowAttach = parseResult.GetValue(allowAttachOpt),
+                Capabilities = caps.Length > 0 ? caps : null,
             };
 
             await Console.Error.WriteLineAsync(
@@ -489,6 +534,35 @@ public static class McpCommand
         }
 
         channel = parsed;
+        return true;
+    }
+
+    /// <summary>
+    /// Works out which optional tool groups to register, from what was typed or, failing that,
+    /// from the config file. Returns false, with the message to print, when a name is not one of
+    /// the groups.
+    /// </summary>
+    /// <remarks>
+    /// The command line is a whole answer when it has one: a client that passes <c>--caps</c> says
+    /// exactly which groups it wants rather than adding to whatever the file happened to name, the
+    /// same way every other option here outranks the file.
+    /// </remarks>
+    internal static bool TryResolveCapabilities(
+        IEnumerable<string>? requested, out string[] capabilities, out string? error)
+    {
+        capabilities = SplitCapabilities(requested);
+
+        foreach (var name in capabilities)
+        {
+            if (!ToolCapabilities.IsKnown(name))
+            {
+                error = UnknownCapabilityMessage(name);
+                capabilities = [];
+                return false;
+            }
+        }
+
+        error = null;
         return true;
     }
 

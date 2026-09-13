@@ -86,6 +86,9 @@ internal sealed record MotusShardConfig(
     int? Index = null,
     int? Total = null);
 
+internal sealed record MotusMcpConfig(
+    string[]? Caps = null);
+
 internal sealed record MotusRootConfig(
     string? Motus = null,
     MotusLaunchConfig? Launch = null,
@@ -99,7 +102,8 @@ internal sealed record MotusRootConfig(
     MotusPerformanceConfig? Performance = null,
     MotusCoverageConfig? Coverage = null,
     MotusFlakyConfig? Flaky = null,
-    MotusShardConfig? Shard = null);
+    MotusShardConfig? Shard = null,
+    MotusMcpConfig? Mcp = null);
 
 internal static class MotusConfigLoader
 {

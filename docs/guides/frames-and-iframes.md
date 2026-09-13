@@ -141,7 +141,7 @@ Refs inside frame N read `fNeM`, and any interaction tool takes one and acts ins
 Two tools remain for what a ref cannot express:
 
 ```
-frame_list                  lists the frames in document order, index 0 is the page
+frame_list                  lists the frames, index 0 is the page, each after its parent
 frame_select <index>        scopes the session to that frame; 0 returns to the page
 ```
 

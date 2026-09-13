@@ -73,7 +73,7 @@ public class NetworkConsoleWireTests
         var serverToClient = new Pipe();
 
         var hostTask = McpServerHost.RunAsync(
-            new McpServerLaunchOptions(),
+            new McpServerLaunchOptions { Capabilities = [ToolCapabilities.Routing] },
             builder => builder.WithStreamServerTransport(
                 clientToServer.Reader.AsStream(),
                 serverToClient.Writer.AsStream()),

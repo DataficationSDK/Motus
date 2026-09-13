@@ -137,6 +137,16 @@ public sealed record McpServerLaunchOptions
     /// </summary>
     public string Dialogs { get; init; } = "ask";
 
+    /// <summary>
+    /// The optional tool groups this server adds to its catalog, by the names on
+    /// <see cref="ToolCapabilities"/>. Left null or empty, the catalog is the always-on set.
+    /// </summary>
+    /// <remarks>
+    /// Naming a group only ever adds to the catalog. Nothing here can take a tool away, so a
+    /// client written against the default set keeps working whatever else is asked for.
+    /// </remarks>
+    public IReadOnlyList<string>? Capabilities { get; init; }
+
     /// <summary>Maps these options onto the browser launch options.</summary>
     internal LaunchOptions ToLaunchOptions() => new()
     {

@@ -76,7 +76,7 @@ public class ArtifactWireTests
         var serverToClient = new Pipe();
 
         var hostTask = McpServerHost.RunAsync(
-            new McpServerLaunchOptions(),
+            new McpServerLaunchOptions { Capabilities = [ToolCapabilities.Recording] },
             builder => builder.WithStreamServerTransport(
                 clientToServer.Reader.AsStream(),
                 serverToClient.Writer.AsStream()),

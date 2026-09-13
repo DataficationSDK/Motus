@@ -281,6 +281,9 @@ motus mcp --browser-arg=--no-sandbox
 # Drive a browser that is already running
 motus mcp --connect http://127.0.0.1:9222
 
+# Add the coordinate and recording tools to the catalog
+motus mcp --caps coordinates,recording
+
 # Serve over Streamable HTTP; a non-loopback bind requires a token
 motus mcp --http --host 0.0.0.0 --port 8931 --token "$MOTUS_MCP_TOKEN"
 ```
@@ -302,18 +305,20 @@ motus mcp --http --host 0.0.0.0 --port 8931 --token "$MOTUS_MCP_TOKEN"
 | `--proxy-bypass` | none | Comma-separated hosts that skip the proxy. Needs `--proxy-server`. |
 | `--timeout` | framework default | How long an element action waits for its target, in milliseconds. |
 | `--navigation-timeout` | framework default | How long a navigation waits to finish, in milliseconds. |
+| `--settle` | `500` | How long an action waits, after the browser accepts it, for the page to show what it did before the result is written, in milliseconds. `0` describes the page the instant the action returns. |
 | `--dialogs` | `ask` | What becomes of a JavaScript dialog: `accept`, `dismiss`, or `ask` to leave it for `handle_dialog`. |
 | `--record-video` | none | Record every page into this directory, one MJPEG AVI per page. |
 | `--show-cursor` | `false` | Draw an on-screen pointer and click effects into the page so captures show them. Turns on natural mouse motion unless `--natural-mouse` says otherwise. |
 | `--natural-mouse` | follows `--show-cursor` | Move along curved, eased paths. Pass `--natural-mouse false` to keep the cursor without it. |
-| `--config` | none | Read defaults from this `motus.config.json` file: `--headless`, `--channel`, `--executable-path`, `--viewport`, `--locale`, and `--timeout`. The command line wins over it. |
+| `--caps` | none | Optional tool groups to advertise on top of the always-available ones: `coordinates`, `recording`, `contexts`, `routing`. Separate with commas or repeat the flag. |
+| `--config` | none | Read defaults from this `motus.config.json` file: `--headless`, `--channel`, `--executable-path`, `--viewport`, `--locale`, `--timeout`, and `--caps` (as `mcp.caps`). The command line wins over it. |
 | `--http` | `false` | Serve over Streamable HTTP instead of stdio. |
 | `--host` | `127.0.0.1` | Interface to bind when `--http` is set. |
 | `--port` | `8931` | Port to listen on when `--http` is set. |
 | `--token` | none | Bearer token required on every HTTP request, or set `MOTUS_MCP_TOKEN`. Required for a non-loopback bind. |
 | `--output-dir` | a directory for this run under the temporary directory | Directory that the tools writing a file resolve their paths inside. Printed to standard error at startup. |
 | `--allow-unrestricted-file-access` | `false` | Let tools read and write anywhere on the machine, and open `file://` URLs. |
-| `--allow-attach` | `false` | Let `browser_attach` point the session at a browser that is already running. Implied by `--connect`. |
+| `--allow-attach` | `false` | Advertise `browser_attach` and let it point the session at a browser that is already running. Implied by `--connect`; without either, the tool is not in the catalog. |
 
 `--connect` adopts a browser the server did not start, so the options that describe how to start one (`--headless`, `--channel`, `--executable-path`, `--browser-arg`, `--user-data-dir`) and how to build a context (`--viewport`, `--storage-state`, `--user-agent`, `--locale`, `--timezone`, the proxy options, `--record-video`, `--show-cursor`, `--natural-mouse`) no longer apply. Passing them alongside `--connect` reports which were ignored rather than silently dropping them. The timeouts and `--dialogs` describe what a tool call does rather than how a browser starts, so they apply either way.
 

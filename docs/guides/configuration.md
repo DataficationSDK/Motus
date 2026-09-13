@@ -101,6 +101,9 @@ When Motus initializes, it walks up from `Environment.CurrentDirectory`, checkin
   "shard": {
     "index": null,
     "total": null
+  },
+  "mcp": {
+    "caps": []
   }
 }
 ```
@@ -295,6 +298,16 @@ Splits the suite across independent runs. Both values must be set for sharding t
 | `total` | `int` | `null` | Total number of shards. |
 
 The `--shard <index>/<total>` command-line option takes precedence over both.
+
+### `mcp` Section
+
+Settings for the MCP server, read when `motus mcp --config <file>` names this file. See [MCP Server](mcp-server.md).
+
+| Property | Type | Default | Description |
+|---|---|---|---|
+| `caps` | `string[]` | `null` | Optional tool groups the server advertises on top of the ones it always has: `coordinates`, `recording`, `contexts`, `routing`. |
+
+`--caps` on the command line replaces this list rather than adding to it, the same way every other option outranks the file. Unlike the rest of the file, this section is read only when `--config` names the file: the server is launched by an agent client from whatever directory that client happens to be in, so a file found by walking up from there would be somebody else's settings.
 
 ---
 

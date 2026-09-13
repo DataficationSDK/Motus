@@ -6,16 +6,15 @@ using ModelContextProtocol.Server;
 namespace Motus.Mcp;
 
 /// <summary>
-/// Tools for the browser around the page: the tabs of the active context and the
-/// isolated contexts themselves. Each context has its own cookies and storage, so
-/// separate contexts model separate users or logged-in and logged-out states. The
-/// tools that read or act on a page always target the active context's active tab.
+/// Tools for the tabs of the active browser context, and for saying which browser the session
+/// is driving. The tools that read or act on a page always target the active context's active
+/// tab, so these are how the agent moves between the pages a session has open.
 /// </summary>
 /// <remarks>
 /// Like the other tools, failures are returned as a result with
 /// <see cref="CallToolResult.IsError"/> set and a message the model can act on,
-/// rather than thrown. Switching tab or context drops the refs from the previous
-/// snapshot, so the agent should snapshot again before addressing elements.
+/// rather than thrown. Switching tab drops the refs from the previous snapshot, so the
+/// agent should snapshot again before addressing elements.
 /// </remarks>
 [McpServerToolType]
 public sealed class SessionTools
@@ -116,86 +115,38 @@ public sealed class SessionTools
         }
     }
 
-    [McpServerTool(Name = "context_list", Title = "List contexts", Destructive = false, ReadOnly = true, Idempotent = true)]
-    [Description("Lists the open browser contexts. The active context is marked with an asterisk.")]
-    public static CallToolResult ContextList(
+    [McpServerTool(Name = "browser_status", Title = "Browser status", Destructive = false, ReadOnly = true, Idempotent = true)]
+    [Description("Reports which browser the session is driving: whether it was started here or attached to, its "
+        + "endpoint when attached, and how many contexts and tabs are open.")]
+    public static async Task<CallToolResult> BrowserStatusAsync(
         ActivePageService pageService,
         CancellationToken cancellationToken)
     {
-        var active = pageService.GetActiveContextName();
-        var names = pageService.GetContextNames();
-        if (names.Count == 0)
-            return ToolResultHelper.Text($"No contexts are open yet; '{active}' becomes active on first use.");
-
-        var builder = new StringBuilder();
-        foreach (var name in names)
-            builder.Append(name == active ? "* " : "  ").AppendLine(name);
-
-        return ToolResultHelper.Text(builder.ToString().TrimEnd());
-    }
-
-    [McpServerTool(Name = "context_create", Title = "Create a context", Destructive = true)]
-    [Description("Creates a new isolated context with its own cookies and storage and makes it active. Fails if a "
-        + "context with that name already exists.")]
-    public static async Task<CallToolResult> ContextCreateAsync(
-        [Description("Name for the new context.")] string name,
-        ActivePageService pageService,
-        CancellationToken cancellationToken)
-    {
-        if (ToolArguments.Missing("name", name) is { } missing)
-            return missing;
-
         try
         {
-            await pageService.CreateContextAsync(name, cancellationToken).ConfigureAwait(false);
-            return ToolResultHelper.Text($"Created context '{name}'.");
+            if (!pageService.IsBrowserLaunched)
+            {
+                return ToolResultHelper.Text(pageService.Endpoint is { } configured
+                    ? $"No browser yet. The first tool call that needs one will attach to {configured}."
+                    : "No browser yet. The first tool call that needs one will start it.");
+            }
+
+            var tabs = await pageService.ListTabsAsync(cancellationToken).ConfigureAwait(false);
+            var contexts = pageService.GetContextNames();
+
+            var builder = new StringBuilder();
+            builder.AppendLine(pageService.IsAttached
+                ? $"Attached to a running browser at {pageService.Endpoint}; it will keep running after this session."
+                : "Driving a browser started by this server; it will be closed when this session ends.");
+            builder.Append(contexts.Count).Append(contexts.Count == 1 ? " context" : " contexts")
+                .Append(" (active: ").Append(pageService.GetActiveContextName()).Append("), ")
+                .Append(tabs.Count).Append(tabs.Count == 1 ? " tab" : " tabs").Append(" open.");
+
+            return ToolResultHelper.Text(builder.ToString());
         }
         catch (Exception ex)
         {
-            return ToolResultHelper.Error(ex.Message);
-        }
-    }
-
-    [McpServerTool(Name = "context_select", Title = "Select a context", Destructive = false)]
-    [Description("Makes an existing context active. The tabs and page tools that follow act on its tabs.")]
-    public static CallToolResult ContextSelect(
-        [Description("Name of the context to activate.")] string name,
-        ActivePageService pageService,
-        CancellationToken cancellationToken)
-    {
-        if (ToolArguments.Missing("name", name) is { } missing)
-            return missing;
-
-        try
-        {
-            pageService.SelectContext(name);
-            return ToolResultHelper.Text($"Switched to context '{name}'.");
-        }
-        catch (Exception ex)
-        {
-            return ToolResultHelper.Error(ex.Message);
-        }
-    }
-
-    [McpServerTool(Name = "context_close", Title = "Close a context", Destructive = true)]
-    [Description("Closes the named context and all its tabs. If the active context is closed, the default context "
-        + "becomes active.")]
-    public static async Task<CallToolResult> ContextCloseAsync(
-        [Description("Name of the context to close.")] string name,
-        ActivePageService pageService,
-        CancellationToken cancellationToken)
-    {
-        if (ToolArguments.Missing("name", name) is { } missing)
-            return missing;
-
-        try
-        {
-            await pageService.CloseContextAsync(name, cancellationToken).ConfigureAwait(false);
-            return ToolResultHelper.Text($"Closed context '{name}'.");
-        }
-        catch (Exception ex)
-        {
-            return ToolResultHelper.Error(ex.Message);
+            return ToolResultHelper.Error($"Reading browser status failed: {ex.Message}");
         }
     }
 }

@@ -69,7 +69,7 @@ public class BrowserAttachIntegrationTests
             new McpServerLaunchOptions { Endpoint = _browser!.HttpEndpoint });
         await bundle.Pages.GetOrCreateActivePageAsync();
 
-        var status = TextOf(await BrowserTools.BrowserStatusAsync(bundle.Pages, CancellationToken.None));
+        var status = TextOf(await SessionTools.BrowserStatusAsync(bundle.Pages, CancellationToken.None));
 
         StringAssert.Contains(status, "Attached");
         StringAssert.Contains(status, _browser.HttpEndpoint);

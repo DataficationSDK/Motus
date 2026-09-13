@@ -34,20 +34,6 @@ public class PageSessionWireTests
     }
 
     [TestMethod]
-    public async Task Server_StillAdvertisesTheAttachTool_WhenItIsNotAllowed()
-    {
-        await WithClientAsync(async (client, ct) =>
-        {
-            var names = (await client.ListToolsAsync(cancellationToken: ct)).Select(t => t.Name).ToArray();
-
-            // The tool refuses until the server is started with the option that allows it, but it
-            // stays listed: an agent that can see it can tell the user what to restart with, where
-            // a missing tool would just look like a capability Motus does not have.
-            CollectionAssert.Contains(names, "browser_attach");
-        });
-    }
-
-    [TestMethod]
     public async Task Schemas_ExposeAgentParameters_AndExcludeInjected()
     {
         await WithClientAsync(async (client, ct) =>
@@ -85,7 +71,7 @@ public class PageSessionWireTests
         var serverToClient = new Pipe();
 
         var hostTask = McpServerHost.RunAsync(
-            new McpServerLaunchOptions(),
+            new McpServerLaunchOptions { Capabilities = [ToolCapabilities.Contexts] },
             builder => builder.WithStreamServerTransport(
                 clientToServer.Reader.AsStream(),
                 serverToClient.Writer.AsStream()),

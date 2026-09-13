@@ -26,7 +26,8 @@ public class McpCommandTests
             "--executable-path /opt/browser --browser-arg=--no-sandbox --user-data-dir /tmp/profile "
             + "--storage-state state.json --proxy-server http://127.0.0.1:8080 --proxy-bypass localhost "
             + "--user-agent Agent/1.0 --locale en-GB --timezone Europe/Berlin --timeout 5000 "
-            + "--navigation-timeout 20000 --settle 250 --dialogs accept --config motus.config.json");
+            + "--navigation-timeout 20000 --settle 250 --dialogs accept --config motus.config.json "
+            + "--caps recording");
 
         Assert.AreEqual(0, result.Errors.Count, string.Join("; ", result.Errors.Select(e => e.Message)));
     }
@@ -59,6 +60,76 @@ public class McpCommandTests
 
         Assert.AreEqual(1, result.Errors.Count);
         StringAssert.Contains(result.Errors[0].Message, "accept, dismiss, ask");
+    }
+
+    [TestMethod]
+    [DataRow("--caps recording")]
+    [DataRow("--caps coordinates,recording,contexts,routing")]
+    [DataRow("--caps contexts --caps routing")]
+    public void Parse_KnownToolGroups_NoErrors(string commandLine)
+    {
+        var result = Cmd.Parse(commandLine);
+        Assert.AreEqual(0, result.Errors.Count, string.Join("; ", result.Errors.Select(e => e.Message)));
+    }
+
+    /// <summary>
+    /// A group name nobody recognizes is a typo in a client configuration, and the server would
+    /// otherwise start with a quietly smaller catalog than was asked for.
+    /// </summary>
+    [TestMethod]
+    public void Parse_UnknownToolGroup_HasError()
+    {
+        var result = Cmd.Parse("--caps recording,vision");
+
+        Assert.AreEqual(1, result.Errors.Count);
+        StringAssert.Contains(result.Errors[0].Message, "'vision'");
+        StringAssert.Contains(result.Errors[0].Message, "coordinates, recording, contexts, routing");
+    }
+
+    [TestMethod]
+    public void TryResolveCapabilities_ReadsCommasAndTrimsSpace()
+    {
+        Assert.IsTrue(McpCommand.TryResolveCapabilities(
+            ["recording, contexts", "routing"], out var caps, out var error), error);
+
+        CollectionAssert.AreEqual(new[] { "recording", "contexts", "routing" }, caps);
+    }
+
+    [TestMethod]
+    public void TryResolveCapabilities_NothingAsked_IsTheDefaultCatalog()
+    {
+        Assert.IsTrue(McpCommand.TryResolveCapabilities(null, out var caps, out var error), error);
+        Assert.AreEqual(0, caps.Length);
+    }
+
+    [TestMethod]
+    public void TryResolveCapabilities_UnknownGroup_NamesTheOnesThatExist()
+    {
+        Assert.IsFalse(McpCommand.TryResolveCapabilities(["pdf"], out _, out var error));
+        StringAssert.Contains(error, "'pdf'");
+        StringAssert.Contains(error, "coordinates, recording, contexts, routing");
+    }
+
+    /// <summary>
+    /// A config file that names a group nobody recognizes is caught on the same terms as one typed
+    /// on the command line, before a browser is resolved or a server started.
+    /// </summary>
+    [TestMethod]
+    public async Task Invoke_ConfigNamesAnUnknownToolGroup_Fails()
+    {
+        var config = WriteTempFile("""{"mcp": {"caps": ["recording", "telepathy"]}}""", ".json");
+
+        try
+        {
+            var (exit, stderr) = await RunAsync($"--config {config}");
+
+            Assert.AreEqual(1, exit);
+            StringAssert.Contains(stderr, "'telepathy'");
+        }
+        finally
+        {
+            File.Delete(config);
+        }
     }
 
     [TestMethod]

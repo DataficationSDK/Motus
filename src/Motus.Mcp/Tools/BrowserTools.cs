@@ -6,8 +6,7 @@ using ModelContextProtocol.Server;
 namespace Motus.Mcp;
 
 /// <summary>
-/// Tools for the browser itself: connecting to one that is already running, and reporting which
-/// browser the session is currently driving.
+/// Tools for connecting to a browser that is already running.
 /// </summary>
 /// <remarks>
 /// By default the server starts a browser of its own and ends it on shutdown. Attaching points the
@@ -58,41 +57,6 @@ public sealed class BrowserTools
             return ToolResultHelper.Error(
                 $"Attaching to {endpoint} failed: {ex.Message}. Check that the browser was started with a "
                 + "remote debugging port and that the endpoint is reachable.");
-        }
-    }
-
-    [McpServerTool(Name = "browser_status", Title = "Browser status", Destructive = false, ReadOnly = true, Idempotent = true)]
-    [Description("Reports which browser the session is driving: whether it was started here or attached to, its "
-        + "endpoint when attached, and how many contexts and tabs are open.")]
-    public static async Task<CallToolResult> BrowserStatusAsync(
-        ActivePageService pageService,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            if (!pageService.IsBrowserLaunched)
-            {
-                return ToolResultHelper.Text(pageService.Endpoint is { } configured
-                    ? $"No browser yet. The first tool call that needs one will attach to {configured}."
-                    : "No browser yet. The first tool call that needs one will start it.");
-            }
-
-            var tabs = await pageService.ListTabsAsync(cancellationToken).ConfigureAwait(false);
-            var contexts = pageService.GetContextNames();
-
-            var builder = new StringBuilder();
-            builder.AppendLine(pageService.IsAttached
-                ? $"Attached to a running browser at {pageService.Endpoint}; it will keep running after this session."
-                : "Driving a browser started by this server; it will be closed when this session ends.");
-            builder.Append(contexts.Count).Append(contexts.Count == 1 ? " context" : " contexts")
-                .Append(" (active: ").Append(pageService.GetActiveContextName()).Append("), ")
-                .Append(tabs.Count).Append(tabs.Count == 1 ? " tab" : " tabs").Append(" open.");
-
-            return ToolResultHelper.Text(builder.ToString());
-        }
-        catch (Exception ex)
-        {
-            return ToolResultHelper.Error($"Reading browser status failed: {ex.Message}");
         }
     }
 }

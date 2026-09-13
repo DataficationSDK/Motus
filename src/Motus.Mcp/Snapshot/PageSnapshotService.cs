@@ -170,7 +170,9 @@ public sealed class PageSnapshotService
                 : "no addressable elements were found. The page may render to a canvas or custom "
                   + "surface that the accessibility tree cannot describe.")
                 + " Take a screenshot to identify controls visually, then act on their positions "
-                + "with click_xy, drag, or scroll_xy.\n";
+                + "with the coordinate tools: click_xy, drag, or scroll_xy. If those are not in "
+                + "this server's tool list, say that it has to be restarted with --caps "
+                + "coordinates.\n";
         }
 
         // A frame left out of the tree is one the agent cannot see at all, so say how many and

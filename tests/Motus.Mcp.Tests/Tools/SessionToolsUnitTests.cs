@@ -131,7 +131,7 @@ public class SessionToolsUnitTests
         var service = new FakeSessionPageService(Tab("https://a.test"));
         service.Contexts.Add("userB");
 
-        var result = SessionTools.ContextList(service, Ct);
+        var result = ContextTools.ContextList(service, Ct);
 
         Assert.IsFalse(result.IsError ?? false);
         var text = TextOf(result);
@@ -144,7 +144,7 @@ public class SessionToolsUnitTests
     {
         var service = new FakeSessionPageService(Tab("https://a.test"));
 
-        var result = await SessionTools.ContextCreateAsync("userB", service, Ct);
+        var result = await ContextTools.ContextCreateAsync("userB", service, Ct);
 
         Assert.IsFalse(result.IsError ?? false);
         CollectionAssert.Contains(service.CreatedContexts, "userB");
@@ -154,9 +154,9 @@ public class SessionToolsUnitTests
     public async Task ContextCreate_DuplicateName_ReturnsError()
     {
         var service = new FakeSessionPageService(Tab("https://a.test"));
-        await SessionTools.ContextCreateAsync("userB", service, Ct);
+        await ContextTools.ContextCreateAsync("userB", service, Ct);
 
-        var result = await SessionTools.ContextCreateAsync("userB", service, Ct);
+        var result = await ContextTools.ContextCreateAsync("userB", service, Ct);
 
         Assert.IsTrue(result.IsError);
         StringAssert.Contains(TextOf(result), "already exists");
@@ -168,7 +168,7 @@ public class SessionToolsUnitTests
         var service = new FakeSessionPageService(Tab("https://a.test"));
         service.Contexts.Add("userB");
 
-        var result = SessionTools.ContextSelect("userB", service, Ct);
+        var result = ContextTools.ContextSelect("userB", service, Ct);
 
         Assert.IsFalse(result.IsError ?? false);
         CollectionAssert.Contains(service.SelectedContexts, "userB");
@@ -179,7 +179,7 @@ public class SessionToolsUnitTests
     {
         var service = new FakeSessionPageService(Tab("https://a.test"));
 
-        var result = SessionTools.ContextSelect("ghost", service, Ct);
+        var result = ContextTools.ContextSelect("ghost", service, Ct);
 
         Assert.IsTrue(result.IsError);
         StringAssert.Contains(TextOf(result), "No open context");
@@ -189,9 +189,9 @@ public class SessionToolsUnitTests
     public async Task ContextClose_ExistingName_Succeeds()
     {
         var service = new FakeSessionPageService(Tab("https://a.test"));
-        await SessionTools.ContextCreateAsync("userB", service, Ct);
+        await ContextTools.ContextCreateAsync("userB", service, Ct);
 
-        var result = await SessionTools.ContextCloseAsync("userB", service, Ct);
+        var result = await ContextTools.ContextCloseAsync("userB", service, Ct);
 
         Assert.IsFalse(result.IsError ?? false);
         CollectionAssert.Contains(service.ClosedContexts, "userB");
