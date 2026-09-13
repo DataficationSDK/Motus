@@ -312,6 +312,10 @@ public class McpCommandTests
     [TestMethod]
     public async Task Invoke_ConfigNamesAChannelThatIsNotInstalled_Fails()
     {
+        // An executable path in the environment would stand in for the missing channel, and this
+        // test is about the file alone.
+        using var environment = WithoutEnvironmentVariable("MOTUS_EXECUTABLE_PATH");
+
         var channel = FirstChannelNotInstalled();
         if (channel is null)
         {
@@ -358,6 +362,11 @@ public class McpCommandTests
     [TestMethod]
     public async Task Invoke_ConfigExecutablePath_IsUsedWhenNobodyTypedOne()
     {
+        // The environment sits between the command line and the config file, and a build that pins
+        // its browser exports the executable path to every process it starts. This test is about
+        // the file alone, so the variable is taken out of the picture rather than assumed absent.
+        using var environment = WithoutEnvironmentVariable("MOTUS_EXECUTABLE_PATH");
+
         var fromConfig = Path.Combine(Path.GetTempPath(), "motus-config-browser-" + Guid.NewGuid().ToString("N"));
         var config = WriteLaunchConfig("executablePath", fromConfig);
 
@@ -428,6 +437,21 @@ public class McpCommandTests
     /// <summary>
     /// Runs the command and returns its exit code along with what it wrote to standard error.
     /// </summary>
+    /// <summary>
+    /// Clears an environment variable for the duration of a test and puts it back afterwards.
+    /// </summary>
+    private static IDisposable WithoutEnvironmentVariable(string name)
+    {
+        var previous = Environment.GetEnvironmentVariable(name);
+        Environment.SetEnvironmentVariable(name, null);
+        return new RestoreEnvironmentVariable(name, previous);
+    }
+
+    private sealed class RestoreEnvironmentVariable(string name, string? value) : IDisposable
+    {
+        public void Dispose() => Environment.SetEnvironmentVariable(name, value);
+    }
+
     private static async Task<(int Exit, string Stderr)> RunAsync(string commandLine)
     {
         var captured = new StringWriter();

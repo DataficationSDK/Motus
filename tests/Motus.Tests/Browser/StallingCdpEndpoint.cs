@@ -11,8 +11,9 @@ namespace Motus.Tests.Browser;
 /// </summary>
 /// <remarks>
 /// Nothing here is a browser. The HTTP side answers <c>/json/version</c> the way a browser does,
-/// and the socket side either leaves the upgrade request unanswered or completes the handshake and
-/// then says nothing at all. Those are the two ways a real connection stalls after discovery.
+/// or the way something that is not a browser does, and the socket side either leaves the upgrade
+/// request unanswered or completes the handshake and then says nothing at all. Those are the ways
+/// a real connection stalls, one before discovery and two after it.
 /// </remarks>
 internal sealed class StallingCdpEndpoint : IDisposable
 {
@@ -24,6 +25,7 @@ internal sealed class StallingCdpEndpoint : IDisposable
     private readonly CancellationTokenSource _cts = new();
     private readonly List<TcpClient> _held = [];
     private readonly bool _completeHandshake;
+    private readonly bool _offersWebSocketUrl;
     private readonly string _webSocketUrl;
 
     /// <summary>The HTTP debugging endpoint to point a connection at.</summary>
@@ -33,9 +35,14 @@ internal sealed class StallingCdpEndpoint : IDisposable
     /// When true the WebSocket opens and then answers no command. When false the upgrade request
     /// is accepted at the TCP level and never answered.
     /// </param>
-    internal StallingCdpEndpoint(bool completeHandshake)
+    /// <param name="offersWebSocketUrl">
+    /// When false the HTTP side answers every request, but as something other than a browser: a
+    /// JSON body with no WebSocket URL in it, so discovery never gets past the endpoint.
+    /// </param>
+    internal StallingCdpEndpoint(bool completeHandshake, bool offersWebSocketUrl = true)
     {
         _completeHandshake = completeHandshake;
+        _offersWebSocketUrl = offersWebSocketUrl;
 
         _socket = new TcpListener(IPAddress.Loopback, 0);
         _socket.Start();
@@ -63,7 +70,9 @@ internal sealed class StallingCdpEndpoint : IDisposable
                 return;
             }
 
-            var body = Encoding.UTF8.GetBytes($$"""{"webSocketDebuggerUrl": "{{_webSocketUrl}}"}""");
+            var body = Encoding.UTF8.GetBytes(_offersWebSocketUrl
+                ? $$"""{"webSocketDebuggerUrl": "{{_webSocketUrl}}"}"""
+                : "{}");
             context.Response.ContentType = "application/json";
             context.Response.ContentLength64 = body.Length;
             await context.Response.OutputStream.WriteAsync(body).ConfigureAwait(false);

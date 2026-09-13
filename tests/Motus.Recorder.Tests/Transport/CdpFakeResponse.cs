@@ -9,6 +9,66 @@ namespace Motus.Recorder.Tests.Transport;
 internal static class CdpFakeResponse
 {
     /// <summary>
+    /// Commands that only switch a connection-wide feature on. They return an empty result and
+    /// carry nothing a fixture asserts against.
+    /// </summary>
+    /// <remarks>
+    /// A fake answers these by method name before it looks at anything a fixture queued. That is
+    /// what stops a command added to browser startup from pushing every queued response in the
+    /// suite one place along, or from leaving startup waiting on an answer no fixture wrote.
+    /// </remarks>
+    private static readonly HashSet<string> Bookkeeping = new(StringComparer.Ordinal)
+    {
+        "Target.setDiscoverTargets",
+    };
+
+    /// <summary>
+    /// Answers <paramref name="command"/> when it is one of the bookkeeping commands, with an
+    /// empty result carrying the command's own id and session.
+    /// </summary>
+    internal static bool TryAnswerBookkeeping(ReadOnlySpan<byte> command, out string response)
+    {
+        response = string.Empty;
+
+        using var doc = JsonDocument.Parse(command.ToArray());
+        var root = doc.RootElement;
+
+        if (!root.TryGetProperty("method", out var method) ||
+            method.ValueKind != JsonValueKind.String ||
+            !Bookkeeping.Contains(method.GetString()!))
+        {
+            return false;
+        }
+
+        if (!root.TryGetProperty("id", out _))
+            return false;
+
+        response = EmptyResultFor(root);
+        return true;
+    }
+
+    /// <summary>
+    /// Builds an empty result addressed to <paramref name="command"/>, echoing the session it was
+    /// sent on when it had one.
+    /// </summary>
+    internal static string EmptyResultFor(JsonElement command)
+    {
+        var answer = new JsonObject
+        {
+            ["id"] = command.GetProperty("id").GetInt32(),
+            ["result"] = new JsonObject(),
+        };
+
+        if (command.TryGetProperty("sessionId", out var sessionId) &&
+            sessionId.ValueKind == JsonValueKind.String)
+        {
+            answer["sessionId"] = sessionId.GetString();
+        }
+
+        return answer.ToJsonString();
+    }
+
+    /// <summary>
     /// Returns <paramref name="response"/> with its <c>id</c> replaced by the id of
     /// <paramref name="command"/>. A response carrying no <c>id</c> is an event and is returned
     /// unchanged.
