@@ -48,3 +48,6 @@ TestResult.xml
 *.coverage
 *.coveragexml
 /starter
+
+## Sample output
+samples/sample-trace.zip
