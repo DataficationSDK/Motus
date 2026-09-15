@@ -149,7 +149,11 @@ Elements are addressed by the `ref` values returned in a snapshot, or by a selec
 
 Anywhere a `ref` is accepted, a selector is accepted in its place: CSS by default (`#submit`, `button.primary`), or prefixed with `xpath=`, `text=`, `role=`, or `data-testid=`. A selector needs no snapshot at all, so it is what to reach for when the refs in hand have gone stale, or when you already know a stable selector for the element and would rather say it than look it up. Anything shaped like a ref (`e5`, or `f1e5` for an element inside a frame) is read as one, so a ref the latest snapshot no longer holds still comes back as a stale ref rather than as a selector that matched nothing. A selector is searched in the selected frame when one is selected, and in the page otherwise.
 
-`click` also takes `button` (`left`, `right`, or `middle`) and `modifiers` (any of `Alt`, `Control`, `Meta`, `Shift`), so a context menu or a ctrl-click is reachable on an element rather than only at a coordinate. Both run the same actionability checks as a plain click: the element has to be visible, enabled, settled, and receiving events first. A double-click is left-button only; for a double-click with a button or modifiers, use `click_xy` from the coordinate group.
+`click` also takes `button` (`left`, `right`, or `middle`) and `modifiers` (any of `Alt`, `Control`, `Meta`, `Shift`), so a context menu or a ctrl-click is reachable on an element rather than only at a coordinate. Both run the same actionability checks as a plain click: the element has to be visible, enabled, settled, and receiving events first. `double: true` double-clicks the element instead of clicking it once. A double-click is left-button only, and asking for one together with a button or a modifier is refused rather than quietly downgraded to a plain double-click; for a modified double-click, use `click_xy` from the coordinate group.
+
+`type` sets the field's value in one step, which is what a form usually wants. `slowly: true` types character by character instead, for a field that reacts to each keystroke: an autocomplete, an input mask, a search box that queries as you type. `submit: true` presses Enter once the text is in, so a search does not need a second call to run. `wait_for_element` takes a `state` of `visible`, `hidden`, `attached`, or `detached` and waits for the element to reach it.
+
+Three more tools take an option that is easy to miss. `screenshot` captures the viewport; `full_page: true` captures the whole scrollable page instead. `audit_accessibility` takes `min_severity` (`error`, `warning`, or `info`) and then reports only the violations at or above it, which is how a page with a long tail of advisory findings is narrowed to what is worth acting on; left out, it reports every severity. `generate_pom` takes `namespace` and `class_name` for the class it emits, defaulting to `Motus.Generated` and a name derived from the page's URL, so the generated source can be dropped into a test project without editing its header.
 
 ### What a snapshot contains
 
@@ -185,6 +189,14 @@ The rows are the page and its title when either changed, a tab the page opened w
 
 The browser accepts a click before it has followed the link the click was on, so the result waits briefly for the page to show what the action did: 500 ms by default, ending early when a tab appears. `--settle` changes the wait, and `--settle 0` writes the result the instant the action returns, which is right for a local page that reacts at once and wrong for one that navigates through a slow server.
 
+An action that runs out of time waiting for its element says which check it gave up on. A call cut short while waiting on a browser that answered nothing at all has no such step to name, so it says that plainly instead:
+
+```
+Timed out after 31 s waiting for the browser to answer. The page did not respond to the action: take a snapshot to see its state, and call handle_dialog if a dialog is open.
+```
+
+The seconds are how long the call actually waited. The message names what to do next, in order: `snapshot` reads the page without waiting on it, and reports a pending dialog rather than blocking on one, so it says which case this is. A page stopped on a dialog needs `handle_dialog` before anything else will land.
+
 `click`, `type`, `press`, `select_option`, `set_checked`, `navigate`, `reload`, `go_back` and `go_forward` also take `snapshot: true`, which appends a fresh snapshot of the page after the report. It is off by default: most actions do not change enough of the page to be worth a tree, and the rows above usually say whether this one did.
 
 ### Reading the console and network logs
@@ -218,6 +230,18 @@ evaluate("document.querySelectorAll('article').length")
 Structured content has to be a JSON object, so an expression returning a bare number, string, or array could not be sent back as-is. Wrapping every value in the same shape means an expression may return anything: reading a single count off the page works exactly as readily as returning a record. A value that cannot be serialized, such as `undefined`, a function, or a DOM node, comes back as `{"result": null}`.
 
 Read the value at `result`. Wrapping the expression by hand, as `({ count: ... })`, is no longer necessary, though it remains harmless and simply nests one level deeper.
+
+With no `ref`, the expression runs in the page, or in the scoped frame when `frame_select` has named one. Pass a `ref` (or a selector) and it runs against that element instead, which is how to read something the snapshot does not print: a scroll height, a computed style, the options of a `select`. An element expression has to be a function rather than a bare expression, because the element is handed to it: it arrives as the function's first argument, and as `this` in the `function () { ... }` form.
+
+```
+evaluate("el => el.scrollHeight", ref: "e12")
+  -> {"result": 1840}
+
+evaluate("function () { return this.value; }", ref: "e4")
+  -> {"result": "ada@example.com"}
+```
+
+A bare expression passed with a `ref` fails with `Given expression does not evaluate to a function`, which is the browser saying the same thing.
 
 ### Dialogs
 
@@ -281,7 +305,7 @@ Attaching speaks the Chrome DevTools Protocol, so the browser at the other end i
 
 Three consequences are worth knowing:
 
-- **Options that describe starting a browser have nothing to act on.** `--headless`, `--channel`, `--executable-path`, `--browser-arg`, `--user-data-dir`, `--viewport`, `--storage-state`, `--user-agent`, `--locale`, `--timezone`, the proxy options, `--record-video` and `--show-cursor` bind either at launch or at context creation, and an attached session does neither: it adopts the context the browser is already using. The server says so on startup rather than ignoring them silently. The `resize` tool still changes a page's viewport at runtime, with `--caps coordinates`.
+- **Options that describe starting a browser have nothing to act on.** `--headless`, `--channel`, `--executable-path`, `--browser-arg`, `--user-data-dir`, `--viewport`, `--storage-state`, `--user-agent`, `--locale`, `--timezone`, the proxy options, `--record-video`, `--show-cursor` and `--natural-mouse` bind either at launch or at context creation, and an attached session does neither: it adopts the context the browser is already using. The server says so on startup rather than ignoring them silently. The `resize` tool still changes a page's viewport at runtime, with `--caps coordinates`.
 - **`--http` with `--connect` means clients share one browser.** The HTTP transport otherwise gives each connected client its own isolated browser. Pointed at one endpoint, every session drives the same browser, and so shares its tabs and cookies.
 - **Sessions share one output directory.** Every session writes into the directory printed at startup, whichever client it belongs to. Two sessions that pass the same explicit filename overwrite each other, so leave the path off and use the absolute path the result returns.
 
@@ -314,6 +338,78 @@ Two characteristics are inherent to the browser's screencast and worth knowing b
 The output container is MJPEG in AVI, written without external dependencies. Most editors and players open it directly; convert with ffmpeg (`ffmpeg -i in.avi -c:v libx264 out.mp4`) when another format is needed.
 
 To record everything without per-page tool calls, launch the server with `--record-video <dir>`: every page records for its whole life and finalizes when it closes, one file per page. In that mode the on-demand tools report an error, since each page is already recording.
+
+Of the tools this group brings along with video, `trace_start` is the one with options worth knowing. It captures screenshots and DOM snapshots as it records, which is what makes the trace worth opening afterwards; pass `screenshots: false` or `snapshots: false` for a smaller file when the sequence of calls is all that is wanted.
+
+### Isolated contexts
+
+Start the server with `--caps contexts` for the tools in this section.
+
+A context is the browser's own unit of separation: its own cookies, its own storage, its own signed-in state. One context per user is what makes two accounts drivable from one session, and a new context is the shortest way to a signed-out page without clearing anything by hand. A session that never names a context still has one, an implicit context called `default` that is created the first time anything touches the browser, so the tools read and act exactly as they would if contexts did not exist until they are asked for.
+
+![The same account page open in two isolated contexts, one signed in as a reviewer and one as an author, each showing its own session cookie and saved draft](images/mcp-server-contexts.png)
+
+`context_create` takes a `name`, creates the context, and makes it active. A name that is already open is refused rather than handed back: a call that meant to start clean would otherwise inherit the cookies of the context it found. Close the old one first, or pick another name. `context_select` makes an open context active, and `context_list` prints the open names with an asterisk on the active one.
+
+Tabs are numbered across contexts rather than within one, as the note further up describes: `tab_list` prints one sequence for the whole session, naming the context on each row once more than one context is open, and `tab_select` and `tab_close` take those numbers whichever context the tab is in. The one tool that follows the active context is `tab_open`, so `context_select` is what decides where a new tab goes.
+
+`context_close` closes the named context and its tabs, which drops them from `tab_list`. Closing the active context leaves `default` active, and because `default` is created on first use, the next call that needs a page gets a fresh one there. Against an attached browser, the context the session adopted is let go of rather than closed: its tabs were somebody's working state before the session arrived.
+
+Two pieces of state belong to the context rather than to the session. Mock rules are registered on a context, so a mock in force in one does nothing in another, and closing a context discards its rules. Snapshot refs do not survive the switch either, so take a fresh snapshot after `context_create` or `context_select` before addressing elements.
+
+### Request mocking
+
+Start the server with `--caps routing` for the tools in this section.
+
+A mock answers a request before it reaches the network, which is how a state the server will not produce on demand becomes reachable from a tool call: an error response, an empty result set, a dependency that never answers. `route_fulfill` answers matching requests with a canned response, `route_abort` fails them, and `route_continue` lets them through with parts of the request rewritten.
+
+A URL pattern is matched three ways. A pattern equal to the URL matches that URL and nothing else. A pattern containing `*` is a glob that has to cover the whole URL, where each `*` stands for any run of characters, path separators included. A pattern with no `*` matches any URL that contains it. So `*/api/status.json` matches as a glob, `/api/` matches as a substring, and both of them reach `https://example.com/api/status.json`. Matching is case-sensitive throughout.
+
+A rule is registered on the active context rather than on a tab, so it covers every tab of that context and survives navigation and reloads. Every request the page makes goes through it, the page's own document request included. Tabs that were already open when the rule was registered are covered too, from their next request onward, so a tab already showing the page picks the mock up on a reload.
+
+`route_fulfill` takes `status` (200 when it is left out), `body` (empty when it is left out), `content_type`, and `headers` for anything else the response should carry. `route_abort` takes an `error_code` naming the failure the page should see: `aborted`, `accessdenied`, `connectionrefused`, `connectionreset`, `timedout`, `connectionfailed`, `namenotresolved`, `internetdisconnected`, `addressunreachable`, `blockedbyclient`, or `blockedbyresponse`. A code the server does not recognize, and no code at all, becomes a generic failure. `route_continue` overrides `url`, `method`, `headers`, and `post_data`, leaving alone whatever it does not name, which is how a request is pointed at another host or given a header the application does not send.
+
+`unroute` removes the rule for a pattern, spelled exactly as it was registered, and says so when there was no rule to remove. `route_list` prints the rules on the active context, one `pattern -> action` line each:
+
+```
+route_list()
+  -> */api/status.json -> Fulfill
+     /analytics/ -> Abort
+```
+
+Re-registering a pattern replaces its rule rather than adding a second one, so a fulfill becomes an abort without an `unroute` in between. When more than one pattern matches a request, the rule registered most recently handles it, and a re-registration keeps the place its pattern already had rather than moving to the front.
+
+Two refusals follow from the server's file boundary: a `Location` header on a fulfilled response may not point at a `file:` URL, and neither may a `url` override on `route_continue`. `--allow-unrestricted-file-access` lifts both.
+
+Mocking a response and then reading the page is two calls. The page below reads `/api/status.json` on load and renders what it finds, the live service is healthy, and the degraded state is the one worth looking at:
+
+```
+route_fulfill(url_pattern: "*/api/status.json", content_type: "application/json",
+              body: "{\"overall\": \"degraded\", \"services\": [...]}")
+  -> Mocking '*/api/status.json' with status 200.
+
+navigate(url: "https://example.com/status", snapshot: true)
+  -> Navigated to https://example.com/status | Service status
+
+     Snapshot:
+     - RootWebArea "Service status" [ref=e1]
+       - heading "Service status" [ref=e2] [level=1]
+       - text: Degraded
+       - table
+         - rowgroup
+           - row [ref=e6]
+             - cell "Checkout" [ref=e7]
+             - cell "operational" [ref=e8]
+           - row [ref=e9]
+             - cell "Search" [ref=e10]
+             - cell "degraded" [ref=e11]
+```
+
+![The route_fulfill call beside the page it produced, a service status page reporting a degraded state that the server does not serve](images/mcp-server-routing.png)
+
+`unroute` afterwards, or `context_close` on a context created for the scenario, puts the page back on the network.
+
+[Network Interception](network-interception.md) covers the same engine from C#: the fulfill and continue options in full, the error codes, and page-scoped rules, which these tools do not expose.
 
 ---
 
@@ -357,9 +453,11 @@ To record everything without per-page tool calls, launch the server with `--reco
 
 ## Recovery after a browser crash
 
-Each session holds one browser. If its process crashes or stops responding (for example, a renderer abort on a heavy WebGL or canvas page), the next tool call that touches the browser disposes the dead instance, launches a fresh one in its place, and proceeds. The one call that raced the crash returns an error; the call after it recovers on its own, so a transient browser failure does not require restarting the server or reconnecting the client.
+Each session holds one browser. If its process crashes or stops responding (for example, a renderer abort on a heavy WebGL or canvas page), the next tool call that touches the browser disposes the dead instance, acquires another the same way the session got the first one, and proceeds. The one call that raced the crash returns an error; the call after it recovers on its own, so a transient browser failure does not require restarting the server or reconnecting the client.
 
-A relaunched browser starts clean. Open tabs and named contexts do not carry over, and the refs from the last `snapshot` no longer resolve, so `navigate` and take a fresh `snapshot` before addressing elements again.
+Which way it recovers depends on how the session started. A session that launched its own browser launches a fresh one. A session started with `--connect`, or attached later with `browser_attach`, connects to the same endpoint again instead: a browser this session did not start cannot be started by it, and the endpoint is the only thing that could still be there to answer. So a dropped connection to a browser that is still running is recovered transparently, and a browser that has actually gone leaves the connection failing until something answers at the endpoint again, which the failing call reports each time it is retried.
+
+Either way, the session comes back without the state it was holding. Named contexts do not carry over, and the refs from the last `snapshot` no longer resolve. A relaunched browser starts with nothing open at all, so `navigate` and take a fresh `snapshot` before addressing elements again; a reconnected one adopts what the browser still has open, which `tab_list` will show.
 
 ---
 
@@ -375,7 +473,7 @@ motus mcp --http
 motus mcp --http --host 0.0.0.0 --port 8931 --token "$MOTUS_MCP_TOKEN"
 ```
 
-Each connected client gets its own isolated browser session; sessions and the browsers they hold are reaped after a period of inactivity. Security stays deliberately minimal: the server binds the loopback interface by default, and binding any non-loopback host without a token is refused at startup. When a token is configured, every request is checked against it with a constant-time comparison.
+Each connected client gets its own isolated browser session; a session and the browser it holds are torn down after 30 minutes without a request, so an abandoned remote session does not keep a browser alive indefinitely. That timeout is fixed: there is no option to change it, and a client that keeps working keeps its session. Security stays deliberately minimal: the server binds the loopback interface by default, and binding any non-loopback host without a token is refused at startup. When a token is configured, every request is checked against it with a constant-time comparison.
 
 stdio inherits the trust of the local user that launched it and needs no token. HTTP does not, so treat the token as a credential and prefer loopback or a trusted network.
 

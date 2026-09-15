@@ -10,7 +10,7 @@ This guide covers the differences you will encounter and provides side-by-side m
 
 ### No Node.js sidecar
 
-Playwright for .NET ships a bundled Node.js process (`playwright.ps1` / `playwright`) that acts as the automation server; your .NET process talks to it over a named-pipe IPC channel. Motus has no such sidecar. Your .NET process connects directly to the browser over a WebSocket, removing an entire process from the chain and eliminating the Node.js runtime dependency entirely.
+Playwright for .NET ships a bundled Node.js process (`playwright.ps1` / `playwright`) that acts as the automation server; your .NET process talks to it over a named-pipe IPC channel. Motus has no such sidecar. Your .NET process connects directly to the browser, over a pipe for a Chromium browser it started on Unix and over a WebSocket otherwise, removing an entire process from the chain and eliminating the Node.js runtime dependency entirely.
 
 ### Direct CDP / BiDi protocol
 
@@ -189,7 +189,7 @@ A frame the browser renders in its own process is an ordinary `IFrame`, discover
 
 | Playwright for .NET | Motus |
 |---|---|
-| `locator.ClickAsync(options)` | `locator.ClickAsync(timeout)` |
+| `locator.ClickAsync(options)` | `locator.ClickAsync(timeout)` or `locator.ClickAsync(options, timeout)` |
 | `locator.DblClickAsync(options)` | `locator.DblClickAsync(timeout)` |
 | `locator.CheckAsync(options)` | `locator.CheckAsync(timeout)` |
 | `locator.UncheckAsync(options)` | `locator.UncheckAsync(timeout)` |
@@ -200,13 +200,15 @@ A frame the browser renders in its own process is an ordinary `IFrame`, discover
 | `locator.PressAsync(key, options)` | `locator.PressAsync(key, options)` |
 | `locator.FocusAsync(options)` | `locator.FocusAsync(timeout)` |
 | `locator.HoverAsync(options)` | `locator.HoverAsync(timeout)` |
-| `locator.SelectOptionAsync(values)` | `locator.SelectOptionAsync(values)` |
+| `locator.SelectOptionAsync(values)` | `locator.SelectOptionAsync(values)` or `locator.SelectOptionAsync(values, timeout)` |
 | `locator.SetInputFilesAsync(files, options)` | `locator.SetInputFilesAsync(files, timeout)` |
 | `locator.TapAsync(options)` | `locator.TapAsync(timeout)` |
 | `locator.ScrollIntoViewIfNeededAsync(options)` | `locator.ScrollIntoViewIfNeededAsync(timeout)` |
 | `locator.ScreenshotAsync(options)` | `locator.ScreenshotAsync(options)` |
 | `locator.DispatchEventAsync(type, eventInit)` | `locator.DispatchEventAsync(type, eventInit)` |
 | `locator.EvaluateAsync<T>(expression, arg)` | `locator.EvaluateAsync<T>(expression, arg)` |
+
+Playwright folds every option for an action into one record; Motus takes the timeout directly and adds an options record only where there is more to say than a timeout. `MouseButtonOptions` carries `Button`, `ClickCount`, `Delay` and `Modifiers`, so a right-click ports to `locator.ClickAsync(new MouseButtonOptions(MouseButton.Right))` and still runs the same actionability checks as a plain click, unlike assembling one from a bounding box and `page.Mouse`. `KeyboardTypeOptions` and `KeyboardPressOptions` carry `Delay` and `Timeout` together, which is why the type and press rows take no separate timeout argument. Playwright's `Position`, `Force`, `NoWaitAfter` and `Trial` have no counterpart on a Motus locator; drop them when porting.
 
 ### Locator queries
 

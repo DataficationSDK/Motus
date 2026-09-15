@@ -10,7 +10,7 @@ This guide helps you transition an existing Selenium WebDriver test suite to Mot
 
 Selenium WebDriver communicates with the browser through the W3C WebDriver HTTP protocol. Every command is an HTTP round trip to a driver binary (chromedriver, geckodriver) that you must download, version-pin, and keep in sync with the installed browser.
 
-Motus communicates directly with the browser over a persistent WebSocket connection using Chrome DevTools Protocol (CDP) for Chromium-based browsers and WebDriver BiDi for Firefox. There is no driver binary to manage. `MotusLauncher.LaunchAsync()` starts the browser process itself, negotiates the connection, and returns an `IBrowser` ready for use.
+Motus communicates directly with the browser over one persistent connection (a pipe for a Chromium browser it started on Unix, a WebSocket otherwise) using Chrome DevTools Protocol (CDP) for Chromium-based browsers and WebDriver BiDi for Firefox. There is no driver binary to manage. `MotusLauncher.LaunchAsync()` starts the browser process itself, negotiates the connection, and returns an `IBrowser` ready for use.
 
 ### Element references: IWebElement vs ILocator
 

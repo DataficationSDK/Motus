@@ -10,7 +10,7 @@ internal sealed class ColorContrastRule : IAccessibilityRule
 {
     private static readonly HashSet<string> NonTextRoles = new(StringComparer.OrdinalIgnoreCase)
     {
-        "img", "separator", "none", "presentation"
+        "separator", "none", "presentation"
     };
 
     public string RuleId => "a11y-color-contrast";
@@ -29,6 +29,9 @@ internal sealed class ColorContrastRule : IAccessibilityRule
             return null;
 
         if (string.IsNullOrWhiteSpace(node.Name))
+            return null;
+
+        if (AccessibilityRoleNames.IsImage(node.Role))
             return null;
 
         if (node.Role is not null && NonTextRoles.Contains(node.Role))

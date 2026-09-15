@@ -66,16 +66,21 @@ The sequence is simpler than a launch:
 
 The whole connect is bounded by `ConnectOptions.Timeout` (default 30 seconds). Neither the WebSocket handshake nor target adoption carries a bound of its own, so an endpoint that accepts a connection and then answers nothing would otherwise hold the caller for good.
 
+Each stage is bounded separately out of that one budget, so running out of time says which stage was still waiting rather than only how long the caller waited. The timeout error names one of three: the debugging endpoint never answered with a WebSocket URL, and what the last attempt to reach it said; it named a URL and that WebSocket never finished opening; or the WebSocket opened and the browser never finished reporting its version and taking over the tabs already open. A refused connection, a name that will not resolve and an answer from something else listening on that port all look identical from the outside and call for different next steps, which is why the first of the three carries the last failure's own message with it.
+
 ### Target adoption
 
-Adoption is what makes `browser.Contexts` and `context.Pages` reflect the browser as it actually is, with no further call. `Target.getTargets` is read on the browser-level session, and for each page target:
+Adoption is what makes `browser.Contexts` and `context.Pages` reflect the browser as it actually is, with no further call. `Target.setDiscoverTargets` switches discovery on, `Target.getTargets` is read on the browser-level session, and for each page target:
 
-- The browser context it belongs to is created as an adopted `BrowserContext`, or reused if already seen. A context with no `browserContextId` is the browser's default context.
-- `Target.attachToTarget` with `flatten: true` opens a session for the page, and a `Page` is built around it and initialized exactly as a created page is, including `Page.setInterceptFileChooserDialog`.
+- The browser context it belongs to is created as an adopted `BrowserContext`, or reused if already seen. A context with no `browserContextId` is the browser's default context. An adopted context gets a plugin host of its own, since selector strategies are registered by the built-in plugins and a context without them cannot resolve a single locator.
+- `Target.attachToTarget` with `flatten: true` opens a session for the page, and a `Page` is built around it and initialized the way a created page is, including `Page.setInterceptFileChooserDialog`. A tab that was already open has already navigated, so enabling the `Page` domain replays nothing and the frame map would stay empty; the frame tree is read once instead.
+- None of the context's own options are applied. The viewport, locale, timezone and user agent of a tab that was already open belong to whoever opened it, and overriding them would change a browser Motus does not own.
 
-That last point has a consequence worth knowing: while Motus is attached, a file picker opened by the person using the browser is intercepted and does not appear.
+The file chooser interception has a consequence worth knowing: while Motus is attached, a file picker opened by the person using the browser is intercepted and does not appear.
 
-Targets appearing and disappearing after connect are tracked through `Target.attachedToTarget` and `Target.detachedFromTarget`, so a long-lived session stays accurate rather than describing a snapshot taken at connect time.
+A page that will not answer is reported on standard error and skipped, rather than failing the whole connect or dropping every other page in the browser along with it.
+
+Only once every existing target has been wrapped does the event pump start, so it cannot race the enumeration over the same target. From then on, targets appearing and disappearing are tracked through `Target.targetCreated` and `Target.targetDestroyed`, so a long-lived session stays accurate rather than describing a snapshot taken at connect time. A target the browser announces is claimed by its context only if that context does not already hold it and is not in the middle of building it, which is what keeps a page opened by a call from also being wrapped a second time by the pump.
 
 ### Ownership
 
@@ -224,6 +229,32 @@ The sequence:
 7. If `ContextOptions.RecordVideo` is set, a `VideoRecorder` is started.
 
 8. The page is added to `BrowserContext._pages`, lifecycle hooks fire `OnPageCreated`, and the `IBrowserContext.Page` event is raised.
+
+### Popups and new tabs
+
+A tab the page opens for itself, through `window.open` or a link with `target="_blank"`, is a page of the context its opener belongs to. Every browser Motus drives watches for new targets, whoever started it, because a tab one of Motus's own pages opens belongs to Motus wherever the browser came from. Without that, such a tab would load a document no caller could see, address, or close.
+
+When one appears, the owning context takes it in much the way it takes in a page it was asked for: a session is attached, the page is initialized, it is added to `context.Pages`, `OnPageCreated` and the `IBrowserContext.Page` event fire, and then the page that opened it is handed the new one through `IPage.Popup`. The event argument is that `IPage` itself, so there is nothing to unwrap:
+
+```csharp
+var opened = new TaskCompletionSource<IPage>(TaskCreationOptions.RunContinuationsAsynchronously);
+page.Popup += (_, popup) => opened.TrySetResult(popup);
+
+await page.Locator("a[target=_blank]").ClickAsync();
+
+IPage receipt = await opened.Task;
+await receipt.WaitForURLAsync("**/receipt.html");
+```
+
+![A Chromium window with two tabs: Checkout, the page that was clicked, and Receipt, the tab that page opened, whose text has been rewritten through the page handle the Popup event handed over.](images/browser-lifecycle-popup.png)
+
+Subscribe before the action that opens the tab, since the browser can announce the tab before that action returns. The page handed over is ready to be driven: its domains are enabled and its frame tree has been read, so a handler can navigate it, wait on it, or close it with no further step. It may still be on `about:blank` at that moment, because the browser opens the tab before the document it was asked for arrives, which is why the example above waits on the page rather than reading `Url` straight away.
+
+A popup adds a page, never a context. It belongs to the opener's context and, where that is a context Motus created, is given that context's viewport, locale, timezone and user agent, so one tab does not sit at the browser default while the rest are emulated. A popup that closes leaves `context.Pages` right away either way: `IPage.CloseAsync` drops it from the list before `Target.closeTarget` is sent, and a tab the page closed itself is dropped when the browser's `Target.targetDestroyed` report arrives. The handle then says closed rather than failing obscurely on the next call. Closing the context takes the popup with the rest of its pages: for a context Motus created, `Target.disposeBrowserContext` ends every tab in it, the one the page opened included.
+
+Attaching narrows this rather than switching it off. `ConnectOptions.AdoptExistingTargets` decides what is taken over, not what is watched, so a popup from a context you created is tracked either way; see [Attaching to a Running Browser](../guides/attaching-to-a-running-browser.md) for that carve-out and what it is for.
+
+All of this rests on CDP target discovery, which only a transport that multiplexes targets offers. Firefox over WebDriver BiDi models browsing contexts its own way and reports nothing through this path.
 
 ---
 

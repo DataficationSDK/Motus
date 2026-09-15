@@ -102,7 +102,7 @@ What changes underneath is substantial. Such a frame has its own protocol target
 
 None of that reaches the caller. The frame is an ordinary `IFrame`, the API is the same, and code written against a same-process frame works unchanged when the browser decides to isolate it.
 
-Two consequences are visible, and both are covered under [Known traps](#known-traps) below.
+The consequences that do reach the caller are covered under [Known traps](#known-traps) below.
 
 ---
 
@@ -155,9 +155,11 @@ The coordinate tools stay in page coordinates whatever is selected, because thei
 
 ## Known traps
 
-Both of these cost real time to rediscover.
+Each of these costs real time to rediscover.
 
 **The endpoint's target list is not a list of a page's frames.** `http://127.0.0.1:9222/json/list` reports one entry per CDP target, and only a frame the browser put in its own process has a target of its own. So the list shows those, typed `iframe` rather than `page`, and shows nothing at all for every frame the page's own renderer hosts. A document with two frames, one cross-origin and one `srcdoc`, produces exactly one `iframe` entry. Counting entries there will undercount the frames on the page, and filtering for `page` entries will miss all of them. Motus builds `page.Frames` from auto-attach and the frame tree instead, which covers both kinds, so read frames from there and treat the target list as a view of processes rather than of documents.
+
+**A frame changing process is not a frame going away, but a frame whose parent navigated is.** The browser announces a frame moved into another renderer process as a detach carrying the reason `swap`, and says the same for a document it puts into the back-forward cache. Motus tells both apart from a real removal: the frame stays in `page.Frames`, `IsDetached` stays false, no `FrameDetached` arrives, and the `IFrame` being held keeps working across the move. Navigation is the other case. Committing a new document in a frame drops the frames that frame hosted, because the new document reports its own, so a child frame is rediscovered after its parent navigates and comes back as a different `IFrame`, even when it loads the same URL. What that leaves to watch for is the handle from before. It reports `IsDetached`, and checking that is worth the line, because a frame the page no longer lists has no execution context of its own to aim at and an evaluation through it falls back to the page's, quietly answering for the main document rather than failing. Read the frame from `page.Frames` again after a navigation and wait for it as under [Traversing](#traversing), since for a moment after the parent commits its new document the subtree is empty.
 
 **Application globals are absent from isolated worlds.** An isolated world shares the frame's document and nothing else, so the DOM is fully present while everything the application put on `window` is not. An expression that reads a framework handle returns `undefined` there and the failure looks like the application not having loaded. Use `ExecutionWorld.Main`, which is the default, whenever you are reading application state.
 

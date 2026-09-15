@@ -108,6 +108,18 @@ public class ColorContrastRuleTests
     }
 
     [TestMethod]
+    public void Evaluate_ChromiumImageRole_ReturnsNull()
+    {
+        // Chromium reports an image as "image", so the exclusion has to cover that spelling too
+        // or an alt text would be measured for contrast as though it were rendered text.
+        var node = BuildTextNode(role: "image", name: "Logo");
+        var style = new ComputedStyleInfo("rgb(200, 200, 200)", "rgb(255, 255, 255)", "16px", "400");
+        var context = BuildContext(node, style);
+
+        Assert.IsNull(_rule.Evaluate(node, context));
+    }
+
+    [TestMethod]
     public void Evaluate_HiddenNode_ReturnsNull()
     {
         var node = new AccessibilityNode(

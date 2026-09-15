@@ -150,3 +150,143 @@ public class AccessibilityIntegrationTests
             $"Expected 0 violations but got: {string.Join(", ", result.Violations.Select(v => $"{v.RuleId}: {v.Message}"))}");
     }
 }
+
+/// <summary>
+/// Runs the built-in rules against a real page, which is the only way to catch a rule that
+/// matches a role name no browser ever emits. Hand-built nodes cannot: they carry whatever role
+/// the test wrote.
+/// </summary>
+[TestClass]
+[TestCategory("Integration")]
+public class AccessibilityAuditBrowserTests
+{
+    // A 1x1 transparent gif, inline so the audit needs no network.
+    private const string PixelSrc =
+        "data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEAAAAALAAAAAABAAEAAAIBAAA=";
+
+    private IBrowser? _browser;
+
+    [TestInitialize]
+    public async Task Setup()
+    {
+        try
+        {
+            _browser = await MotusLauncher.LaunchAsync(new LaunchOptions { Headless = true });
+        }
+        catch (FileNotFoundException)
+        {
+            Assert.Inconclusive("No browser found; skipping integration tests.");
+        }
+    }
+
+    [TestCleanup]
+    public async Task Cleanup()
+    {
+        if (_browser is not null)
+            await _browser.DisposeAsync();
+    }
+
+    [TestMethod]
+    public async Task Audit_ImageWithoutAltText_FiresAltTextRule()
+    {
+        var html = "<html lang='en'><body><main>"
+            + $"<img src='{PixelSrc}'>"
+            + $"<img alt='Company logo' src='{PixelSrc}'>"
+            + $"<img alt='' src='{PixelSrc}'>"
+            + "</main></body></html>";
+
+        var page = await _browser!.NewPageAsync();
+        try
+        {
+            await page.GotoAsync("data:text/html," + Uri.EscapeDataString(html));
+
+            var result = await page.RunAccessibilityAuditAsync();
+            var altText = result.Violations.Where(v => v.RuleId == "a11y-alt-text").ToList();
+
+            // Only the first image is at fault: the second is named, and the third opts out of
+            // the tree entirely with an empty alt.
+            Assert.AreEqual(1, altText.Count,
+                "expected one alt text violation, got: "
+                + string.Join(", ", result.Violations.Select(v => $"{v.RuleId}(role={v.NodeRole})")));
+            Assert.AreEqual(AccessibilityViolationSeverity.Error, altText[0].Severity);
+            Assert.IsNotNull(altText[0].BackendDOMNodeId);
+            Assert.IsTrue(string.IsNullOrWhiteSpace(altText[0].NodeName));
+
+            // The role a violation reports is the one the tree gave, so an audit and a snapshot
+            // name the same node the same way.
+            var snapshot = await page.AccessibilitySnapshotAsync();
+            var reported = Walk(snapshot.Roots)
+                .Single(n => n.BackendDOMNodeId == altText[0].BackendDOMNodeId);
+            Assert.AreEqual(reported.Role, altText[0].NodeRole);
+        }
+        finally
+        {
+            await page.DisposeAsync();
+        }
+    }
+
+    [TestMethod]
+    public async Task Audit_ExplicitImgRoleWithoutName_FiresAltTextRule()
+    {
+        // An author-supplied role="img" reaches the tree under the browser's own spelling too,
+        // so it is not a way around the mismatch this test guards.
+        var html = "<html lang='en'><body><main>"
+            + "<svg role='img' width='10' height='10'><rect width='10' height='10'/></svg>"
+            + "</main></body></html>";
+
+        var page = await _browser!.NewPageAsync();
+        try
+        {
+            await page.GotoAsync("data:text/html," + Uri.EscapeDataString(html));
+
+            var result = await page.RunAccessibilityAuditAsync();
+
+            Assert.IsTrue(
+                result.Violations.Any(v => v.RuleId == "a11y-alt-text"),
+                "expected an alt text violation, got: "
+                + string.Join(", ", result.Violations.Select(v => $"{v.RuleId}(role={v.NodeRole})")));
+        }
+        finally
+        {
+            await page.DisposeAsync();
+        }
+    }
+
+    [TestMethod]
+    public async Task Audit_NamedImages_DoNotFireAltTextRule()
+    {
+        var html = "<html lang='en'><body><main>"
+            + $"<img alt='Company logo' src='{PixelSrc}'>"
+            + $"<img aria-label='Chart of sales' src='{PixelSrc}'>"
+            + $"<img alt='' src='{PixelSrc}'>"
+            + $"<img aria-hidden='true' src='{PixelSrc}'>"
+            + "</main></body></html>";
+
+        var page = await _browser!.NewPageAsync();
+        try
+        {
+            await page.GotoAsync("data:text/html," + Uri.EscapeDataString(html));
+
+            var result = await page.RunAccessibilityAuditAsync();
+
+            Assert.IsFalse(
+                result.Violations.Any(v => v.RuleId == "a11y-alt-text"),
+                "no image on this page is unnamed, got: "
+                + string.Join(", ", result.Violations.Select(v => $"{v.RuleId}(role={v.NodeRole})")));
+        }
+        finally
+        {
+            await page.DisposeAsync();
+        }
+    }
+
+    private static IEnumerable<AccessibilityNode> Walk(IEnumerable<AccessibilityNode> nodes)
+    {
+        foreach (var node in nodes)
+        {
+            yield return node;
+            foreach (var descendant in Walk(node.Children))
+                yield return descendant;
+        }
+    }
+}

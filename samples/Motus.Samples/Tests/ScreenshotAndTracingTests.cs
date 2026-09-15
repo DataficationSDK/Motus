@@ -1,3 +1,6 @@
+using System.IO.Compression;
+using System.Text.Json;
+
 namespace Motus.Samples.Tests;
 
 /// <summary>
@@ -51,7 +54,17 @@ public class ScreenshotAndTracingTests : MotusTestBase
             await Context.Tracing.StopAsync(new TracingStopOptions { Path = tracePath });
 
             Assert.IsTrue(File.Exists(tracePath), "Trace zip should be created on disk");
-            Assert.IsTrue(new FileInfo(tracePath).Length > 0, "Trace zip should be non-empty");
+
+            // An empty recording still packages into a well formed archive, so the events
+            // inside the ZIP are what says the trace is usable.
+            using var zip = ZipFile.OpenRead(tracePath);
+            var entry = zip.GetEntry("trace.json");
+            Assert.IsNotNull(entry, "Trace zip should contain trace.json");
+
+            await using var stream = entry!.Open();
+            var events = await JsonSerializer.DeserializeAsync<List<JsonElement>>(stream);
+            Assert.IsNotNull(events);
+            Assert.IsTrue(events!.Count > 0, "trace.json should hold the events the browser recorded");
         }
         finally
         {

@@ -28,6 +28,10 @@ Nine rules are registered automatically when the Motus engine initializes. Each 
 | `a11y-missing-landmark` | Pages should have at least one main landmark for screen reader navigation. | Warning |
 | `a11y-heading-hierarchy` | Heading levels should not skip (e.g., h1 followed by h3 without an h2). | Warning |
 
+The sign-up form below looks fine on screen, and an audit of it still returns five violations, each one marked here on the node it was reported against.
+
+![A sign-up form with the icon button, skipped heading and unlabeled text field ringed and tagged with the rule each one broke](images/accessibility-testing-violations.png)
+
 ---
 
 ## Page-Level Assertions

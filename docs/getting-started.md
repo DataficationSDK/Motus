@@ -215,6 +215,47 @@ await locator.CheckAsync();
 await locator.PressAsync("Enter");
 ```
 
+A click can name a mouse button or hold modifier keys by passing `MouseButtonOptions`. It runs the same actionability checks as a plain click, so the element still has to be visible, enabled, settled, and receiving events before the button goes down. Assembling the same click from a bounding box and `Page.Mouse` skips every one of those checks, which is why a right-click or a modified click belongs on the locator. Double-clicking stays left-button only.
+
+```csharp
+// Right-click, then pick from the menu the page draws for itself
+await Page.Locator("tr.report").ClickAsync(new MouseButtonOptions(MouseButton.Right));
+await Page.GetByRole("menuitem", "Export as CSV").ClickAsync();
+
+// Middle-click, and a click with Control held
+await link.ClickAsync(new MouseButtonOptions(MouseButton.Middle));
+await link.ClickAsync(new MouseButtonOptions(Modifiers: KeyModifier.Control));
+
+// Modifiers combine
+await cell.ClickAsync(new MouseButtonOptions(Modifiers: KeyModifier.Control | KeyModifier.Shift));
+```
+
+![A right-click on a table row, with the page's own context menu open over it offering Open, Duplicate, Export as CSV and Delete](images/getting-started-context-menu.png)
+
+The menu above is the page's own, drawn in HTML because the page handled the `contextmenu` event itself. That is the kind of menu a test can read and click. A browser's native context menu is drawn outside the page, so it neither appears in a screenshot nor answers to a locator.
+
+#### Per-call timeouts
+
+Most actions take a timeout in milliseconds as their last argument, which overrides the default for that one call:
+
+```csharp
+await locator.ClickAsync(timeout: 2000);
+await locator.ClickAsync(new MouseButtonOptions(MouseButton.Right), timeout: 2000);
+```
+
+Typing and pressing carry theirs in their options record, alongside the key delay:
+
+```csharp
+await locator.TypeAsync("hello", new KeyboardTypeOptions(Delay: 50, Timeout: 2000));
+await locator.PressAsync("Enter", new KeyboardPressOptions(Timeout: 2000));
+```
+
+Selecting an option takes one through an overload that accepts the values as an array. The timeout there has no default, so passing values on their own still means what it always did:
+
+```csharp
+await locator.SelectOptionAsync(["large"], timeout: 2000);
+```
+
 ### Assertions
 
 Assertions re-evaluate until they pass or a timeout is reached, so there is no need to wait for a value the page has not settled on yet. A locator assertion still needs its element to be present: it fails at once when the locator matches nothing, so wait for an element that has still to render with `ToBeAttachedAsync` first. Use `Expect.That()` or import it statically:
@@ -245,6 +286,20 @@ await Page.ReloadAsync();
 // Wait for a specific URL after an action triggers navigation
 await Page.WaitForURLAsync("**/dashboard");
 ```
+
+A tab the page opens for itself, through `window.open` or a link with `target="_blank"`, is a page like any other: it joins the context's pages and the page that opened it raises `Popup` with the new `IPage`. Subscribe before the click that opens it, since the tab can arrive before the click returns. The new tab is often still on `about:blank` when it is handed over, so wait on it rather than reading its URL straight away.
+
+```csharp
+var opened = new TaskCompletionSource<IPage>(TaskCreationOptions.RunContinuationsAsynchronously);
+Page.Popup += (_, popup) => opened.TrySetResult(popup);
+
+await Page.GetByRole("link", "Open report").ClickAsync();
+
+IPage report = await opened.Task;
+await report.WaitForLoadStateAsync();
+```
+
+See [Browser Lifecycle](architecture/browser-lifecycle.md#popups-and-new-tabs) for how those tabs are tracked.
 
 ## Configuration
 

@@ -19,9 +19,10 @@ internal sealed class RoleSelectorStrategy : ISelectorStrategy
     // CDP Accessibility.queryAXTree already traverses shadow boundaries natively.
     //
     // This strategy scopes by node rather than by execution context, because queryAXTree takes no
-    // context. For a frame root it is scoped to that frame's document element. For the page
-    // default it stays unscoped, which means it is the one strategy that reaches into child
-    // frames: an accessibility tree spans them, where document.querySelectorAll never does.
+    // context and refuses a query that names no root node at all. So it always hands over the
+    // document element of the frame the locator belongs to, the main frame included for a
+    // page-level locator. That is the same document the other strategies query, and the query
+    // stays inside it, so a match in a nested frame needs a locator built on that frame.
     public async Task<IReadOnlyList<IElementHandle>> ResolveAsync(
         string selector, IFrame frame, bool pierceShadow = true, CancellationToken ct = default)
     {
@@ -43,6 +44,12 @@ internal sealed class RoleSelectorStrategy : ISelectorStrategy
 
         var rootObjectId = await SelectorStrategyHelpers
             .ResolveFrameDocumentObjectIdAsync(frame, ct).ConfigureAwait(false);
+
+        // A frame with no reachable document has nothing to match, which is the same answer the
+        // other strategies give when their evaluate comes back with nothing. Sending the query
+        // without a root instead would fail the whole call on the protocol.
+        if (rootObjectId is null)
+            return [];
 
         var queryResult = await session.SendAsync(
             "Accessibility.queryAXTree",

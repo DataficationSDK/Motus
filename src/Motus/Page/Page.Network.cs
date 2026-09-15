@@ -31,14 +31,15 @@ internal sealed partial class Page
 
     public async Task RouteAsync(string urlPattern, Func<IRoute, Task> handler)
     {
-        bool wasEmpty;
         lock (_routeLock)
-        {
-            wasEmpty = !HasAnyRoutes();
             _pageRoutes.Add((urlPattern, handler));
-        }
 
-        if (wasEmpty && _networkManager is not null)
+        // Interception is turned on every time, because the network manager is the one that knows
+        // whether the Fetch domain is already on and skips the call when it is. Reading the rule
+        // count to decide instead was wrong for a rule registered on the context: the context
+        // records the rule before it tells the pages about it, so the count already sees the new
+        // rule here and the domain was left off on every page that was open at the time.
+        if (_networkManager is not null)
             await _networkManager.EnableFetchAsync(_pageCts.Token).ConfigureAwait(false);
     }
 

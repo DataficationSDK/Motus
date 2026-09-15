@@ -52,6 +52,26 @@ public class AltTextRuleTests
     }
 
     [TestMethod]
+    public void Evaluate_ChromiumImageRoleWithoutAltText_ReturnsViolation()
+    {
+        // Chromium calls the image role "image", so a tree read from a real page never carries
+        // the ARIA spelling and the rule has to match both.
+        var node = BuildNode("image", backendNodeId: 11);
+        var result = _rule.Evaluate(node, _context);
+
+        Assert.IsNotNull(result);
+        Assert.AreEqual("a11y-alt-text", result.RuleId);
+        Assert.AreEqual(11L, result.BackendDOMNodeId);
+    }
+
+    [TestMethod]
+    public void Evaluate_ChromiumImageRoleWithAltText_ReturnsNull()
+    {
+        var node = BuildNode("image", name: "Company logo");
+        Assert.IsNull(_rule.Evaluate(node, _context));
+    }
+
+    [TestMethod]
     public void Evaluate_NonImgRole_ReturnsNull()
     {
         var node = BuildNode("button", name: null);

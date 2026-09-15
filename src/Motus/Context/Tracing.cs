@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Threading.Channels;
@@ -191,10 +192,14 @@ internal sealed class Tracing : ITracing
             allEvents.AddRange(chunk);
         }
 
-        // If a stream handle was returned, read the stream data
+        // If a stream handle was returned, read the stream data. This is the normal
+        // path: asking for ReturnAsStream means the browser never sends dataCollected,
+        // so everything recorded arrives here and nowhere else.
         if (completeEvent.Stream is not null)
         {
-            var streamEvents = await ReadStreamAsync(completeEvent.Stream).ConfigureAwait(false);
+            var streamEvents = await ReadStreamAsync(
+                completeEvent.Stream,
+                completeEvent.StreamCompression).ConfigureAwait(false);
             allEvents.AddRange(streamEvents);
         }
 
@@ -251,9 +256,12 @@ internal sealed class Tracing : ITracing
         }
     }
 
-    private async Task<List<JsonElement>> ReadStreamAsync(string streamHandle)
+    private async Task<List<JsonElement>> ReadStreamAsync(string streamHandle, string? streamCompression)
     {
-        var events = new List<JsonElement>();
+        // The handle addresses one continuous document, and the browser decides where
+        // the chunk boundaries fall. A boundary can land in the middle of a JSON token,
+        // so no chunk can be parsed on its own: collect every byte first, parse once.
+        using var payload = new MemoryStream();
 
         try
         {
@@ -268,45 +276,108 @@ internal sealed class Tracing : ITracing
 
                 if (!string.IsNullOrEmpty(readResult.Data))
                 {
-                    byte[] bytes;
-                    if (readResult.Base64Encoded)
-                        bytes = Convert.FromBase64String(readResult.Data);
-                    else
-                        bytes = System.Text.Encoding.UTF8.GetBytes(readResult.Data);
+                    var bytes = readResult.Base64Encoded
+                        ? Convert.FromBase64String(readResult.Data)
+                        : System.Text.Encoding.UTF8.GetBytes(readResult.Data);
 
-                    try
-                    {
-                        using var doc = JsonDocument.Parse(bytes);
-                        if (doc.RootElement.ValueKind == JsonValueKind.Array)
-                        {
-                            foreach (var el in doc.RootElement.EnumerateArray())
-                                events.Add(el.Clone());
-                        }
-                    }
-                    catch (JsonException)
-                    {
-                        // Partial JSON chunk, store as raw string element
-                    }
+                    payload.Write(bytes, 0, bytes.Length);
                 }
 
                 if (readResult.Eof)
                     break;
             }
-
-            // Close the stream
-            await _browserSession.SendAsync(
-                "IO.close",
-                new IoCloseParams(streamHandle),
-                CdpJsonContext.Default.IoCloseParams,
-                CdpJsonContext.Default.IoCloseResult,
-                CancellationToken.None).ConfigureAwait(false);
         }
-        catch (Exception)
+        finally
         {
-            // Stream may already be closed
+            try
+            {
+                await _browserSession.SendAsync(
+                    "IO.close",
+                    new IoCloseParams(streamHandle),
+                    CdpJsonContext.Default.IoCloseParams,
+                    CdpJsonContext.Default.IoCloseResult,
+                    CancellationToken.None).ConfigureAwait(false);
+            }
+            catch
+            {
+                // Closing is a courtesy: the browser drops the handle on its own when
+                // the trace session ends, so a failure here must not lose the payload.
+            }
         }
 
-        return events;
+        payload.Position = 0;
+        return ParseTracePayload(payload, streamCompression);
+    }
+
+    /// <summary>
+    /// Turns the raw trace payload into the flat event list the trace package stores.
+    /// </summary>
+    private static List<JsonElement> ParseTracePayload(Stream payload, string? streamCompression)
+    {
+        if (payload.Length == 0)
+            return [];
+
+        Stream json = payload;
+        MemoryStream? inflated = null;
+
+        try
+        {
+            if (string.Equals(streamCompression, "gzip", StringComparison.OrdinalIgnoreCase))
+            {
+                inflated = new MemoryStream();
+                using var gzip = new GZipStream(payload, CompressionMode.Decompress, leaveOpen: true);
+                gzip.CopyTo(inflated);
+                inflated.Position = 0;
+                json = inflated;
+            }
+
+            using var doc = JsonDocument.Parse(json);
+
+            // When the browser streams a trace it wraps the events in an object and adds
+            // a metadata sibling. The bare array is what the event-reporting transfer
+            // mode produces, so accept either rather than assuming one shape.
+            var root = doc.RootElement;
+            JsonElement array;
+
+            if (root.ValueKind == JsonValueKind.Array)
+            {
+                array = root;
+            }
+            else if (root.ValueKind == JsonValueKind.Object
+                && root.TryGetProperty("traceEvents", out var traceEvents)
+                && traceEvents.ValueKind == JsonValueKind.Array)
+            {
+                array = traceEvents;
+            }
+            else
+            {
+                throw new MotusProtocolException(null, "IO.read",
+                    $"Trace payload of {payload.Length} bytes held no trace events. " +
+                    "Expected a JSON array of events or an object with a traceEvents array.");
+            }
+
+            var events = new List<JsonElement>(array.GetArrayLength());
+            foreach (var el in array.EnumerateArray())
+                events.Add(el.Clone());
+
+            return events;
+        }
+        catch (JsonException ex)
+        {
+            // Returning an empty list here would write a trace file that looks valid and
+            // plays back as nothing, which is far harder to diagnose than a failed stop.
+            throw new MotusProtocolException(null, "IO.read",
+                $"Could not parse the {payload.Length}-byte trace payload returned by the browser.", ex);
+        }
+        catch (InvalidDataException ex)
+        {
+            throw new MotusProtocolException(null, "IO.read",
+                $"Could not decompress the {payload.Length}-byte trace payload returned by the browser.", ex);
+        }
+        finally
+        {
+            inflated?.Dispose();
+        }
     }
 
     private static List<ScreenshotEntry> ExtractScreenshots(List<JsonElement> events)
@@ -320,7 +391,7 @@ internal sealed class Tracing : ITracing
                 continue;
 
             if (evt.TryGetProperty("cat", out var cat)
-                && cat.GetString() == "disabled-by-default-devtools.screenshot"
+                && HasCategory(cat.GetString(), "disabled-by-default-devtools.screenshot")
                 && evt.TryGetProperty("args", out var args)
                 && args.TryGetProperty("snapshot", out var snapshot))
             {
@@ -333,5 +404,35 @@ internal sealed class Tracing : ITracing
         }
 
         return screenshots;
+    }
+
+    /// <summary>
+    /// A trace event's category field is a comma separated list, so an event can carry
+    /// the category of interest alongside several others.
+    /// </summary>
+    private static bool HasCategory(string? categoryField, string category)
+    {
+        if (string.IsNullOrEmpty(categoryField))
+            return false;
+
+        if (categoryField == category)
+            return true;
+
+        var remaining = categoryField.AsSpan();
+        while (!remaining.IsEmpty)
+        {
+            var comma = remaining.IndexOf(',');
+            var part = comma < 0 ? remaining : remaining[..comma];
+
+            if (part.Trim().SequenceEqual(category))
+                return true;
+
+            if (comma < 0)
+                break;
+
+            remaining = remaining[(comma + 1)..];
+        }
+
+        return false;
     }
 }

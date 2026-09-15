@@ -22,7 +22,13 @@ internal sealed class NetworkManager
     private readonly object _waiterLock = new();
 
     private MotusResponse? _lastNavigationResponse;
+
+    // Whether the Fetch domain is on, and the gate that keeps two callers from turning it on or
+    // off at the same time. Registering a rule asks for interception unconditionally, so several
+    // rules registered together would otherwise each see the domain as still off.
     private bool _fetchEnabled;
+    private bool _fetchPumpStarted;
+    private readonly SemaphoreSlim _fetchGate = new(1, 1);
 
     internal HarRecorder? HarRecorder { get; set; }
 
@@ -48,54 +54,65 @@ internal sealed class NetworkManager
             await EnableFetchAsync(ct).ConfigureAwait(false);
     }
 
-    internal async Task EnableFetchAsync(CancellationToken ct)
+    internal Task EnableFetchAsync(CancellationToken ct) =>
+        EnableFetchAsync(handleAuthRequests: false, ct);
+
+    internal Task EnableFetchWithAuthAsync(CancellationToken ct) =>
+        EnableFetchAsync(handleAuthRequests: true, ct);
+
+    private async Task EnableFetchAsync(bool handleAuthRequests, CancellationToken ct)
     {
-        if (_fetchEnabled)
-            return;
+        await _fetchGate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            if (_fetchEnabled)
+                return;
 
-        _fetchEnabled = true;
+            await _session.SendAsync(
+                "Fetch.enable",
+                new FetchEnableParams(
+                    Patterns: [new FetchRequestPattern(UrlPattern: "*", RequestStage: "Request")],
+                    HandleAuthRequests: handleAuthRequests ? true : null),
+                CdpJsonContext.Default.FetchEnableParams,
+                CdpJsonContext.Default.FetchEnableResult,
+                ct).ConfigureAwait(false);
 
-        await _session.SendAsync(
-            "Fetch.enable",
-            new FetchEnableParams(
-                Patterns: [new FetchRequestPattern(UrlPattern: "*", RequestStage: "Request")]),
-            CdpJsonContext.Default.FetchEnableParams,
-            CdpJsonContext.Default.FetchEnableResult,
-            ct).ConfigureAwait(false);
+            _fetchEnabled = true;
 
-        StartFetchEventPump();
-    }
-
-    internal async Task EnableFetchWithAuthAsync(CancellationToken ct)
-    {
-        if (_fetchEnabled)
-            return;
-
-        _fetchEnabled = true;
-
-        await _session.SendAsync(
-            "Fetch.enable",
-            new FetchEnableParams(
-                Patterns: [new FetchRequestPattern(UrlPattern: "*", RequestStage: "Request")],
-                HandleAuthRequests: true),
-            CdpJsonContext.Default.FetchEnableParams,
-            CdpJsonContext.Default.FetchEnableResult,
-            ct).ConfigureAwait(false);
-
-        StartFetchEventPump();
+            // The pump reads a channel that stays open across a disable, so one is enough for the
+            // life of the page. A second reader on the same channel would take paused requests out
+            // of the order the browser sent them in.
+            if (!_fetchPumpStarted)
+            {
+                _fetchPumpStarted = true;
+                StartFetchEventPump();
+            }
+        }
+        finally
+        {
+            _fetchGate.Release();
+        }
     }
 
     internal async Task DisableFetchAsync(CancellationToken ct)
     {
-        if (!_fetchEnabled)
-            return;
+        await _fetchGate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            if (!_fetchEnabled)
+                return;
 
-        _fetchEnabled = false;
+            await _session.SendAsync(
+                "Fetch.disable",
+                CdpJsonContext.Default.FetchDisableResult,
+                ct).ConfigureAwait(false);
 
-        await _session.SendAsync(
-            "Fetch.disable",
-            CdpJsonContext.Default.FetchDisableResult,
-            ct).ConfigureAwait(false);
+            _fetchEnabled = false;
+        }
+        finally
+        {
+            _fetchGate.Release();
+        }
     }
 
     internal IResponse? GetLastNavigationResponse() => _lastNavigationResponse;

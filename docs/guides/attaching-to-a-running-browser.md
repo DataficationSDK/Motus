@@ -163,7 +163,7 @@ The browser on the other end is a Chromium-based one, because attaching speaks t
 
 Two consequences of attaching are worth stating plainly:
 
-- **Options that describe starting a browser have nothing to act on.** `--headless`, `--channel`, `--viewport`, `--record-video` and `--show-cursor` all bind either at launch or at context creation, and an attached session does neither. The server says so on startup rather than ignoring them silently. The `resize` tool still changes a page's viewport at runtime.
+- **Options that describe starting a browser have nothing to act on.** `--headless`, `--channel`, `--executable-path`, `--browser-arg`, `--user-data-dir`, `--viewport`, `--storage-state`, `--user-agent`, `--locale`, `--timezone`, the proxy options, `--record-video`, `--show-cursor` and `--natural-mouse` all bind either at launch or at context creation, and an attached session does neither. The server says so on startup rather than ignoring them silently. The `resize` tool still changes a page's viewport at runtime.
 - **`--http` and `--connect` together share one browser.** The HTTP transport otherwise gives each connected client its own isolated browser. Pointed at one endpoint, every session drives the same browser, and so shares its tabs and cookies.
 
 The destructive tools mean more when attached. `tab_close` and `context_close` discard somebody's working state rather than scratch state.

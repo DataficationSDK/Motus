@@ -1,6 +1,6 @@
 # Architecture Overview
 
-Motus is a .NET browser automation framework that communicates directly with Chromium and Firefox over WebSocket using CDP and WebDriver BiDi, with no Node.js dependency. Every built-in feature is registered through the same `IPluginContext` available to third-party plugins, keeping the architecture honest by design.
+Motus is a .NET browser automation framework that communicates directly with Chromium and Firefox, over a pipe or a WebSocket, using CDP and WebDriver BiDi, with no Node.js dependency. Every built-in feature is registered through the same `IPluginContext` available to third-party plugins, keeping the architecture honest by design.
 
 ## Project Structure
 
@@ -27,7 +27,7 @@ Motus is a .NET browser automation framework that communicates directly with Chr
 
 ## Layered Architecture
 
-The stack has four layers. Test code at the top calls high-level abstractions; those translate into protocol messages that travel over a WebSocket to the browser process at the bottom.
+The stack has four layers. Test code at the top calls high-level abstractions; those translate into protocol messages that travel over a single connection to the browser process at the bottom.
 
 ```
 ┌────────────────────────────────────────────────────────┐
@@ -42,7 +42,7 @@ The stack has four layers. Test code at the top calls high-level abstractions; t
 ├────────────────────────────────────────────────────────┤
 │               Transport Layer                          │
 │   CdpTransport (Chromium)  |  BiDiTransport (Firefox)  │
-│   CdpSocket: raw WebSocket, no Node.js, no driver      │
+│   ICdpSocket: a pipe or a WebSocket, no driver         │
 ├────────────────────────────────────────────────────────┤
 │               Browser Process                          │
 │   Chrome / Edge / Firefox (launched or connected)      │
@@ -56,7 +56,7 @@ The following describes how a single test action, for example `page.Locator("but
 1. **Locator resolution** - The `Locator` type holds the selector string. When an action is invoked, the registered `ISelectorStrategy` implementations are consulted to resolve the element in the DOM.
 2. **Auto-wait** - Before dispatching the action, the engine polls actionability conditions (visible, enabled, stable, receives events) using `IWaitCondition`. Registered `ILifecycleHook` implementations are notified at the start of the action.
 3. **Command dispatch** - The resolved command (for example a CDP `Input.dispatchMouseEvent` sequence) is serialized to JSON using `System.Text.Json` source generators and handed to `CdpTransport` or `BiDiTransport`.
-4. **Transport** - `CdpSocket` sends the message over the open WebSocket connection and awaits the response frame. `SlowMo` delay, if configured, is applied here before sending.
+4. **Transport** - The transport writes the message to the one connection it holds open for the life of the browser and awaits the response carrying the same command ID. `SlowMo` delay, if configured, is applied here before sending.
 5. **Protocol response** - The browser's response is deserialized by the source-generated `JsonSerializerContext` and returned up the call stack.
 6. **Lifecycle notification** - `ILifecycleHook` implementations are notified that the action completed (or failed). Reporters receive the event if they implement the relevant hook surface.
 
@@ -64,12 +64,14 @@ The following describes how a single test action, for example `page.Locator("but
 
 | Browser | Protocol | Connection |
 |---------|----------|------------|
-| Chromium (Chrome, Edge) | Chrome DevTools Protocol (CDP) | `CdpTransport` over `CdpSocket` (WebSocket) |
+| Chromium (Chrome, Edge) that Motus started on Unix | Chrome DevTools Protocol (CDP) | `CdpTransport` over `CdpPipeSocket` (a pair of pipes) |
+| Chromium that Motus started on Windows | Chrome DevTools Protocol (CDP) | `CdpTransport` over `CdpSocket` (WebSocket) |
+| Chromium that Motus attached to | Chrome DevTools Protocol (CDP) | `CdpTransport` over `CdpSocket` (WebSocket) |
 | Firefox | WebDriver BiDi | `BiDiTransport` over `CdpSocket` (WebSocket) |
 
-`MotusLauncher.LaunchAsync` allocates a free TCP port, starts the browser process with the appropriate remote debugging flags, and then polls (Chromium) or reads stderr (Firefox) to discover the WebSocket endpoint. `MotusLauncher.ConnectAsync` skips process management entirely and attaches to an existing browser via a supplied WebSocket URL using `CdpTransport`.
+`MotusLauncher.LaunchAsync` starts the browser process with the appropriate remote debugging flags. A Chromium browser it starts on Unix is driven over a pipe, so there is no port to allocate and no endpoint to discover, and the browser exits when its end of that pipe closes. Firefox has no pipe mode and Windows offers no way to hand a child the descriptors Chromium expects, so both keep a debugging port: the launcher allocates a free TCP port and then polls the HTTP debugging endpoint (Chromium) or reads stderr (Firefox) to discover the WebSocket URL. `MotusLauncher.ConnectAsync` skips process management entirely and attaches to an existing browser over its CDP WebSocket.
 
-There is no Node.js sidecar, no WebDriver HTTP server, and no intermediate process boundary. The `CdpSocket` class holds the raw `ClientWebSocket` connection directly.
+There is no Node.js sidecar, no WebDriver HTTP server, and no intermediate process boundary. Everything above the transport calls `IMotusSession` and never sees the connection; byte-level I/O sits behind `ICdpSocket`, whose two implementations hold the browser's pipes or the `ClientWebSocket` directly. [Transport and Protocol](transport-and-protocol.md) covers both in detail.
 
 ## Plugin System
 

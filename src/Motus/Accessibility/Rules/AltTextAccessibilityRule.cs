@@ -16,7 +16,7 @@ internal sealed class AltTextAccessibilityRule : IAccessibilityRule
         AccessibilityNode node,
         AccessibilityAuditContext context)
     {
-        if (!string.Equals(node.Role, "img", StringComparison.OrdinalIgnoreCase))
+        if (!AccessibilityRoleNames.IsImage(node.Role))
             return null;
 
         if (!string.IsNullOrWhiteSpace(node.Name))

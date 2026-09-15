@@ -86,15 +86,20 @@ internal static class SelectorStrategyHelpers
 
     /// <summary>
     /// Resolves the given frame's document element to a remote object ID, for protocol commands
-    /// that scope by node rather than by execution context. Returns null for the page default.
+    /// that scope by node rather than by execution context. Returns null when the document could
+    /// not be evaluated, which is what a frame that went away mid-query looks like.
     /// </summary>
+    /// <remarks>
+    /// A page-level locator carries no explicit execution context, and evaluating with none is
+    /// exactly what lands in the main frame's document, so the page default resolves a root here
+    /// like any other frame does. A command that scopes by node has no way to say "wherever this
+    /// session is pointing", so omitting the root is never an option for it the way it is for an
+    /// evaluate: every caller needs a real node back.
+    /// </remarks>
     internal static async Task<string?> ResolveFrameDocumentObjectIdAsync(
         IFrame frame, CancellationToken ct)
     {
         var page = GetPage(frame);
-        var contextId = page.GetSelectorContextId(frame);
-        if (contextId is null)
-            return null;
 
         var result = await page.SessionFor(frame).SendAsync(
             "Runtime.evaluate",
@@ -102,7 +107,7 @@ internal static class SelectorStrategyHelpers
                 Expression: "document.documentElement",
                 ReturnByValue: false,
                 AwaitPromise: false,
-                ContextId: contextId),
+                ContextId: page.GetSelectorContextId(frame)),
             CdpJsonContext.Default.RuntimeEvaluateParams,
             CdpJsonContext.Default.RuntimeEvaluateResult,
             ct).ConfigureAwait(false);

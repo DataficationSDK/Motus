@@ -1,6 +1,6 @@
 # Network Interception
 
-Motus exposes a routing API that lets you intercept, inspect, modify, block, or mock any network request made by the browser. Interception is configured through route handlers registered on either a page or a browser context. All interception is asynchronous and non-destructive by default: if your handler does not call `FulfillAsync`, `ContinueAsync`, or `AbortAsync`, Motus will fall through to the next matching handler or let the request proceed normally.
+Motus exposes a routing API that lets you intercept, inspect, modify, block, or mock any network request made by the browser. Interception is configured through route handlers registered on either a page or a browser context. All interception is asynchronous and non-destructive by default: if your handler does not call `FulfillAsync`, `ContinueAsync`, or `AbortAsync`, Motus lets the request proceed as it stands.
 
 ## Route Registration
 
@@ -20,8 +20,10 @@ await page.RouteAsync("**/api/products", async route =>
 
 Use `IBrowserContext.RouteAsync` to intercept requests across every page in a browser context. This is useful for applying blanket policies such as blocking analytics or injecting authentication headers.
 
+A context rule covers the pages that are already open as well as the ones opened later. On a page that is already open it applies from the next request onward, so a page that has finished loading has to request again, through a reload or through whatever it calls next, before the rule is seen.
+
 ```csharp
-await context.RouteAsync("**/*.{png,jpg,gif,webp}", async route =>
+await context.RouteAsync("**/analytics/**", async route =>
 {
     await route.AbortAsync();
 });
@@ -33,18 +35,25 @@ Both overloads share the same signature:
 Task RouteAsync(string urlPattern, Func<IRoute, Task> handler);
 ```
 
-### Glob pattern syntax
+### URL pattern syntax
 
-URL patterns use a glob syntax where `*` matches any sequence of characters that does not cross a path segment boundary, and `**` matches any sequence of characters including path separators. Query strings and fragments are included in the match target.
+A pattern is matched against the full request URL, query string and fragment included, and matching is case-sensitive. There are three forms, tried in this order:
+
+- A pattern equal to the URL matches that URL and nothing else.
+- A pattern containing `*` is a glob, and the glob has to cover the whole URL. Each `*` stands for any run of characters, path separators included, which makes `*` and `**` equivalent. Nothing else in the pattern is glob syntax: a brace list such as `{png,jpg}`, a `?`, and a character class are all matched as the literal characters they are.
+- A pattern with no `*` matches any URL that contains it.
 
 | Pattern | Matches |
 |---|---|
-| `**/api/**` | Any URL whose path contains `/api/` |
+| `**/api/**` | Any URL containing `/api/` |
 | `https://example.com/**` | Any URL under `https://example.com/` |
 | `**/*.json` | Any URL ending in `.json` |
 | `**/search?*` | Any URL whose path ends with `/search` followed by a query string |
+| `/api/` | Any URL containing `/api/`, as a substring |
 
-When multiple route handlers match the same URL, they are evaluated in registration order. The first handler that calls `FulfillAsync`, `ContinueAsync`, or `AbortAsync` wins; subsequent handlers are skipped.
+Because a glob has to cover the whole URL, `**/api/products` does not match `https://example.com/api/products?page=2`. End the pattern with `**` when the request may carry a query string.
+
+One handler takes a request, rather than each matching handler in turn. Page handlers are consulted before context handlers, and within each the most recently registered matching handler is the one that runs, so registering a second handler for a pattern shadows the first rather than queuing behind it. If the handler that runs returns without calling `FulfillAsync`, `ContinueAsync`, or `AbortAsync`, the request continues as it stands and no other handler is offered it.
 
 ## Fulfilling Requests
 
@@ -78,6 +87,10 @@ await page.RouteAsync("**/api/user/me", async route =>
     });
 });
 ```
+
+The page cannot tell the difference, so it renders the mocked body exactly as it would a real response.
+
+![A product catalogue page showing three products, all of them drawn from a mocked /api/products response](images/network-interception-mocked-response.png)
 
 To serve a file from disk:
 
@@ -154,7 +167,7 @@ The optional `errorCode` parameter maps to a browser network error. Common value
 | `"failed"` | A generic failure. |
 
 ```csharp
-await page.RouteAsync("**/*.{png,jpg,jpeg,gif,webp,svg}", async route =>
+await page.RouteAsync("**.png**", async route =>
 {
     await route.AbortAsync();
 });
@@ -338,10 +351,11 @@ await page.GetByText("Widget A").WaitForAsync();
 Prevent image requests from being sent. This can speed up tests that do not require visual content.
 
 ```csharp
-await context.RouteAsync("**/*.{png,jpg,jpeg,gif,webp,svg,ico}", async route =>
+// A brace list is not expanded, so an extension list is one rule per extension.
+foreach (var extension in new[] { "png", "jpg", "jpeg", "gif", "webp", "svg", "ico" })
 {
-    await route.AbortAsync();
-});
+    await context.RouteAsync($"**.{extension}**", route => route.AbortAsync());
+}
 ```
 
 ### Modify request headers

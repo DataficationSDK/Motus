@@ -1,3 +1,6 @@
+using System.IO.Compression;
+using System.Text.Json;
+
 namespace Motus.Samples.Tests;
 
 /// <summary>
@@ -89,7 +92,41 @@ public class TraceCaptureSampleTest : MotusTestBase
         await Context.Tracing.StopAsync(new TracingStopOptions { Path = tracePath });
 
         Assert.IsTrue(File.Exists(tracePath), "Trace ZIP should be created");
-        var info = new FileInfo(tracePath);
-        Assert.IsTrue(info.Length > 0, "Trace ZIP should be non-empty");
+
+        // A ZIP that merely exists is not a usable trace: an empty recording still packages
+        // into a well formed archive that the viewer opens and plays back as nothing. Assert
+        // on the events inside it instead.
+        var events = await ReadTraceEventsAsync(tracePath);
+        Assert.IsTrue(events.Count > 0, "trace.json should hold the events the browser recorded");
+
+        var actions = events.Count(e => IsRecordedAction(e));
+        Assert.IsTrue(actions > 0,
+            $"trace.json held {events.Count} events but no browser timeline activity, "
+            + "so `motus trace show` would report no actions.");
+    }
+
+    private static async Task<List<JsonElement>> ReadTraceEventsAsync(string zipPath)
+    {
+        using var zip = ZipFile.OpenRead(zipPath);
+        var entry = zip.GetEntry("trace.json");
+        Assert.IsNotNull(entry, "Trace ZIP should contain trace.json");
+
+        await using var stream = entry!.Open();
+        var events = await JsonSerializer.DeserializeAsync<List<JsonElement>>(stream);
+        Assert.IsNotNull(events);
+        return events!;
+    }
+
+    /// <summary>
+    /// True for the browser timeline events the trace viewer turns into steps. A category field
+    /// is a comma separated list, so an event can carry this category alongside others.
+    /// </summary>
+    private static bool IsRecordedAction(JsonElement evt)
+    {
+        if (evt.ValueKind != JsonValueKind.Object || !evt.TryGetProperty("cat", out var cat))
+            return false;
+
+        var value = cat.GetString();
+        return value is not null && value.Split(',').Any(part => part.Trim() == "devtools.timeline");
     }
 }

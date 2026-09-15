@@ -466,6 +466,10 @@ Budget thresholds are not part of `PerformanceOptions`. They are configured via 
 | `ShowCursor` | `bool` | `false` | Draw an on-screen pseudo-cursor in every page of the context, so screenshots and recordings show where actions occur. Follows the element's CSS cursor style and renders a click effect. Not currently mapped from the config file; set in code. |
 | `NaturalMouseMotion` | `bool` | `false` | Move the mouse along a curved, eased, time-spaced path instead of jumping to the target, so motion looks human and the page receives a realistic event stream. Adds latency to every move. Not currently mapped from the config file; set in code. |
 
+Synthetic input never moves the real pointer, so a capture shows no cursor at all unless `ShowCursor` draws one into the page.
+
+![A settings page captured with ShowCursor on, the drawn pointer resting on the checkbox label it has just clicked](images/configuration-show-cursor.png)
+
 ---
 
 ## Example: CI Configuration via Environment Variables

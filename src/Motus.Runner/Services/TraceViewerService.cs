@@ -52,9 +52,9 @@ public sealed class TraceViewerService
 
             var cat = evt.TryGetProperty("cat", out var catProp) ? catProp.GetString() : null;
 
-            if (cat == "disabled-by-default-devtools.screenshot")
+            if (HasCategory(cat, "disabled-by-default-devtools.screenshot"))
                 screenshotEvents.Add(evt);
-            else if (cat == "devtools.timeline")
+            else if (HasCategory(cat, "devtools.timeline"))
                 timelineEvents.Add(evt);
         }
 
@@ -137,6 +137,37 @@ public sealed class TraceViewerService
             _timeline.AddEntry(entry);
             index++;
         }
+    }
+
+    /// <summary>
+    /// A trace event's category field is a comma separated list, so an event can carry
+    /// the category of interest alongside several others. Matching the whole field as a
+    /// single string silently drops those events.
+    /// </summary>
+    private static bool HasCategory(string? categoryField, string category)
+    {
+        if (string.IsNullOrEmpty(categoryField))
+            return false;
+
+        if (categoryField == category)
+            return true;
+
+        var remaining = categoryField.AsSpan();
+        while (!remaining.IsEmpty)
+        {
+            var comma = remaining.IndexOf(',');
+            var part = comma < 0 ? remaining : remaining[..comma];
+
+            if (part.Trim().SequenceEqual(category))
+                return true;
+
+            if (comma < 0)
+                break;
+
+            remaining = remaining[(comma + 1)..];
+        }
+
+        return false;
     }
 
     /// <summary>

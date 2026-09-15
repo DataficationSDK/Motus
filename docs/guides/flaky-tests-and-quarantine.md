@@ -101,6 +101,10 @@ A corrupt or unreadable history file is tolerated rather than fatal, since losin
 
 The console, HTML, JUnit and TRX reporters all distinguish flaky and quarantined results, so the state survives into whatever reads the output. JUnit and TRX carry them as categories and outcomes their consumers already understand, which means a CI dashboard shows a quarantined failure as quarantined rather than as a passing test that mysteriously logged an error.
 
+The HTML reporter gives each state its own count and its own badge, so one look tells you whether a green run was actually green.
+
+![A Motus HTML test report with separate counts for passed, failed, flaky, quarantined and skipped, and a badge on each test naming its state](images/flaky-tests-and-quarantine-html-report.png)
+
 When sharding, `motus shard merge` sums the flaky and quarantined counts along with the rest. See [Sharding](sharding.md).
 
 ## Configuration
