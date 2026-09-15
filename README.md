@@ -209,13 +209,13 @@ When a threshold is set and the aggregated run coverage falls below it, the run 
 
 ### Retrying Flaky Runs
 
-CDP WebSocket connections are occasionally dropped by the browser under heavy tracing or when sibling targets close mid-command. Use `--retries N` to re-run a failing test up to `N` additional times, but only when the failure is a transient CDP disconnect. Non-transient failures (assertion errors, timeouts) are not retried, so real bugs aren't masked.
+The browser connection is occasionally dropped under heavy tracing or when sibling targets close mid-command. Use `--retries N` to re-run a failing test up to `N` additional times, but only when the failure is a transient disconnect. Non-transient failures (assertion errors, timeouts) are not retried, so real bugs aren't masked. Pass `--retry-policy flake` to re-run any failure instead.
 
 ```bash
 motus run ./bin/Debug/net8.0/MyTests.dll --retries 2
 ```
 
-Each retry runs the entire test fresh: new browser context, new WebSocket, new test instance. A `[RETRY]` line is logged to stderr for every attempt so flake patterns are visible.
+Each retry runs the entire test fresh: new browser context, new browser connection, new test instance. A `[RETRY]` line is logged to stderr for every attempt so flake patterns are visible.
 
 Under `dotnet test`, `[MotusTestClass]` does the same for an MSTest suite: it re-runs a test whose browser disconnected, and never one that failed an assertion.
 
@@ -245,7 +245,7 @@ On Windows, `motus install` also grants the browser's directory the read and exe
 
 ### MCP Server for AI Agents
 
-Motus exposes its browser engine to AI agents through a [Model Context Protocol](https://modelcontextprotocol.io) server, shipped as the `motus mcp` verb on the CLI tool. Agents navigate, snapshot the accessibility tree, click and type against referenced elements, read the console and network logs, run accessibility and performance audits, and generate Page Object Model code, all over stdio or Streamable HTTP. Coordinate input on canvas surfaces (including drag and drop), request interception, isolated contexts, and recording traces, HARs, and videos are named with `--caps`, so a catalog only carries what a session needs.
+Motus exposes its browser engine to AI agents through a [Model Context Protocol](https://modelcontextprotocol.io) server, shipped as the `motus mcp` verb on the CLI tool. Agents navigate, snapshot the accessibility tree, click and type against referenced elements, read the console and network logs, run accessibility and performance audits, and generate Page Object Model code, all over stdio or Streamable HTTP. Coordinate input on canvas surfaces (including drag and drop), request interception, isolated contexts, and recording traces, HARs, and videos are named with `--caps`, so a catalog only carries what a session needs. Start the server with `--allow-attach` or `--connect` and an agent can also drive a browser that is already running, which stays the operator's call because that browser may hold somebody's signed-in sessions.
 
 Register it with Claude Code against the installed tool:
 
@@ -280,7 +280,7 @@ All CDP types are source-generated at build time from the protocol JSON schema. 
 
 ## The Extension Model
 
-Five interfaces define every point of extensibility, all registered through `IPluginContext`:
+Every point of extensibility is an interface registered through `IPluginContext`:
 
 | Interface | What It Does |
 |-----------|-------------|
@@ -373,12 +373,15 @@ Launch the Blazor-based visual runner with `motus run --visual`:
 ## CLI Reference
 
 ```
-motus run <assemblies>  Run tests with optional --visual, --filter, --workers, --reporter, --a11y, --perf-budget, --coverage, --retries
+motus run <assemblies>  Run tests with optional --visual, --filter, --workers, --reporter, --a11y, --perf-budget, --coverage, --retries, --retry-policy, --quarantine, --shard
 motus record           Record a browser session and emit test code
 motus codegen          Generate POM classes from live pages (--headed, --connect, --detect-listeners)
+motus check-selectors  Validate recorded selectors against live pages (--base-url, --manifest, --fix, --ci)
 motus screenshot       Capture a screenshot (--full-page, --delay, --hide-banners, --width, --height)
 motus pdf              Generate a PDF from a URL (--delay, --hide-banners, --width, --timeout)
 motus trace show       Open a trace file in the visual runner with timeline, screenshots, and network
+motus trx show         Open a TRX result file in the visual runner
+motus shard merge      Merge per-shard result files into one report (--output, --expect)
 motus install          Download and install browser binaries
 motus update-protocol  Fetch and update CDP protocol schema files
 motus mcp              Run the MCP server for AI agents (stdio by default, or --http)
