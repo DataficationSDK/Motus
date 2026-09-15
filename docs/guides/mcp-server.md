@@ -29,7 +29,15 @@ Claude Code's CLI registers MCP servers with `claude mcp add`. Point it at the i
 claude mcp add motus -- motus mcp
 ```
 
-This records a server named `motus` whose launch command is `motus mcp` over stdio. Everything after `--` is the command Claude Code runs to start the server, so any server option goes there too:
+This records a server named `motus` whose launch command is `motus mcp` over stdio, with the 34 always-available tools and nothing else. Coordinate input, recording, isolated contexts, and request mocking are added by name, so a developer working end to end on a product usually wants all four:
+
+```bash
+claude mcp add motus -- motus mcp --caps coordinates,recording,contexts,routing
+```
+
+The default is smaller because every advertised tool is described to the client at the start of every conversation, whether it is called or not. An agent that only reads pages does better with the short catalog. One that mocks requests, records what went wrong, and works on canvases does better with the full one. The groups are listed under [Added on request](#added-on-request).
+
+Everything after `--` is the command Claude Code runs to start the server, so any other server option goes there too:
 
 ```bash
 # Drive Chrome instead of the downloaded Chromium

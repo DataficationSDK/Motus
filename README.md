@@ -247,12 +247,12 @@ On Windows, `motus install` also grants the browser's directory the read and exe
 
 Motus exposes its browser engine to AI agents through a [Model Context Protocol](https://modelcontextprotocol.io) server, shipped as the `motus mcp` verb on the CLI tool. Agents navigate, snapshot the accessibility tree, click and type against referenced elements, read the console and network logs, run accessibility and performance audits, and generate Page Object Model code, all over stdio or Streamable HTTP. Coordinate input on canvas surfaces (including drag and drop), request interception, isolated contexts, and recording traces, HARs, and videos are named with `--caps`, so a catalog only carries what a session needs. Start the server with `--allow-attach` or `--connect` and an agent can also drive a browser that is already running, which stays the operator's call because that browser may hold somebody's signed-in sessions.
 
-Register it with Claude Code against the installed tool:
+Register it with Claude Code against the installed tool. The plain command carries the 34 always-available tools; add `--caps` for the rest, which is the form a developer working on a product usually wants:
 
 ```bash
 dotnet tool install --global Motus.Cli
 motus install
-claude mcp add motus -- motus mcp
+claude mcp add motus -- motus mcp --caps coordinates,recording,contexts,routing
 ```
 
 See [MCP Server](docs/guides/mcp-server.md) for the full registration story, the tool catalog, and the HTTP transport.
