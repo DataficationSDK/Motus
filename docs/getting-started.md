@@ -46,25 +46,7 @@ dotnet add package Motus.Analyzers
 
 ### MSTest
 
-MSTest uses a shared browser across the assembly with one isolated context per test.
-
-```csharp
-// AssemblySetup.cs
-using Motus.Abstractions;
-using Motus.Testing.MSTest;
-
-[TestClass]
-public class AssemblySetup
-{
-    [AssemblyInitialize]
-    public static async Task Initialize(TestContext _) =>
-        await MotusTestBase.LaunchBrowserAsync(new LaunchOptions { Headless = true });
-
-    [AssemblyCleanup]
-    public static async Task Cleanup() =>
-        await MotusTestBase.CloseBrowserAsync();
-}
-```
+MSTest uses a shared browser across the assembly with one isolated context per test. The browser launches when the first test needs it and closes when the run ends, so a test class is all you need:
 
 ```csharp
 // SearchTests.cs
@@ -93,6 +75,8 @@ public class SearchTests : MotusTestBase
     }
 }
 ```
+
+Launch settings such as headed mode or a browser channel go in `motus.config.json`. For options that have to be set in code, see [Browser lifecycle](guides/testing-frameworks.md#browser-lifecycle).
 
 ### NUnit
 

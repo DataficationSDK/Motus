@@ -10,7 +10,7 @@ Package: `Motus.Testing.MSTest`
 
 ### MotusTestBase
 
-Inherit from `MotusTestBase` to receive a fully managed `IBrowserContext` and `IPage` for every test. A single browser is shared across the entire assembly and is stored in a static `BrowserFixture`. Because each test gets its own context, the class is safe to use with `[Parallelize]`.
+Inherit from `MotusTestBase` to receive a fully managed `IBrowserContext` and `IPage` for every test. A single browser is shared across the entire assembly and is stored in a static `BrowserFixture`. It launches when the first test needs it, so no assembly setup is required. Because each test gets its own context, the class is safe to use with `[Parallelize]`.
 
 | Member | Description |
 |---|---|
@@ -18,34 +18,59 @@ Inherit from `MotusTestBase` to receive a fully managed `IBrowserContext` and `I
 | `protected IPage Page` | The page for the current test. Available after `[TestInitialize]`. |
 | `public TestContext TestContext` | Set by the MSTest runner. Used internally to detect test outcome for failure tracing. |
 
-### Assembly lifecycle
+### Browser lifecycle
 
-The shared browser is not launched automatically. You must wire it up with `[AssemblyInitialize]` and `[AssemblyCleanup]` in a static class within your test assembly. Both methods are `static` on `MotusTestBase`.
+The shared browser launches on first use. The first test to run pays for the launch inside its `[TestInitialize]`, and tests that start at the same moment under `[Parallelize]` wait for that one launch rather than starting browsers of their own. When the test process exits, the browser is closed and its temporary profile deleted.
 
-```csharp
-[TestClass]
-public static class TestSetup
-{
-    [AssemblyInitialize]
-    public static async Task AssemblyInitialize(TestContext _)
-        => await MotusTestBase.LaunchBrowserAsync();
+There are three ways to set launch options, from broadest to narrowest:
 
-    [AssemblyCleanup]
-    public static async Task AssemblyCleanup()
-        => await MotusTestBase.CloseBrowserAsync();
-}
-```
+1. **`motus.config.json`** (or `MOTUS_*` environment variables). The `launch` section applies to every browser the run starts, with no code. See the [Configuration Reference](./configuration.md).
+2. **`[AssemblyInitialize]`**, for options set in code for the whole assembly, such as `Performance` or a computed `Args` list. Call `LaunchBrowserAsync` there to launch the shared browser up front with those options:
 
-You can pass a `LaunchOptions` instance to `LaunchBrowserAsync` if you need to override launch settings at the assembly level.
+   ```csharp
+   [TestClass]
+   public static class TestSetup
+   {
+       [AssemblyInitialize]
+       public static async Task AssemblyInitialize(TestContext _)
+           => await MotusTestBase.LaunchBrowserAsync(new LaunchOptions
+           {
+               Performance = new PerformanceOptions { Enable = true },
+           });
+
+       [AssemblyCleanup]
+       public static async Task AssemblyCleanup()
+           => await MotusTestBase.CloseBrowserAsync();
+   }
+   ```
+
+   `LaunchBrowserAsync` replaces any browser already running, so call it only from `[AssemblyInitialize]`, before tests start. `[AssemblyCleanup]` with `CloseBrowserAsync` is optional too; use it when you want the browser closed at a known point rather than at process exit. Projects that already have both hooks keep working unchanged.
+3. **The `LaunchOptions` override** on a test class, for a class that needs a different browser from the rest (see below).
+
+A launch that fails is reported to every test that asks for the browser within the next 30 seconds without being attempted again, so a missing browser fails a run quickly instead of costing three launch attempts per test.
 
 ### Virtual overrides
 
-Override either property on your test class to customize options without changing the shared browser setup.
+Override either property on your test class to customize options.
 
 | Override | Default |
 |---|---|
-| `protected virtual LaunchOptions? LaunchOptions` | `null` (uses config defaults) |
+| `protected virtual LaunchOptions? LaunchOptions` | `null` (uses the shared browser) |
 | `protected virtual ContextOptions? ContextOptions` | `new ContextOptions { Viewport = new ViewportSize(1024, 768) }` |
+
+`ContextOptions` applies to each test's context and costs nothing extra. `LaunchOptions` gives the class a browser of its own, launched with those options, alongside the shared one. That browser belongs to the class that declares the override and is shared by every class inheriting it, so a base class with one override yields one extra browser however many test classes derive from it. A class that overrides again gets another. Returning `null` uses the shared browser.
+
+```csharp
+public abstract class HeadedTests : MotusTestBase
+{
+    protected override LaunchOptions? LaunchOptions => new() { Headless = false, SlowMo = 100 };
+}
+
+[TestClass] public class CheckoutTests : HeadedTests { /* ... */ }  // these two share
+[TestClass] public class CartTests : HeadedTests { /* ... */ }      // one headed browser
+```
+
+Each extra browser stays open until the process exits or `CloseBrowserAsync` runs, so prefer `motus.config.json` for settings the whole run shares.
 
 ### Complete example
 
@@ -53,18 +78,6 @@ Override either property on your test class to customize options without changin
 using Motus.Abstractions;
 using Motus.Testing.MSTest;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
-
-[TestClass]
-public static class TestSetup
-{
-    [AssemblyInitialize]
-    public static async Task AssemblyInitialize(TestContext _)
-        => await MotusTestBase.LaunchBrowserAsync();
-
-    [AssemblyCleanup]
-    public static async Task AssemblyCleanup()
-        => await MotusTestBase.CloseBrowserAsync();
-}
 
 [TestClass]
 public class HomePageTests : MotusTestBase
@@ -399,13 +412,23 @@ IBrowserContext ctx = await fixture.NewContextAsync(contextOptions);
 await fixture.DisposeAsync();
 ```
 
+Or launch on first use, from each test's setup:
+
+```csharp
+await fixture.EnsureInitializedAsync(options); // launches once; later calls return at once
+IBrowserContext ctx = await fixture.NewContextAsync(contextOptions);
+```
+
 Key behaviors:
 
 - **Launch retry.** `InitializeAsync` retries browser launch up to three times with increasing delays (1 s, 2 s). This avoids flaky failures on CI runners where antivirus software can delay process creation.
+- **Lazy launch.** `EnsureInitializedAsync` launches only when the fixture has no browser. Concurrent callers share one launch, a call during a crash restart waits for that restart rather than starting a second browser, and a call after `DisposeAsync` launches again. A failed launch is rethrown to callers for 30 seconds without another attempt.
+- **Replacing the browser.** Calling `InitializeAsync` on a fixture that already has a browser closes that browser and launches a new one with the given options. Call it before tests start, not while they are using the current browser.
 - **Auto-restart on crash.** The fixture subscribes to `IBrowser.Disconnected`. When Chrome crashes or becomes unresponsive (detected by the heartbeat or `Process.Exited`), the fixture automatically disposes the dead browser and launches a replacement with retry. The test that was running when the crash occurred fails normally; subsequent tests proceed against the fresh browser.
 - **Restart coordination.** A `SemaphoreSlim` gate ensures that `NewContextAsync` callers block briefly if a restart is in progress rather than racing against a dead browser. This is transparent to test code and works correctly with parallel test execution (`[Parallelize]`, `[Parallelizable]`, and xUnit parallel collections).
 - `Browser` throws `InvalidOperationException` if accessed before `InitializeAsync` completes.
 - `DisposeAsync` unsubscribes from browser events, closes, and releases the browser process.
+- **Process exit.** A browser the fixture launched is killed and its temporary profile deleted when the process exits, if `DisposeAsync` was never called. Test hosts can end the process within a fraction of a second of exit starting, so this is a safety net; dispose the fixture when you have a natural point to do it.
 
 ---
 

@@ -4,7 +4,7 @@ MSTest integration for the [Motus](https://github.com/DataficationSDK/Motus) bro
 
 ## Overview
 
-Provides `MotusTestBase`, a base class that shares a single browser across all tests in the assembly and creates an isolated `IBrowserContext` and `IPage` per test. Compatible with `[Parallelize]`. Failure tracing is built in and captures a trace ZIP when a test fails, controlled by `motus.config.json` or the `MOTUS_FAILURES_TRACE` environment variable.
+Provides `MotusTestBase`, a base class that shares a single browser across all tests in the assembly and creates an isolated `IBrowserContext` and `IPage` per test. The browser launches when the first test needs it and closes when the run ends, so no assembly setup is required. Compatible with `[Parallelize]`. Failure tracing is built in and captures a trace ZIP when a test fails, controlled by `motus.config.json` or the `MOTUS_FAILURES_TRACE` environment variable.
 
 `[MotusTestClass]` stands in for `[TestClass]` and runs a test again if the browser goes away underneath it.
 
@@ -22,12 +22,6 @@ using Motus.Testing.MSTest;
 [MotusTestClass]
 public class SearchTests : MotusTestBase
 {
-    [AssemblyInitialize]
-    public static async Task Setup(TestContext _) => await LaunchBrowserAsync();
-
-    [AssemblyCleanup]
-    public static async Task Cleanup() => await CloseBrowserAsync();
-
     [TestMethod]
     public async Task SearchBox_AcceptsInput()
     {
@@ -64,3 +58,19 @@ Override `LaunchOptions` or `ContextOptions` to configure the browser or viewpor
 protected override LaunchOptions LaunchOptions => new() { Headless = false };
 protected override ContextOptions ContextOptions => new() { Viewport = new ViewportSize(1920, 1080) };
 ```
+
+A class that overrides `LaunchOptions` gets a browser of its own with those options, shared by every class that inherits the override. Settings for the whole run belong in `motus.config.json`. To launch the shared browser with options set in code, call `LaunchBrowserAsync` from an `[AssemblyInitialize]` method:
+
+```csharp
+[TestClass]
+public static class TestSetup
+{
+    [AssemblyInitialize]
+    public static Task Setup(TestContext _) =>
+        MotusTestBase.LaunchBrowserAsync(new LaunchOptions { SlowMo = 50 });
+}
+```
+
+### Failure artifacts
+
+With `failure.trace` or `failure.screenshot` enabled, a failing test's trace and screenshots are named after it, for example `trace-SearchTests.SearchBox_AcceptsInput-20261004-221501-123.zip`, attached to the test result, and their paths written to the test output.
