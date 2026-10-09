@@ -160,6 +160,12 @@ internal sealed class InputStateMachine
         if (IsPrintableKey(key) && _activeFillPageUrl is not null)
             return;
 
+        // Keys the replay keyboard cannot press, such as "Dead", "Process" and "Unidentified"
+        // from an IME or a non-US layout, are left out: a recorded press of one would throw on
+        // replay, and the text they help compose still arrives through the fill.
+        if (!IsPrintableKey(key) && !KeyDefinitions.TryResolve(key, out _))
+            return;
+
         if (!IsPrintableKey(key) && _activeFillPageUrl is not null)
             FlushFill();
 
