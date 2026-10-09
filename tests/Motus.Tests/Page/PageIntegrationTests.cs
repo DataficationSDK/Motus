@@ -82,6 +82,34 @@ public class PageIntegrationTests
         await page.DisposeAsync();
     }
 
+    /// <summary>
+    /// A new page can be evaluated and given content before anything has navigated it.
+    /// </summary>
+    /// <remarks>
+    /// The browser never announces a new tab's initial about:blank, so a page that waited for a
+    /// navigation to learn its main frame had none until the first GotoAsync. Every evaluation
+    /// threw "Page is not initialized." in the meantime, which made SetContentAsync unusable as
+    /// the first thing done with a page.
+    /// </remarks>
+    [TestMethod]
+    public async Task NewPageAsync_EvaluateAndSetContent_WorkWithoutNavigation()
+    {
+        var page = await _browser!.NewPageAsync();
+
+        Assert.AreEqual("about:blank", page.Url);
+        Assert.AreEqual("about:blank", page.MainFrame.Url);
+        Assert.AreEqual(1, page.Frames.Count);
+
+        await page.SetContentAsync("<title>T</title><p id=x>hi</p>");
+
+        Assert.AreEqual(2, await page.EvaluateAsync<int>("1 + 1"));
+        Assert.IsTrue(await page.WaitForFunctionAsync<bool>("() => !!document.getElementById('x')"));
+        Assert.AreEqual("T", await page.TitleAsync());
+        StringAssert.Contains(await page.ContentAsync(), "hi", StringComparison.Ordinal);
+
+        await page.DisposeAsync();
+    }
+
     [TestMethod]
     public async Task GotoAsync_NavigatesToUrl()
     {

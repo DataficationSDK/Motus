@@ -208,10 +208,10 @@ internal sealed partial class Page
         // one is gone with it and asking for one again has to create it.
         _frameIdToIsolatedWorld.TryRemove(info.Id, out _);
 
-        // The first frame the page session reports is the main frame. A frame target reports its
-        // own root here too, and claiming that as the page's main frame would rewrite what the
-        // page is whenever a cross-origin frame happens to navigate first.
-        if (isPageSession)
+        // The first top-level frame the page session reports is the main frame. A frame target
+        // reports its own root here too, and claiming that as the page's main frame would rewrite
+        // what the page is whenever a cross-origin frame happens to navigate first.
+        if (isPageSession && info.ParentId is null)
             _mainFrameId ??= info.Id;
 
         FrameNavigated?.Invoke(this, frame);
