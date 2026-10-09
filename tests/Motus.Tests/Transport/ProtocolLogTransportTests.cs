@@ -262,6 +262,24 @@ public class ProtocolLogTransportTests
     }
 
     [TestMethod]
+    public async Task BiDi_ContinueRequestBody_IsRedactedOnSend()
+    {
+        var socket = new FakeCdpSocket();
+        var capture = new ProtocolLogCapture();
+        var transport = new BiDiTransport(socket, ProtocolLog.Open(capture.Options, "bidi-ws", "test:1"));
+        await transport.ConnectAsync(new Uri("ws://localhost:1234"), CancellationToken.None);
+
+        socket.QueueResponse("""{"type":"success","id":1,"result":{}}""");
+        await transport.SendRawAsync("network.continueRequest",
+            Params("""{"request":"r1","body":{"type":"string","value":"user=a&password=hunter2"}}"""), CancellationToken.None);
+        await transport.DisposeAsync();
+
+        Assert.AreEqual(
+            """-> #1 - network.continueRequest {"request":"r1","body":"<redacted 23 chars>"}""",
+            capture.Lines[1]);
+    }
+
+    [TestMethod]
     public async Task BiDi_Disconnect_LogsClosedByBrowser()
     {
         var socket = new FakeCdpSocket();

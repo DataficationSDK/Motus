@@ -214,6 +214,40 @@ public class ProtocolLogFormatterTests
     }
 
     [TestMethod]
+    public void Redacts_BiDiContinueRequestBody_FromRoutePostData()
+    {
+        // What a Firefox route's ContinueAsync(PostData = ...) is sent as.
+        using var cdp = JsonDocument.Parse("""{"requestId":"r1","postData":"user=a&password=hunter2"}""");
+        var bidi = new FetchContinueRequestTranslation().TranslateParams(cdp.RootElement, contextId: null);
+
+        var formatted = ProtocolLogFormatter.Format(bidi, "network.continueRequest", 1024, redactSecrets: true);
+
+        Assert.IsFalse(formatted.Contains("hunter2", StringComparison.Ordinal), formatted);
+        var root = Parse(formatted);
+        Assert.AreEqual("<redacted 23 chars>", root.GetProperty("body").GetString());
+        Assert.AreEqual("r1", root.GetProperty("request").GetString());
+    }
+
+    [TestMethod]
+    public void Keeps_BodyOfOtherMethods_AndBelowTheRoot()
+    {
+        var response = Format("""{"request":"r1","body":{"type":"base64","value":"PGh0bWw+"}}""", "network.provideResponse");
+        Assert.AreEqual("PGh0bWw+", Parse(response).GetProperty("body").GetProperty("value").GetString());
+
+        var nested = Format("""{"request":"r1","extra":{"body":"kept"}}""", "network.continueRequest");
+        Assert.AreEqual("kept", Parse(nested).GetProperty("extra").GetProperty("body").GetString());
+    }
+
+    [TestMethod]
+    public void RedactSecretsFalse_KeepsBiDiContinueRequestBody()
+    {
+        var formatted = Format("""{"request":"r1","body":{"type":"string","value":"a=b"}}""", "network.continueRequest",
+            redact: false);
+
+        Assert.AreEqual("a=b", Parse(formatted).GetProperty("body").GetProperty("value").GetString());
+    }
+
+    [TestMethod]
     public void DoesNotRedact_DispatchKeyEvent()
     {
         var formatted = Format("""{"type":"keyDown","key":"p","code":"KeyP","text":"p","unmodifiedText":"p"}""",

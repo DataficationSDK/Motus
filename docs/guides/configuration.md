@@ -630,7 +630,7 @@ By default these are replaced with `<redacted>` before a line is written, in bot
 - Raw header text (`headersText`, `requestHeadersText`, `binaryResponseHeaders`) and `cookieLine`.
 - Cookie values, in `Network.setCookie` and `Network.getCookies`, in `Storage` and BiDi `storage` commands, and in the cookies the browser attaches to network events.
 - Any property named `password`, which covers HTTP authentication answered through `Fetch.continueWithAuth`.
-- Request bodies (`postData`, `postDataEntries`), shown only as their length, because a login form posts its password there.
+- Request bodies (`postData` and `postDataEntries` on CDP, and the `body` of a BiDi `network.continueRequest`, which is where a route's `PostData` override goes on Firefox), shown only as their length, because a login form posts its password there.
 
 These are **not** redacted, because a log without them could not show what the browser was asked to do:
 

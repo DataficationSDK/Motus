@@ -15,7 +15,9 @@ namespace Motus;
 /// Redaction goes by property name, not by method, and applies to both directions and both
 /// protocols. That matters because the browser pushes cookie and authorization values in events
 /// nobody asked for, such as <c>Network.requestWillBeSentExtraInfo</c>, so a list of the methods
-/// Motus sends would miss most of them.
+/// Motus sends would miss most of them. The exceptions are a few methods whose secret sits under a
+/// name too common to redact everywhere, such as the <c>value</c> of <c>Network.setCookie</c> and
+/// the <c>body</c> of BiDi's <c>network.continueRequest</c>.
 /// </para>
 /// <para>
 /// The walk uses <see cref="Utf8JsonWriter"/> over <see cref="JsonElement"/> only, so it needs no
@@ -71,10 +73,23 @@ internal static class ProtocolLogFormatter
         "Network.setCookie",
     };
 
+    /// <summary>
+    /// Methods that carry a request body as <c>body</c> at the root of the params. BiDi's
+    /// <c>network.continueRequest</c> is where a route's <c>PostData</c> override goes on Firefox; a
+    /// response's <c>body</c> elsewhere is page content and is kept.
+    /// </summary>
+    private static readonly HashSet<string> s_rootRequestBodyMethods = new(StringComparer.Ordinal)
+    {
+        "network.continueRequest",
+    };
+
     private enum Scope
     {
         Plain,
         Cookie,
+
+        /// <summary>The root of params whose <c>body</c> is a request body.</summary>
+        RequestRoot,
     }
 
     /// <summary>
@@ -93,15 +108,21 @@ internal static class ProtocolLogFormatter
         using (var writer = new Utf8JsonWriter(buffer, s_writerOptions))
         {
             var context = new Context(maxValueLength, redactSecrets);
-            var rootCookie = redactSecrets && method is not null && s_rootCookieMethods.Contains(method);
-
-            if (rootCookie && payload.ValueKind == JsonValueKind.Object)
-                WriteObject(writer, payload, Scope.Cookie, context);
-            else
-                WriteValue(writer, payload, Scope.Plain, context);
+            WriteValue(writer, payload, RootScope(payload, method, redactSecrets), context);
         }
 
         return Cap(buffer.WrittenSpan);
+    }
+
+    private static Scope RootScope(JsonElement payload, string? method, bool redactSecrets)
+    {
+        if (!redactSecrets || method is null || payload.ValueKind != JsonValueKind.Object)
+            return Scope.Plain;
+
+        if (s_rootCookieMethods.Contains(method))
+            return Scope.Cookie;
+
+        return s_rootRequestBodyMethods.Contains(method) ? Scope.RequestRoot : Scope.Plain;
     }
 
     /// <summary>
@@ -207,7 +228,7 @@ internal static class ProtocolLogFormatter
             {
                 writer.WriteStringValue(Redacted);
             }
-            else if (s_requestBodies.Contains(name))
+            else if (s_requestBodies.Contains(name) || (scope == Scope.RequestRoot && name == "body"))
             {
                 writer.WriteStringValue(DescribeRedactedBody(value));
             }
@@ -221,7 +242,8 @@ internal static class ProtocolLogFormatter
             }
             else
             {
-                WriteValue(writer, value, scope, context);
+                // Cookie scope holds for everything under a cookie; the request root is the root alone.
+                WriteValue(writer, value, scope == Scope.RequestRoot ? Scope.Plain : scope, context);
             }
         }
 
@@ -298,12 +320,19 @@ internal static class ProtocolLogFormatter
                name.Contains("apikey", StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// Describes a redacted body by its size: a CDP string, a CDP list of entries, or a BiDi bytes
+    /// value of the form <c>{"type":"string","value":"..."}</c>.
+    /// </summary>
     private static string DescribeRedactedBody(JsonElement value) => value.ValueKind switch
     {
         JsonValueKind.String => string.Create(CultureInfo.InvariantCulture,
             $"<redacted {value.GetString()!.Length} chars>"),
         JsonValueKind.Array => string.Create(CultureInfo.InvariantCulture,
             $"<redacted {value.GetArrayLength()} entries>"),
+        JsonValueKind.Object when value.TryGetProperty("value", out var bytes) &&
+                                  bytes.ValueKind == JsonValueKind.String => string.Create(
+            CultureInfo.InvariantCulture, $"<redacted {bytes.GetString()!.Length} chars>"),
         _ => Redacted,
     };
 
