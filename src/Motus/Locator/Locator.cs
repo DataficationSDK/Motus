@@ -786,7 +786,7 @@ internal sealed class Locator : ILocator
         {
             var objectId = await ActionabilityChecker.WaitForActionabilityAsync(
                 _page, Session, ResolveObjectIdCoreAsync,
-                ActionabilityFlags.Visible | ActionabilityFlags.Enabled | ActionabilityFlags.Editable,
+                ActionabilityFlags.Visible | ActionabilityFlags.Enabled,
                 _selector, cts.Token).ConfigureAwait(false);
             await EvalOnElementVoidAsync(objectId, "function() { this.focus(); }", null, cts.Token).ConfigureAwait(false);
             await _page.Keyboard.PressAsync(key, options).ConfigureAwait(false);
