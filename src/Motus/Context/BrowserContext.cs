@@ -42,6 +42,7 @@ internal sealed class BrowserContext : IBrowserContext
     private int _storageStateRestored;
 
     private readonly Tracing _tracing;
+    private readonly ConcurrentQueue<string> _failureScreenshotPaths = new();
 
     internal BrowserContext(
         Browser browser,
@@ -122,6 +123,34 @@ internal sealed class BrowserContext : IBrowserContext
     }
 
     internal PluginHost? PluginHost { get; set; }
+
+    /// <summary>
+    /// The test this context belongs to, already cleaned for use in a file name. Set by a test
+    /// adapter so that a failure screenshot names the test it came from; null outside one.
+    /// </summary>
+    internal string? FailureArtifactLabel { get; set; }
+
+    /// <summary>
+    /// Remembers where a failure screenshot was saved, so the adapter that labeled this context can
+    /// attach it to the test's result. Only labeled contexts keep these, so a long-lived context
+    /// outside a test never accumulates them.
+    /// </summary>
+    internal void RecordFailureScreenshot(string path)
+    {
+        if (FailureArtifactLabel is not null)
+            _failureScreenshotPaths.Enqueue(path);
+    }
+
+    /// <summary>
+    /// Returns and forgets the failure screenshots recorded so far.
+    /// </summary>
+    internal IReadOnlyList<string> DrainFailureScreenshots()
+    {
+        var paths = new List<string>();
+        while (_failureScreenshotPaths.TryDequeue(out var path))
+            paths.Add(path);
+        return paths;
+    }
 
     public Abstractions.IPluginContext GetPluginContext() => new PluginContext(this);
 

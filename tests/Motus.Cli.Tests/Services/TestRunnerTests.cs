@@ -139,6 +139,22 @@ public class TestRunnerTests
         }
     }
 
+    public class MethodNameCapturingFixture
+    {
+        public static string? SeenInInitialize { get; set; }
+        public static string? SeenInTest { get; set; }
+
+        [Microsoft.VisualStudio.TestTools.UnitTesting.TestInitialize]
+        public async Task Init()
+        {
+            // Read after an await, as an async MotusTestBase initializer would.
+            await Task.Yield();
+            SeenInInitialize = global::Motus.TestMethodNameContext.Current;
+        }
+
+        public void NamedTest() => SeenInTest = global::Motus.TestMethodNameContext.Current;
+    }
+
     public class QuarantinedFailingFixture
     {
         public void Fails() => throw new InvalidOperationException("quarantined failure");
@@ -213,6 +229,21 @@ public class TestRunnerTests
         Assert.AreEqual(1, result.Failed);
         CollectionAssert.Contains(LifecycleTrackingFixture.CallLog, "TestCleanup",
             "TestCleanup should run even when the test fails");
+    }
+
+    [TestMethod]
+    public async Task TestMethodName_IsPublishedToLifecycleAndTest()
+    {
+        MethodNameCapturingFixture.SeenInInitialize = null;
+        MethodNameCapturingFixture.SeenInTest = null;
+        var tests = new List<DiscoveredTest> { MakeTest(typeof(MethodNameCapturingFixture), nameof(MethodNameCapturingFixture.NamedTest)) };
+
+        var runner = new TestRunner(1);
+        await runner.RunAsync(tests, CreateReporter());
+
+        Assert.AreEqual(nameof(MethodNameCapturingFixture.NamedTest), MethodNameCapturingFixture.SeenInInitialize);
+        Assert.AreEqual(nameof(MethodNameCapturingFixture.NamedTest), MethodNameCapturingFixture.SeenInTest);
+        Assert.IsNull(global::Motus.TestMethodNameContext.Current, "the name should not outlive the run");
     }
 
     [TestMethod]

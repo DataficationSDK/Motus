@@ -14,7 +14,7 @@ internal static class FailureCapture
         {
             var bytes = await page.ScreenshotAsync().ConfigureAwait(false);
             ex.Screenshot = bytes;
-            await SaveToDiskAsync(bytes, failure.ScreenshotPath ?? "test-results/failures").ConfigureAwait(false);
+            await SaveToDiskAsync(bytes, failure.ScreenshotPath ?? "test-results/failures", page.ContextInternal).ConfigureAwait(false);
         }
         catch
         {
@@ -22,14 +22,15 @@ internal static class FailureCapture
         }
     }
 
-    private static async Task SaveToDiskAsync(byte[] bytes, string basePath)
+    private static async Task SaveToDiskAsync(byte[] bytes, string basePath, BrowserContext context)
     {
         try
         {
-            Directory.CreateDirectory(basePath);
-            var fileName = $"failure-{DateTime.UtcNow:yyyyMMdd-HHmmss-fff}.png";
-            var filePath = Path.Combine(basePath, fileName);
+            var label = context.FailureArtifactLabel;
+            var fileName = FailureArtifactName.Build("failure", label, "png", DateTime.UtcNow);
+            var filePath = FailureArtifactName.ReservePath(basePath, fileName);
             await File.WriteAllBytesAsync(filePath, bytes).ConfigureAwait(false);
+            context.RecordFailureScreenshot(filePath);
         }
         catch
         {

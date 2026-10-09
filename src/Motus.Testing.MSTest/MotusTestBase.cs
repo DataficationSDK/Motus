@@ -104,10 +104,11 @@ public abstract class MotusTestBase
             }
         }
 
-        _failureTracing = new FailureTracing();
+        var testMethodName = TestContext?.TestName ?? TestMethodNameContext.Current;
+
+        _failureTracing = new FailureTracing(FailureArtifactLabel(testMethodName));
         await _failureTracing.StartIfEnabledAsync(_context).ConfigureAwait(false);
 
-        var testMethodName = TestContext?.TestName ?? TestMethodNameContext.Current;
         var methodInfo = testMethodName is not null
             ? GetType().GetMethod(testMethodName, BindingFlags.Public | BindingFlags.Instance)
             : null;
@@ -132,7 +133,10 @@ public abstract class MotusTestBase
             {
                 var testFailed = TestContext?.CurrentTestOutcome != UnitTestOutcome.Passed;
                 if (_failureTracing is not null)
+                {
                     await _failureTracing.StopAsync(_context, testFailed).ConfigureAwait(false);
+                    ReportFailureArtifacts(_failureTracing);
+                }
             }
             catch (Exception)
             {
@@ -156,6 +160,50 @@ public abstract class MotusTestBase
                 _context = null;
                 _page = null;
             }
+        }
+    }
+
+    /// <summary>
+    /// Names the test's failure artifacts <c>{Class}.{Method}</c>, after the runtime type so that
+    /// a test method inherited from a shared base is named for the class that ran it.
+    /// </summary>
+    private string FailureArtifactLabel(string? testMethodName)
+        => testMethodName is null ? GetType().Name : $"{GetType().Name}.{testMethodName}";
+
+    /// <summary>
+    /// Attaches what was saved for a failed test to its result and says where it went, so the
+    /// trace is one click away in the test explorer and in a TRX file.
+    /// </summary>
+    private void ReportFailureArtifacts(FailureTracing tracing)
+    {
+        if (TestContext is null)
+            return;
+
+        if (tracing.TracePath is not null)
+            ReportFailureArtifact(tracing.TracePath, "trace");
+
+        foreach (var path in tracing.ScreenshotPaths)
+            ReportFailureArtifact(path, "screenshot");
+    }
+
+    private void ReportFailureArtifact(string path, string kind)
+    {
+        try
+        {
+            TestContext.AddResultFile(path);
+        }
+        catch (Exception)
+        {
+            // The file is still on disk; failing to attach it must not mask the test's own failure.
+        }
+
+        try
+        {
+            TestContext.WriteLine($"Motus: failure {kind} saved to {path}");
+        }
+        catch (Exception)
+        {
+            // As above: reporting is a courtesy, never a second failure.
         }
     }
 }

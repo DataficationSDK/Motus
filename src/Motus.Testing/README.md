@@ -11,11 +11,13 @@ Provides the framework-agnostic `BrowserFixture` that manages browser launch, re
 | Class | Description |
 |-------|-------------|
 | `BrowserFixture` | Launches a browser with up to 3 retry attempts, auto-restarts on crash, exposes `NewContextAsync` for per-test isolation |
-| `FailureTracing` | Starts tracing before a test and saves the trace ZIP to `test-results/traces/` only when the test fails |
+| `FailureTracing` | Starts tracing before a test and saves the trace ZIP to `test-results/traces/` only when the test fails; exposes the saved `TracePath` and failure `ScreenshotPaths` |
 
 ### Failure Tracing Configuration
 
 Tracing is enabled via `motus.config.json` (`failure.trace: true`) or the `MOTUS_FAILURES_TRACE` environment variable. The output path is configurable via `failure.tracePath`.
+
+Construct `FailureTracing` with a test name, typically `"{Class}.{Method}"`, to name its artifacts after the test: `trace-{Class}.{Method}-yyyyMMdd-HHmmss-fff.zip` and `failure-{Class}.{Method}-yyyyMMdd-HHmmss-fff.png`. Names are reduced to characters that are safe on every OS and in CI artifact uploads, long names are shortened with a hash, and a name already taken gets a `-2`, `-3` suffix. Without a name, files keep the timestamp-only form.
 
 ## Installation
 

@@ -195,6 +195,8 @@ Controls automatic diagnostics captured when a test fails.
 | `trace` | `bool` | `null` | Capture a Playwright-compatible trace archive on test failure. |
 | `tracePath` | `string` | `null` | Directory to write trace archives. |
 
+Inside the MSTest and NUnit base classes, files are named after the failing test, for example `trace-CheckoutTests.PaysByCard-20261004-221501-123.zip` and `failure-CheckoutTests.PaysByCard-20261004-221501-123.png`, and are attached to the test's result. See [Artifact names](./testing-frameworks.md#artifact-names) for how names are cleaned, shortened, and kept unique.
+
 ### `accessibility` Section
 
 Controls the built-in accessibility audit hook. When enabled, Motus runs axe-style audits automatically at the points configured below.

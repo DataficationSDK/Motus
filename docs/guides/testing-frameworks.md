@@ -308,7 +308,34 @@ Or set environment variables:
 
 When `tracePath` / `MOTUS_FAILURES_TRACE_PATH` is not set, traces are written to `test-results/traces` by default. The directory is created automatically if it does not exist.
 
-Trace file names follow the pattern `trace-yyyyMMdd-HHmmss-fff.zip` using the UTC time at teardown.
+### Artifact names
+
+Traces saved by the MSTest and NUnit base classes are named after the test that failed, using the UTC time at teardown:
+
+```
+trace-{Class}.{Method}-yyyyMMdd-HHmmss-fff.zip
+trace-SaveReplaceDialogTests.EnterOnCancel-20261004-221501-123.zip
+```
+
+`{Class}` is the short name of the test class that ran the test, so a test method inherited from a shared base class is named for the derived class. Under NUnit, `{Method}` includes the arguments of a parameterized case.
+
+The name is cleaned so the same file can be written, zipped, and uploaded as a CI artifact on any OS:
+
+- Letters, digits, `.`, `-`, and `_` are kept. Every other character (slashes, colons, quotes, angle brackets, spaces, and so on) becomes `_`, and runs of `_` collapse to one.
+- A name longer than 100 bytes is shortened and given a short hash of the full name, so two long names that share a prefix still produce different files.
+- When a file of the same name already exists, for example two data rows of one test failing in the same millisecond, the new file gets a `-2`, `-3`, ... suffix instead of overwriting the first.
+
+`FailureTracing` used without a test name keeps the timestamp-only form, `trace-yyyyMMdd-HHmmss-fff.zip`.
+
+### Attached to the test result
+
+When a test fails, the MSTest and NUnit base classes attach the saved trace and any failure screenshots to the test's result (`TestContext.AddResultFile` in MSTest, `TestContext.AddTestAttachment` in NUnit) and write the saved path to the test output:
+
+```
+Motus: failure trace saved to /src/app/test-results/traces/trace-CheckoutTests.PaysByCard-20261004-221501-123.zip
+```
+
+The attachments appear next to the failed test in the IDE's test explorer and in TRX results, so there is no need to match timestamps against a folder. Nothing is attached for a passing test.
 
 ### Screenshot capture
 
@@ -332,9 +359,31 @@ In `motus.config.json`:
 }
 ```
 
+A screenshot is taken when a locator action fails. Inside the MSTest and NUnit base classes it is named after the test in the same way as a trace, `failure-{Class}.{Method}-yyyyMMdd-HHmmss-fff.png`, and attached to the result when the test fails. Outside a test the name is `failure-yyyyMMdd-HHmmss-fff.png`.
+
 ### xUnit note
 
-`FailureTracing` is not used automatically in the xUnit fixtures because xUnit does not provide test outcome at the class fixture teardown boundary. Call `FailureTracing.StartIfEnabledAsync` and `StopAsync` manually within test methods if you need the same behavior.
+`FailureTracing` is not used automatically in the xUnit fixtures because xUnit does not provide test outcome at the class fixture teardown boundary. Use it manually within a test method if you need the same behavior, passing the test's name so the artifacts are named after it:
+
+```csharp
+[Fact]
+public async Task Checkout_PaysByCard()
+{
+    var tracing = new FailureTracing($"{nameof(CheckoutTests)}.{nameof(Checkout_PaysByCard)}");
+    await tracing.StartIfEnabledAsync(_ctx.Context);
+    var failed = true;
+    try
+    {
+        // ... test body ...
+        failed = false;
+    }
+    finally
+    {
+        await tracing.StopAsync(_ctx.Context, failed);
+        // tracing.TracePath and tracing.ScreenshotPaths hold what was saved.
+    }
+}
+```
 
 ---
 
