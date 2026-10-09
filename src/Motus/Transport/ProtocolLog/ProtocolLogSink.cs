@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Diagnostics;
 using System.Globalization;
 using System.Text;
@@ -14,7 +15,9 @@ namespace Motus;
 /// Lines are queued by whoever logs them and written by a task of the sink's own, so neither the
 /// send path nor the receive loop of a transport ever waits on a disk or on a caller's code. The
 /// writer flushes each time the queue runs dry, which keeps a file current to within moments and
-/// means a process that hangs or is killed loses almost nothing.
+/// means a process that hangs or is killed loses almost nothing. A file gets everything queued since
+/// the last flush in a single append, so the lines of one flush stay together even when other
+/// writers share the file.
 /// </para>
 /// <para>
 /// File and standard error sinks are shared across the process and counted: every transport that
@@ -33,8 +36,12 @@ internal sealed class ProtocolLogSink
 
     private const string StandardErrorKey = "\0stderr";
 
+    /// <summary>How much a file sink gathers before it appends, even with more lines queued.</summary>
+    private const int MaxPendingBytes = 256 * 1024;
+
     private readonly string? _key;
-    private readonly TextWriter? _writer;
+    private readonly ProtocolLogFile? _file;
+    private readonly ArrayBufferWriter<byte>? _pending;
     private readonly bool _toStandardError;
     private readonly Action<string>? _callback;
     private readonly TextWriter _warnings;
@@ -48,10 +55,11 @@ internal sealed class ProtocolLogSink
     private bool _reportedFailure;
 
     private ProtocolLogSink(
-        string? key, TextWriter? writer, bool toStandardError, Action<string>? callback, TextWriter warnings)
+        string? key, ProtocolLogFile? file, bool toStandardError, Action<string>? callback, TextWriter warnings)
     {
         _key = key;
-        _writer = writer;
+        _file = file;
+        _pending = file is null ? null : new ArrayBufferWriter<byte>(4096);
         _toStandardError = toStandardError;
         _callback = callback;
         _warnings = warnings;
@@ -102,15 +110,15 @@ internal sealed class ProtocolLogSink
             ProtocolLogSink sink;
             if (fullPath is null)
             {
-                sink = new ProtocolLogSink(key, writer: null, toStandardError: true, callback: null, warnings);
+                sink = new ProtocolLogSink(key, file: null, toStandardError: true, callback: null, warnings);
             }
             else
             {
-                var writer = TryOpenFile(fullPath, warnings);
-                if (writer is null)
+                var file = TryOpenFile(fullPath, warnings);
+                if (file is null)
                     return null;
 
-                sink = new ProtocolLogSink(key, writer, toStandardError: false, callback: null, warnings);
+                sink = new ProtocolLogSink(key, file, toStandardError: false, callback: null, warnings);
             }
 
             s_shared[key] = sink;
@@ -122,7 +130,7 @@ internal sealed class ProtocolLogSink
     /// Makes a sink that hands each line to <paramref name="callback"/>. It is not shared.
     /// </summary>
     internal static ProtocolLogSink ForCallback(Action<string> callback, TextWriter? warnings = null)
-        => new(key: null, writer: null, toStandardError: false, callback, warnings ?? Console.Error);
+        => new(key: null, file: null, toStandardError: false, callback, warnings ?? Console.Error);
 
     /// <summary>
     /// Queues one line. Never blocks and never throws.
@@ -149,9 +157,9 @@ internal sealed class ProtocolLogSink
         try { await _consumer.ConfigureAwait(false); }
         catch { /* The consumer reports its own failures. */ }
 
-        if (_writer is not null)
+        if (_file is not null)
         {
-            try { await _writer.DisposeAsync().ConfigureAwait(false); }
+            try { _file.Dispose(); }
             catch { /* Nothing left to report it to. */ }
         }
     }
@@ -163,42 +171,22 @@ internal sealed class ProtocolLogSink
         lock (s_gate) return s_shared.ContainsKey(key);
     }
 
-    private static StreamWriter? TryOpenFile(string fullPath, TextWriter warnings)
+    private static ProtocolLogFile? TryOpenFile(string fullPath, TextWriter warnings)
     {
+        ProtocolLogFile? file = null;
         try
         {
-            var directory = System.IO.Path.GetDirectoryName(fullPath);
-            if (!string.IsNullOrEmpty(directory))
-                Directory.CreateDirectory(directory);
-
-            var fileOptions = new FileStreamOptions
-            {
-                Mode = FileMode.Append,
-                Access = FileAccess.Write,
-
-                // Other processes logging to the same path append alongside this one, and the file
-                // can still be read, moved or deleted while it is open.
-                Share = FileShare.ReadWrite | FileShare.Delete,
-            };
-
-            // The log can hold whatever a test typed, so a new file is readable by its owner only.
-            // Windows has no such mode and throws if one is set; there the file takes the ACL of its
-            // directory.
-            if (!OperatingSystem.IsWindows())
-                fileOptions.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
-
-            var stream = new FileStream(fullPath, fileOptions);
-            var writer = new StreamWriter(stream, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+            file = ProtocolLogFile.Open(fullPath);
 
             // Appending rather than truncating lets several processes share a path, and the header
             // tells their parts apart.
-            writer.Write(string.Create(CultureInfo.InvariantCulture,
-                $"# motus protocol log, pid {Environment.ProcessId}, {DateTime.UtcNow:yyyy-MM-ddTHH:mm:ss.fffZ}\n"));
-            writer.Flush();
-            return writer;
+            file.Append(Encoding.UTF8.GetBytes(string.Create(CultureInfo.InvariantCulture,
+                $"# motus protocol log, pid {Environment.ProcessId}, {DateTime.UtcNow:yyyy-MM-ddTHH:mm:ss.fffZ}\n")));
+            return file;
         }
         catch (Exception ex)
         {
+            file?.Dispose();
             warnings.WriteLine($"Motus: the protocol log could not open '{fullPath}' ({ex.Message}); logging is off.");
             return null;
         }
@@ -210,7 +198,11 @@ internal sealed class ProtocolLogSink
         while (await reader.WaitToReadAsync().ConfigureAwait(false))
         {
             while (reader.TryRead(out var line))
+            {
                 Emit(line);
+                if (_pending is { WrittenCount: >= MaxPendingBytes })
+                    Flush();
+            }
 
             Flush();
         }
@@ -232,8 +224,8 @@ internal sealed class ProtocolLogSink
             }
             else
             {
-                _writer!.Write(line);
-                _writer.Write('\n');
+                Encoding.UTF8.GetBytes(line, _pending!);
+                _pending.Write("\n"u8);
             }
         }
         catch (Exception ex)
@@ -246,14 +238,19 @@ internal sealed class ProtocolLogSink
     {
         try
         {
-            if (_writer is not null)
-                _writer.Flush();
+            if (_file is not null)
+                _file.Append(_pending!.WrittenSpan);
             else if (_toStandardError)
                 Console.Error.Flush();
         }
         catch (Exception ex)
         {
             ReportFailure(ex);
+        }
+        finally
+        {
+            // Dropped on failure too, so a file that cannot be written does not hold every later line.
+            _pending?.ResetWrittenCount();
         }
     }
 

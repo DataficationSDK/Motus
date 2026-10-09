@@ -1,5 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
+using System.Text;
+using System.Text.RegularExpressions;
 using Motus.Abstractions;
 
 namespace Motus.Tests.Transport;
@@ -80,6 +82,47 @@ public class ProtocolLogSinkTests
         StringAssert.EndsWith(lines[1], "open cdp-ws a:1");
         StringAssert.StartsWith(lines[2], "# motus protocol log, pid ");
         StringAssert.EndsWith(lines[3], "open cdp-ws b:2");
+    }
+
+    [TestMethod]
+    public async Task TwoWritersSamePath_AppendWithoutOverwriting()
+    {
+        // Two handles on one file, as two processes sharing a path have, or one process whose last
+        // connection to a file is still draining when the next one opens it. Each writes from its
+        // own thread; with offsets tracked per handle, each would write over the other's lines.
+        var path = Path.Combine(_dir, "p.log");
+        const int perWriter = 2000;
+
+        using var first = ProtocolLogFile.Open(path);
+        using var second = ProtocolLogFile.Open(path);
+
+        static void Fill(ProtocolLogFile file, string name)
+        {
+            for (var i = 0; i < perWriter; i++)
+                file.Append(Encoding.UTF8.GetBytes($"{name} line {i:D4} of the protocol log\n"));
+        }
+
+        await Task.WhenAll(Task.Run(() => Fill(first, "a")), Task.Run(() => Fill(second, "b")));
+
+        var lines = File.ReadAllLines(path);
+        Assert.AreEqual(2 * perWriter, lines.Length);
+        foreach (var name in new[] { "a", "b" })
+        {
+            var mine = lines.Where(l => l.StartsWith(name + " ", StringComparison.Ordinal)).ToArray();
+            CollectionAssert.AreEqual(
+                Enumerable.Range(0, perWriter).Select(i => $"{name} line {i:D4} of the protocol log").ToArray(), mine,
+                "every line of one writer arrives whole and in order");
+        }
+    }
+
+    [TestMethod]
+    public void MutexName_IsTheSameForOnePath_AndValidAsAName()
+    {
+        var path = Path.GetFullPath(Path.Combine(_dir, "p.log"));
+
+        Assert.AreEqual(ProtocolLogFile.MutexName(path), ProtocolLogFile.MutexName(path));
+        Assert.AreNotEqual(ProtocolLogFile.MutexName(path), ProtocolLogFile.MutexName(path + "2"));
+        StringAssert.Matches(ProtocolLogFile.MutexName(path), new Regex("^Motus\\.ProtocolLog\\.[0-9A-F]{32}$"));
     }
 
     [TestMethod]

@@ -643,7 +643,7 @@ These are **not** redacted, because a log without them could not show what the b
 
 ### Where lines go
 
-- A file is opened for appending, never truncated. Each process starts its part with a `# motus protocol log, pid <pid>` header, so several test processes or shards can share one path. Lines from different processes interleave line by line; give each process its own path if that gets in the way.
+- A file is opened for appending, never truncated. Each process starts its part with a `# motus protocol log, pid <pid>` header, so several test processes or shards can share one path. Each write takes a lock that every process logging to that path shares and lands at the current end of the file, so lines from different processes interleave without overwriting each other, a batch of whole lines at a time. Give each process its own path if the interleaving gets in the way.
 - On macOS and Linux a new file is readable and writable by its owner only. On Windows it takes the permissions of its directory.
 - Lines are written by a background task and flushed as soon as the queue empties, so the file is current to within moments and a killed process loses almost nothing. When the last browser logging to a file is disposed, every line has been written and the file is closed.
 - A file that cannot be opened is reported once on standard error, and the browser launches without a log rather than failing.
