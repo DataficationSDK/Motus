@@ -1,3 +1,4 @@
+using System.Runtime.ExceptionServices;
 using System.Text;
 using Motus.Abstractions;
 
@@ -24,11 +25,11 @@ internal sealed class Keyboard : IKeyboard
     public async Task DownAsync(string key)
     {
         var def = ResolveForCurrentModifiers(key);
-        _modifiers |= KeyDefinitions.ModifierBit(def);
-        var autoRepeat = !_pressedCodes.Add(def.Code);
+        var modifiers = _modifiers | KeyDefinitions.ModifierBit(def);
+        var autoRepeat = _pressedCodes.Contains(def.Code);
 
         // A held Control, Alt or Meta turns the key into a shortcut, which produces no text.
-        var text = (_modifiers & ~KeyDefinitions.ShiftBit) != 0 ? string.Empty : def.Text;
+        var text = (modifiers & ~KeyDefinitions.ShiftBit) != 0 ? string.Empty : def.Text;
 
         // A key that produces text goes out as a single keyDown carrying that text; the browser
         // derives keypress and input from it, which is what lets Enter activate a button or
@@ -39,7 +40,7 @@ internal sealed class Keyboard : IKeyboard
             "Input.dispatchKeyEvent",
             new InputDispatchKeyEventParams(
                 Type: text.Length > 0 ? "keyDown" : "rawKeyDown",
-                Modifiers: _modifiers,
+                Modifiers: modifiers,
                 Text: text.Length > 0 ? text : null,
                 UnmodifiedText: text.Length > 0 ? text : null,
                 Code: def.Code,
@@ -51,10 +52,17 @@ internal sealed class Keyboard : IKeyboard
             CdpJsonContext.Default.InputDispatchKeyEventParams,
             CdpJsonContext.Default.InputDispatchKeyEventResult,
             _ct).ConfigureAwait(false);
+
+        // The key only counts as held once the browser has accepted it, so a failed send cannot
+        // leave a modifier applied to every key that follows.
+        _modifiers = modifiers;
+        _pressedCodes.Add(def.Code);
     }
 
     public async Task UpAsync(string key)
     {
+        // The key is released here even if the send fails: a caller that asked for the key up
+        // never wants later keys to see it as held.
         var def = ResolveForCurrentModifiers(key);
         _modifiers &= ~KeyDefinitions.ModifierBit(def);
         _pressedCodes.Remove(def.Code);
@@ -82,14 +90,24 @@ internal sealed class Keyboard : IKeyboard
         foreach (var part in keys)
             KeyDefinitions.Resolve(part);
 
-        foreach (var part in keys)
-            await DownAsync(part).ConfigureAwait(false);
+        var down = 0;
+        try
+        {
+            for (; down < keys.Count; down++)
+                await DownAsync(keys[down]).ConfigureAwait(false);
 
-        if (options?.Delay is > 0)
-            await Task.Delay(options.Delay.Value, _ct).ConfigureAwait(false);
+            if (options?.Delay is > 0)
+                await Task.Delay(options.Delay.Value, _ct).ConfigureAwait(false);
+        }
+        catch
+        {
+            // Release whatever went down before the failure so no part of the chord stays held.
+            // The original failure is what the caller needs to see, so a failed release is dropped.
+            await ReleaseAsync(keys, down, throwOnFailure: false).ConfigureAwait(false);
+            throw;
+        }
 
-        for (var i = keys.Count - 1; i >= 0; i--)
-            await UpAsync(keys[i]).ConfigureAwait(false);
+        await ReleaseAsync(keys, down, throwOnFailure: true).ConfigureAwait(false);
     }
 
     public async Task TypeAsync(string text, KeyboardTypeOptions? options = null)
@@ -118,6 +136,28 @@ internal sealed class Keyboard : IKeyboard
             CdpJsonContext.Default.InputInsertTextParams,
             CdpJsonContext.Default.InputInsertTextResult,
             _ct).ConfigureAwait(false);
+    }
+
+    // Lets up the first count keys of a chord in reverse order. Every key is let up even when an
+    // earlier release fails, since UpAsync clears a key's held state before it sends.
+    private async Task ReleaseAsync(List<string> keys, int count, bool throwOnFailure)
+    {
+        Exception? failure = null;
+
+        for (var i = count - 1; i >= 0; i--)
+        {
+            try
+            {
+                await UpAsync(keys[i]).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                failure ??= ex;
+            }
+        }
+
+        if (failure is not null && throwOnFailure)
+            ExceptionDispatchInfo.Throw(failure);
     }
 
     private KeyDefinitions.KeyDef ResolveForCurrentModifiers(string key)

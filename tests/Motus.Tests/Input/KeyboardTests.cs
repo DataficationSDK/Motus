@@ -419,6 +419,110 @@ public class KeyboardTests
     public async Task DownAsync_UnknownKey_Throws()
         => await Assert.ThrowsExceptionAsync<ArgumentException>(() => _keyboard.DownAsync("Return"));
 
+    private void QueueError(string message)
+        => _socket.QueueResponse(
+            $$$"""{"id": 1, "sessionId": "test-session", "error": {"code": -32602, "message": "{{{message}}}"}}""");
+
+    /// <summary>
+    /// A key the browser refused never went down, so it must not change the keys that follow.
+    /// </summary>
+    [TestMethod]
+    public async Task DownAsync_FailedSend_DoesNotLeaveModifierHeld()
+    {
+        QueueError("rejected");
+        await Assert.ThrowsExceptionAsync<MotusProtocolException>(() => _keyboard.DownAsync("Shift"));
+
+        QueueOk(1);
+        await _keyboard.DownAsync("a");
+
+        var a = Params(1);
+        Assert.AreEqual("a", Str(a, "key"));
+        Assert.AreEqual("a", Str(a, "text"));
+        Assert.AreEqual(0, Int(a, "modifiers"));
+        Assert.IsFalse(a.GetProperty("autoRepeat").GetBoolean());
+    }
+
+    /// <summary>
+    /// When one key of a chord fails to go down, the keys already down are let up, so a single
+    /// failed Shift+Tab or Control+s cannot turn later typing into capitals or into shortcuts
+    /// that insert nothing.
+    /// </summary>
+    [TestMethod]
+    [DataRow("Shift+Tab", "Shift", 8)]
+    [DataRow("Control+s", "Control", 2)]
+    public async Task PressAsync_FailedKeyDown_ReleasesKeysAlreadyDown(string chord, string modifier, int bit)
+    {
+        QueueOk(1);
+        QueueError("rejected");
+        QueueOk(1);
+
+        var ex = await Assert.ThrowsExceptionAsync<MotusProtocolException>(() => _keyboard.PressAsync(chord));
+        Assert.AreEqual("rejected", ex.Message);
+
+        Assert.AreEqual(3, _socket.SentMessages.Count);
+        Assert.AreEqual(bit, Int(Params(0), "modifiers"));
+        var release = Params(2);
+        Assert.AreEqual("keyUp", Str(release, "type"));
+        Assert.AreEqual(modifier, Str(release, "key"));
+        Assert.AreEqual(0, Int(release, "modifiers"));
+
+        QueueOk(2);
+        await _keyboard.TypeAsync("a");
+
+        var a = Params(3);
+        Assert.AreEqual("keyDown", Str(a, "type"));
+        Assert.AreEqual("a", Str(a, "text"));
+        Assert.AreEqual(0, Int(a, "modifiers"));
+    }
+
+    /// <summary>
+    /// A release that fails while cleaning up after a failed key down must not hide the original
+    /// failure, and must still clear the held state.
+    /// </summary>
+    [TestMethod]
+    public async Task PressAsync_FailedKeyDownAndFailedRelease_ThrowsTheKeyDownFailure()
+    {
+        QueueOk(1);
+        QueueError("key down rejected");
+        QueueError("key up rejected");
+
+        var ex = await Assert.ThrowsExceptionAsync<MotusProtocolException>(() => _keyboard.PressAsync("Shift+Tab"));
+        Assert.AreEqual("key down rejected", ex.Message);
+
+        QueueOk(2);
+        await _keyboard.TypeAsync("a");
+
+        Assert.AreEqual("a", Str(Params(3), "text"));
+        Assert.AreEqual(0, Int(Params(3), "modifiers"));
+    }
+
+    /// <summary>
+    /// A failed key up mid-chord still lets the rest of the chord up before the failure surfaces.
+    /// </summary>
+    [TestMethod]
+    public async Task PressAsync_FailedKeyUp_StillReleasesTheRestAndThrows()
+    {
+        QueueOk(2);
+        QueueError("key up rejected");
+        QueueOk(1);
+
+        var ex = await Assert.ThrowsExceptionAsync<MotusProtocolException>(() => _keyboard.PressAsync("Control+a"));
+        Assert.AreEqual("key up rejected", ex.Message);
+
+        Assert.AreEqual(4, _socket.SentMessages.Count);
+        var controlUp = Params(3);
+        Assert.AreEqual("keyUp", Str(controlUp, "type"));
+        Assert.AreEqual("Control", Str(controlUp, "key"));
+        Assert.AreEqual(0, Int(controlUp, "modifiers"));
+
+        QueueOk(2);
+        await _keyboard.TypeAsync("a");
+
+        Assert.AreEqual("a", Str(Params(4), "text"));
+        Assert.AreEqual(0, Int(Params(4), "modifiers"));
+        Assert.IsFalse(Params(4).GetProperty("autoRepeat").GetBoolean());
+    }
+
     [TestMethod]
     public async Task TypeAsync_IteratesCharacters()
     {
