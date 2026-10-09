@@ -21,4 +21,10 @@ public sealed record ConnectOptions
 
     /// <summary>Maximum time in milliseconds to wait for the connection to be established.</summary>
     public int Timeout { get; init; } = 30_000;
+
+    /// <summary>
+    /// Protocol log configuration. Disabled by default, unless the <c>MOTUS_PROTOCOL_LOG</c>
+    /// environment variable names a destination.
+    /// </summary>
+    public ProtocolLogOptions? ProtocolLog { get; init; }
 }

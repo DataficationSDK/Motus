@@ -191,6 +191,8 @@ A remote debugging endpoint grants complete control of the browser and of every 
 curl http://127.0.0.1:9222/json/version
 ```
 
+**When it is unclear whether Motus or the browser is at fault, read the protocol log.** An attached browser is often one with extensions, a signed-in profile or another client on the same endpoint, any of which can change how it answers. Setting `MOTUS_PROTOCOL_LOG` to a file path, or `ConnectOptions.ProtocolLog` in code, records every command Motus sent and every reply and event the browser returned, including events from targets Motus never asked about. See [Troubleshooting with the protocol log](configuration.md#troubleshooting-with-the-protocol-log).
+
 ---
 
 ## What's next

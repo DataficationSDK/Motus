@@ -58,6 +58,21 @@ There is nothing to connect: the pipes are open before the socket wrapping them 
 - Unexpected exception: All pending TCSes are faulted with a wrapping `CdpDisconnectedException`, all channels are completed, and `Disconnected` is raised with the exception.
 - Normal shutdown via `DisposeAsync`: The `CancellationTokenSource` is cancelled, the receive loop exits via `OperationCanceledException`, and `DisposeAsync` then faults any remaining pending TCSes with `ObjectDisposedException` and completes all channels.
 
+### Protocol log
+
+Both transports take an optional `ProtocolLog`, which `MotusLauncher` opens when `LaunchOptions.ProtocolLog`, `ConnectOptions.ProtocolLog` or the `MOTUS_PROTOCOL_LOG` environment variable asks for one. A transport with no log holds `null` and pays one null check per message, with no formatting and no allocation. The format and the redaction rules are covered in [Troubleshooting with the protocol log](../guides/configuration.md#troubleshooting-with-the-protocol-log).
+
+The hooks sit at the two places every message passes through:
+
+- **Send.** `SendRawAsync` formats the params before it takes the send lock, so concurrent senders do not queue behind each other's formatting. Inside the lock, immediately before `SendAsync`, it records the command in the log's own table of pending commands and queues its line. A pipe or a fake socket can hand the response back before `SendAsync` returns, so a line written after the send could appear below its own response; written inside the lock and before the send, the order of command lines is the order on the wire and every command precedes its response. A send whose lock wait is cancelled never reached the wire and is not logged.
+- **Receive.** The receive loop logs each message after parsing the envelope and before dispatching it, so events and responses keep the order in which the browser sent them. Events are logged whether or not a channel is subscribed. A response takes its method, session and start time from the log's table. A message that fails to parse is logged as malformed before it is dropped.
+
+A command that ends without its response being logged, because its caller cancelled, its 60-second timeout fired or the connection went first, is logged from the `finally` block of `SendRawAsync`. A disconnect is logged where the receive loop observes it, and `DisposeAsync` releases the log last, after every pending command has been faulted, so everything the connection logged on its way down is written before its file closes.
+
+Lines are not written on the transport's threads. Each destination is a `ProtocolLogSink` with an unbounded channel and a single writer task that flushes whenever the channel runs dry. File and standard error sinks are shared across the process and reference counted, keyed by the file's full path: every connection logging to a path holds a reference, the last to release it drains the channel and closes the file, and each connection's lines carry a tag of their own (`c1`, `c2`, ...). A `Sink` callback gets a sink of its own per connection. A failure to open a file, or an exception from a callback, is reported once on standard error and never reaches the transport.
+
+Payloads are formatted by walking the `JsonElement` with a `Utf8JsonWriter`, which keeps the formatter free of reflection and safe for NativeAOT.
+
 ### CdpSession
 
 `CdpSession` is the typed wrapper that the engine layer calls. It holds a reference to `CdpTransport` and an optional `SessionId` string (null for the browser-level session, a CDP target session ID for pages and workers).
@@ -118,6 +133,8 @@ CDP uses the presence or absence of the `id` field to distinguish responses from
 - `"event"` with a non-null `method`: the message is an event and is dispatched to event channels.
 
 Error responses carry `error` (a short error code string) and `message` (a human-readable description) rather than CDP's numeric `code` field.
+
+The protocol log hooks into `BiDiTransport` at the same two places as `CdpTransport`. With no session in the envelope, BiDi lines always show `-` for the session, and the browsing context stays inside the params. An error response is logged with its error code string and message.
 
 ### Context-Based Event Routing
 

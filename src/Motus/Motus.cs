@@ -16,6 +16,7 @@ public static class MotusLauncher
     public static async Task<IBrowser> LaunchAsync(LaunchOptions? options = null, CancellationToken ct = default)
     {
         options = ConfigMerge.ApplyConfig(options ?? new LaunchOptions());
+        var logOptions = ProtocolLogSettings.Resolve(options.ProtocolLog, Environment.GetEnvironmentVariable);
 
         var executablePath = BrowserFinder.Resolve(options.Channel, options.ExecutablePath);
         var isFirefox = IsFirefoxChannel(options.Channel, executablePath);
@@ -103,6 +104,8 @@ public static class MotusLauncher
             ? WindowsProcessGuard.TryAdopt(process)
             : null;
 
+        ProtocolLog? log = null;
+
         try
         {
             var timeout = TimeSpan.FromMilliseconds(options.Timeout);
@@ -145,7 +148,8 @@ public static class MotusLauncher
                     var pipeSocket = new CdpPipeSocket(
                         process.StandardInput.BaseStream, process.StandardOutput.BaseStream);
 
-                    var pipeTransport = new CdpTransport(pipeSocket, slowMo);
+                    log = ProtocolLog.Open(logOptions, "cdp-pipe", $"pid {process.Id}");
+                    var pipeTransport = new CdpTransport(pipeSocket, slowMo, log);
                     pipeTransport.Start();
 
                     transport = pipeTransport;
@@ -155,7 +159,8 @@ public static class MotusLauncher
                 {
                     // TODO: BiDiTransport does not support SlowMo yet
                     var socket = new CdpSocket();
-                    var bidiTransport = new BiDiTransport(socket);
+                    log = ProtocolLog.Open(logOptions, "bidi-ws", ProtocolLog.DescribeEndpoint(wsEndpoint!));
+                    var bidiTransport = new BiDiTransport(socket, log);
                     await bidiTransport.ConnectAsync(wsEndpoint!, readyCts.Token).ConfigureAwait(false);
 
                     var sessionId = await bidiTransport.CreateSessionAsync(readyCts.Token).ConfigureAwait(false);
@@ -166,7 +171,8 @@ public static class MotusLauncher
                 else
                 {
                     var socket = new CdpSocket();
-                    var cdpTransport = new CdpTransport(socket, slowMo);
+                    log = ProtocolLog.Open(logOptions, "cdp-ws", ProtocolLog.DescribeEndpoint(wsEndpoint!));
+                    var cdpTransport = new CdpTransport(socket, slowMo, log);
                     await cdpTransport.ConnectAsync(wsEndpoint!, readyCts.Token).ConfigureAwait(false);
 
                     transport = cdpTransport;
@@ -207,6 +213,8 @@ public static class MotusLauncher
                 try { Directory.Delete(profileOrDataDir, recursive: true); } catch { }
             }
 
+            await ReleaseLogAsync(log).ConfigureAwait(false);
+
             throw;
         }
     }
@@ -244,6 +252,7 @@ public static class MotusLauncher
         string endpoint, ConnectOptions? options, CancellationToken ct = default)
     {
         options ??= new ConnectOptions();
+        var logOptions = ProtocolLogSettings.Resolve(options.ProtocolLog, Environment.GetEnvironmentVariable);
 
         var timeout = TimeSpan.FromMilliseconds(options.Timeout);
 
@@ -278,7 +287,8 @@ public static class MotusLauncher
 
         var slowMo = TimeSpan.FromMilliseconds(options.SlowMo);
         var socket = new CdpSocket();
-        var transport = new CdpTransport(socket, slowMo);
+        var log = ProtocolLog.Open(logOptions, "cdp-ws", ProtocolLog.DescribeEndpoint(wsEndpoint));
+        var transport = new CdpTransport(socket, slowMo, log);
 
         try
         {
@@ -291,6 +301,11 @@ public static class MotusLauncher
                 timeoutDuration: timeout,
                 message: $"Did not finish connecting to {endpoint} within {timeout.TotalSeconds}s. "
                          + $"It named {wsEndpoint}, and that WebSocket never finished opening.");
+        }
+        catch
+        {
+            await ReleaseLogAsync(log).ConfigureAwait(false);
+            throw;
         }
 
         var registry = new CdpSessionRegistry(transport);
@@ -312,8 +327,23 @@ public static class MotusLauncher
                          + "The WebSocket opened, and the browser did not finish reporting its "
                          + "version and taking over the tabs already open.");
         }
+        catch
+        {
+            await ReleaseLogAsync(log).ConfigureAwait(false);
+            throw;
+        }
 
         return browser;
+    }
+
+    /// <summary>
+    /// Lets go of a connection's protocol log on a failure path that leaves its transport
+    /// undisposed, so the log's file is not held open for the life of the process.
+    /// </summary>
+    private static async ValueTask ReleaseLogAsync(ProtocolLog? log)
+    {
+        if (log is not null)
+            await log.DisposeAsync().ConfigureAwait(false);
     }
 
     /// <summary>

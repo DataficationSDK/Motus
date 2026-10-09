@@ -67,6 +67,48 @@ public class BrowserIntegrationTests
     }
 
     [TestMethod]
+    public async Task LaunchAsync_WithProtocolLog_RecordsTrafficAndClosesTheFile()
+    {
+        if (!BrowserAvailable())
+        {
+            Assert.Inconclusive("No browser found on this machine.");
+            return;
+        }
+
+        var path = Path.Combine(Path.GetTempPath(), $"motus-protocol-log-{Guid.NewGuid():N}.log");
+        var fromSink = new System.Collections.Concurrent.ConcurrentQueue<string>();
+
+        try
+        {
+            await using (var browser = await MotusLauncher.LaunchAsync(new LaunchOptions
+            {
+                Headless = true,
+                ProtocolLog = new ProtocolLogOptions { Path = path, Sink = fromSink.Enqueue }
+            }))
+            {
+                var page = await browser.NewPageAsync();
+                await page.GotoAsync("data:text/html,<p>logged</p>");
+            }
+
+            Assert.IsFalse(ProtocolLogSink.IsOpen(path), "disposing the browser closes its log");
+
+            var lines = File.ReadAllLines(path);
+            StringAssert.StartsWith(lines[0], "# motus protocol log, pid ");
+            StringAssert.Contains(lines[1], " open cdp-");
+            Assert.IsTrue(lines.Any(l => l.EndsWith(" -> #1 - Browser.getVersion {}", StringComparison.Ordinal)));
+            Assert.IsTrue(lines.Any(l => l.Contains(" <- #1 - Browser.getVersion ", StringComparison.Ordinal)));
+            Assert.IsTrue(lines.Any(l => l.Contains(" <- event - Target.attachedToTarget ", StringComparison.Ordinal)));
+            Assert.IsTrue(lines.Any(l => l.Contains(" Page.navigate {\"url\":\"data:text/html,<p>logged</p>\"", StringComparison.Ordinal)));
+            Assert.IsTrue(lines.Any(l => l.Contains(" closed by ", StringComparison.Ordinal)));
+            CollectionAssert.AreEqual(lines.Skip(1).ToArray(), fromSink.ToArray(), "the file and the sink see the same lines");
+        }
+        finally
+        {
+            try { File.Delete(path); } catch { }
+        }
+    }
+
+    [TestMethod]
     public async Task ConnectAsync_AttachesToExternalBrowser()
     {
         if (!BrowserAvailable())
