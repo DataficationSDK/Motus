@@ -11,7 +11,7 @@
     <IsPackable>true</IsPackable>
     <PackageId>Motus.Testing.xUnit</PackageId>
     <Title>Motus.Testing.xUnit</Title>
-    <Description>xUnit integration for Motus browser automation. Provides collection and class fixtures for parallel test execution.</Description>
+    <Description>xUnit integration for Motus browser automation. Provides a class fixture that gives each test class an isolated browser context, with nothing to declare, and an optional browser per test collection.</Description>
     <IsTestProject>false</IsTestProject>
   </PropertyGroup>
 
