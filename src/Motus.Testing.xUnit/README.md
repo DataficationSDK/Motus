@@ -59,6 +59,10 @@ public class VisualTests : IClassFixture<BrowserContextFixture<HeadedBrowserFixt
 
 For the default options, `[CollectionDefinition("Name")] public class NameCollection : MotusCollection { }` declares the collection, and its classes use `BrowserContextFixture<SharedBrowserFixture>`.
 
+### Upgrading from 1.1
+
+The `BrowserContextFixture(SharedBrowserFixture)` constructor is now `protected`, because xUnit builds a class fixture through its only public constructor and that is now the parameterless one. Replace `new BrowserContextFixture(browser)` with `new BrowserContextFixture<SharedBrowserFixture>(browser)`; subclasses that call `base(browser)` build unchanged. Test assemblies compiled against 1.1 need rebuilding. The [testing frameworks guide](https://github.com/DataficationSDK/Motus/blob/main/docs/guides/testing-frameworks.md#upgrading-from-11) covers the rest of the upgrade.
+
 ### Failure Tracing
 
 Automatic failure tracing is not supported at the class-fixture level because xUnit does not expose per-test outcome in `DisposeAsync`. Use manual `Tracing.StartAsync` / `StopAsync` for trace capture.

@@ -345,7 +345,25 @@ For a context per test from a collection's browser, receive the `SharedBrowserFi
 
 `MotusCollection` is a collection definition that provides a `SharedBrowserFixture`. xUnit ignores collection definitions outside the test assembly, so it serves as the base for one you declare, as shown above.
 
-A class marked `[Collection(nameof(MotusCollection))]` with no such definition in your project joins an ordinary collection of that name: its classes run one after another, and `BrowserContextFixture` in them uses the browser shared by the test process. Code written that way keeps working; the attribute can be removed to let those classes run in parallel.
+A class marked `[Collection(nameof(MotusCollection))]` with no such definition in your project joins an ordinary collection of that name: its classes run one after another, and `BrowserContextFixture` in them uses the browser shared by the test process. A class that also declares `IClassFixture<BrowserContextFixture>` runs as it is; the attribute can be removed to let it run in parallel with other classes. A class that only receives `BrowserContextFixture` in its constructor, without declaring the interface, still fails to start, and needs `IClassFixture<BrowserContextFixture>` added.
+
+### Upgrading from 1.1
+
+In 1.1, `BrowserContextFixture` had a public constructor that took a `SharedBrowserFixture`, and the xUnit examples created the fixture with `new BrowserContextFixture(browser)`. xUnit builds a class fixture through its only public constructor, and that is now the parameterless one, so that `IClassFixture<BrowserContextFixture>` works with nothing declared. The `SharedBrowserFixture` constructor is `protected` as a result. A call to it no longer builds (error CS0122, inaccessible due to its protection level), and a test assembly compiled against 1.1 fails with `MethodAccessException` when it runs against this release. Create the generic fixture instead:
+
+```csharp
+// 1.1
+_ctx = new BrowserContextFixture(browser);
+
+// Now
+_ctx = new BrowserContextFixture<SharedBrowserFixture>(browser);
+```
+
+`BrowserContextFixture<SharedBrowserFixture>` derives from `BrowserContextFixture`, so a field or parameter declared as `BrowserContextFixture` can keep its type. A subclass that passes the browser to `base(browser)` builds unchanged.
+
+The 1.1 examples also marked the class `[Collection(nameof(MotusCollection))]` to receive the `SharedBrowserFixture`. That ran only in a project that declared a collection definition of its own, because xUnit ignores the one in the package; keep that definition, or replace it with the one-line `MotusCollection` subclass under [A browser per collection](#a-browser-per-collection). If the class needs no browser of its own, drop the constructor parameter and create the fixture with `new()`, as under [A context per test](#a-context-per-test).
+
+A class in such a collection that declares `IClassFixture<BrowserContextFixture>` received the collection's browser in 1.1 and now takes its context from the browser shared by the test process, launched with the same settings. To keep it on the collection's browser, declare `IClassFixture<BrowserContextFixture<SharedBrowserFixture>>` and receive that type in the constructor.
 
 ---
 

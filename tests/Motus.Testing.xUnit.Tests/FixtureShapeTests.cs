@@ -1,3 +1,4 @@
+using System.Reflection;
 using Xunit;
 
 namespace Motus.Testing.xUnit.Tests;
@@ -47,6 +48,21 @@ public class FixtureShapeTests
         // Nothing launches until InitializeAsync.
         Assert.Throws<InvalidOperationException>(() => fixture.Context);
         Assert.Throws<InvalidOperationException>(() => fixture.Page);
+    }
+
+    [Fact]
+    public void SharedBrowserConstructor_IsProtected_AndTheGenericFixtureReplacesIt()
+    {
+        // Public in 1.1. The upgrade note in the testing guide gives the replacement for
+        // `new BrowserContextFixture(browser)`; a change to either side belongs in both.
+        var ctor = typeof(BrowserContextFixture).GetConstructor(
+            BindingFlags.Instance | BindingFlags.NonPublic, [typeof(SharedBrowserFixture)]);
+        Assert.NotNull(ctor);
+        Assert.True(ctor.IsFamily);
+
+        var browser = new SharedBrowserFixture();
+        BrowserContextFixture upgraded = new BrowserContextFixture<SharedBrowserFixture>(browser);
+        Assert.Same(browser, Assert.IsType<BrowserContextFixture<SharedBrowserFixture>>(upgraded).SharedBrowser);
     }
 
     [Fact]
