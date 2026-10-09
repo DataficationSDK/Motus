@@ -1,6 +1,6 @@
 # Test Framework Integration
 
-Motus ships first-class test helpers for MSTest, NUnit, and xUnit. Each package follows the same principle: one browser per lifecycle scope, one isolated `IBrowserContext` per test. Failure tracing is built in across all three frameworks and requires no boilerplate beyond enabling it in configuration.
+Motus ships first-class test helpers for MSTest, NUnit, and xUnit. Each package follows the same principle: one browser per lifecycle scope, one isolated `IBrowserContext` per test (per test class by default under xUnit). Failure tracing is built in across all three frameworks and requires no boilerplate beyond enabling it in configuration.
 
 ---
 
@@ -193,93 +193,159 @@ public class HomePageTests : MotusTestBase
 
 Package: `Motus.Testing.xUnit`
 
-xUnit does not support class-level setup hooks, so Motus uses the xUnit fixture system directly. Two fixture types cover the common scenarios.
+xUnit does not support class-level setup hooks, so Motus uses the xUnit fixture system directly. Declare `BrowserContextFixture` as a class fixture and each test class gets its own context and page, with nothing else to set up.
 
-### SharedBrowserFixture
-
-`SharedBrowserFixture` is an `IAsyncLifetime` collection fixture that manages a single browser instance shared across all test classes in a collection.
-
-| Member | Description |
-|---|---|
-| `IBrowser Browser` | The shared browser instance. |
-| `Task<IBrowserContext> NewContextAsync(ContextOptions?)` | Creates a new isolated context from the shared browser. |
-| `protected virtual LaunchOptions? LaunchOptions` | Override to customize launch options. |
-
-### BrowserContextFixture
-
-`BrowserContextFixture` is an `IAsyncLifetime` class fixture that creates a context and page once per test class. It requires `SharedBrowserFixture` via constructor injection.
-
-| Member | Description |
-|---|---|
-| `IBrowserContext Context` | The context for this test class. Available after `InitializeAsync`. |
-| `IPage Page` | A page within the test class context. Available after `InitializeAsync`. |
-| `protected virtual ContextOptions? ContextOptions` | Override to customize context options. Default is `null`. |
-
-> **Note:** Automatic failure tracing is not supported with `BrowserContextFixture` because xUnit does not expose per-test outcome in `DisposeAsync`. For per-test traces, call `Context.Tracing.StartAsync` and `StopAsync` manually within your test methods.
-
-### MotusCollection
-
-`MotusCollection` is a pre-built `[CollectionDefinition]` that wires `SharedBrowserFixture` as a collection fixture. Decorate your test class with `[Collection(nameof(MotusCollection))]` to participate.
-
-```csharp
-// Provided by the package -- no need to redeclare unless you subclass SharedBrowserFixture.
-[CollectionDefinition(nameof(MotusCollection))]
-public class MotusCollection : ICollectionFixture<SharedBrowserFixture>
-{
-}
-```
-
-If you subclass `SharedBrowserFixture` to override `LaunchOptions`, declare a new collection definition referencing your subclass instead of `MotusCollection`.
-
-### Constructor injection
-
-A test class in the collection receives `SharedBrowserFixture` and optionally declares `BrowserContextFixture` as a class fixture:
-
-```csharp
-[Collection(nameof(MotusCollection))]
-public class HomePageTests : IClassFixture<BrowserContextFixture>, IAsyncLifetime
-{
-    private readonly BrowserContextFixture _ctx;
-
-    public HomePageTests(SharedBrowserFixture browser)
-    {
-        _ctx = new BrowserContextFixture(browser);
-    }
-
-    public Task InitializeAsync() => _ctx.InitializeAsync();
-    public Task DisposeAsync() => _ctx.DisposeAsync();
-    ...
-}
-```
-
-### Complete example
+### Quick start
 
 ```csharp
 using Motus.Abstractions;
 using Motus.Testing.xUnit;
 using Xunit;
 
-[Collection(nameof(MotusCollection))]
-public class HomePageTests : IAsyncLifetime
+public class HomePageTests : IClassFixture<BrowserContextFixture>
 {
-    private readonly BrowserContextFixture _ctx;
+    private readonly BrowserContextFixture _fixture;
 
-    public HomePageTests(SharedBrowserFixture browser)
+    public HomePageTests(BrowserContextFixture fixture) => _fixture = fixture;
+
+    [Fact]
+    public async Task Title_ShouldContainAppName()
     {
-        _ctx = new BrowserContextFixture(browser);
+        await _fixture.Page.GotoAsync("https://example.com");
+        Assert.Contains("Example", await _fixture.Page.TitleAsync());
     }
+}
+```
+
+There is no collection to declare and no `[Collection]` attribute to add.
+
+### Browser lifecycle
+
+Every `BrowserContextFixture` in the test process shares one browser. The first fixture to initialize launches it, and fixtures that start at the same moment wait for that one launch rather than starting browsers of their own. The browser is closed and its temporary profile deleted when the test process exits. xUnit has no assembly-level teardown, so there is no earlier point to close it at; if you need one, give a collection its own browser (see below).
+
+Launch options for this browser come from `motus.config.json` or `MOTUS_*` environment variables. See the [Configuration Reference](./configuration.md).
+
+Each test class gets one context and one page, created before its first test and closed after its last. The tests in a class share them. xUnit runs test classes in parallel by default, and each has its own context, so they do not see each other's cookies or storage. At most four contexts are open at once across the process; a class that would open a fifth waits for another to close.
+
+A launch that fails is reported to every fixture that asks for the browser within the next 30 seconds without being attempted again, so a missing browser fails a run quickly.
+
+### BrowserContextFixture
+
+`BrowserContextFixture` is an `IAsyncLifetime` class fixture that creates a context and page once per test class.
+
+| Member | Description |
+|---|---|
+| `BrowserContextFixture()` | Creates a fixture whose context comes from the browser shared by the test process. |
+| `IBrowserContext Context` | The context for this test class. Available after `InitializeAsync`. |
+| `IPage Page` | A page within the test class context. Available after `InitializeAsync`. |
+| `protected virtual ContextOptions? ContextOptions` | Override to customize context options. Default is `null`. |
+
+To change the context options, subclass it and declare the subclass as the class fixture:
+
+```csharp
+public class DesktopContextFixture : BrowserContextFixture
+{
+    protected override ContextOptions? ContextOptions => new()
+    {
+        Viewport = new ViewportSize(1920, 1080),
+    };
+}
+
+public class DashboardTests : IClassFixture<DesktopContextFixture> { /* ... */ }
+```
+
+> **Note:** Automatic failure tracing is not supported with `BrowserContextFixture` because xUnit does not expose per-test outcome in `DisposeAsync`. For per-test traces, call `Context.Tracing.StartAsync` and `StopAsync` manually within your test methods.
+
+### A context per test
+
+When tests in one class must not share a context, create the fixture in the test class and drive it from the class's own `IAsyncLifetime`. xUnit creates a new instance of the class for every test, so every test gets a fresh context:
+
+```csharp
+public class CheckoutTests : IAsyncLifetime
+{
+    private readonly BrowserContextFixture _ctx = new();
 
     public Task InitializeAsync() => _ctx.InitializeAsync();
     public Task DisposeAsync() => _ctx.DisposeAsync();
 
     [Fact]
-    public async Task Title_ShouldContainAppName()
+    public async Task Cart_StartsEmpty()
     {
-        await _ctx.Page.GotoAsync("https://example.com");
-        Assert.Contains("Example", await _ctx.Page.TitleAsync());
+        await _ctx.Page.GotoAsync("https://example.com/cart");
+        // ...
     }
 }
 ```
+
+### A browser per collection
+
+To give a group of test classes a browser of their own, separate from the shared one, put them in an xUnit collection with a `SharedBrowserFixture`. xUnit reads collection definitions only from the test assembly, so declare the collection in your test project. Deriving from `MotusCollection` makes it a one-liner:
+
+```csharp
+[CollectionDefinition("Checkout")]
+public class CheckoutCollection : MotusCollection { }
+```
+
+Classes in the collection take their context from its browser with `BrowserContextFixture<SharedBrowserFixture>`. They can also receive the `SharedBrowserFixture` itself:
+
+```csharp
+[Collection("Checkout")]
+public class CartTests : IClassFixture<BrowserContextFixture<SharedBrowserFixture>>
+{
+    private readonly BrowserContextFixture<SharedBrowserFixture> _fixture;
+
+    public CartTests(BrowserContextFixture<SharedBrowserFixture> fixture) => _fixture = fixture;
+
+    // ...
+}
+```
+
+The collection's browser launches when the collection starts and closes when it finishes. Classes in one collection run one after another.
+
+To launch that browser with options set in code, subclass `SharedBrowserFixture`, name the subclass in the collection, and use it as the type argument. xUnit matches fixtures by their exact type, so the class fixture must name the subclass:
+
+```csharp
+public class HeadedBrowser : SharedBrowserFixture
+{
+    protected override LaunchOptions? LaunchOptions => new() { Headless = false, SlowMo = 100 };
+}
+
+[CollectionDefinition("Headed")]
+public class HeadedCollection : ICollectionFixture<HeadedBrowser> { }
+
+[Collection("Headed")]
+public class VisualTests : IClassFixture<BrowserContextFixture<HeadedBrowser>> { /* ... */ }
+```
+
+A class in a collection that declares plain `IClassFixture<BrowserContextFixture>` still uses the browser shared by the test process, not the collection's.
+
+For a context per test from a collection's browser, receive the `SharedBrowserFixture` and create `new BrowserContextFixture<SharedBrowserFixture>(browser)` in the constructor, then drive it from `IAsyncLifetime` as shown above.
+
+### SharedBrowserFixture
+
+`SharedBrowserFixture` is an `IAsyncLifetime` collection fixture that manages a browser shared by the test classes of one collection.
+
+| Member | Description |
+|---|---|
+| `IBrowser Browser` | The collection's browser. |
+| `Task<IBrowserContext> NewContextAsync(ContextOptions?)` | Creates a new isolated context, launching the browser first if it has not been. |
+| `Task CloseContextAsync(IBrowserContext)` | Closes a context from `NewContextAsync`. Use it rather than `context.CloseAsync()`, which leaves the context counted against the four allowed open at once. |
+| `protected virtual LaunchOptions? LaunchOptions` | Override to customize launch options. |
+
+### `BrowserContextFixture<TBrowser>`
+
+`BrowserContextFixture<TBrowser>` is a `BrowserContextFixture` whose context comes from the collection fixture `TBrowser`, which is `SharedBrowserFixture` or a subclass of it.
+
+| Member | Description |
+|---|---|
+| `BrowserContextFixture(TBrowser browser)` | Creates a fixture whose context comes from the given shared browser. xUnit supplies `browser` from the collection. |
+| `TBrowser SharedBrowser` | The collection fixture that provides the browser. |
+
+### MotusCollection
+
+`MotusCollection` is a collection definition that provides a `SharedBrowserFixture`. xUnit ignores collection definitions outside the test assembly, so it serves as the base for one you declare, as shown above.
+
+A class marked `[Collection(nameof(MotusCollection))]` with no such definition in your project joins an ordinary collection of that name: its classes run one after another, and `BrowserContextFixture` in them uses the browser shared by the test process. Code written that way keeps working; the attribute can be removed to let those classes run in parallel.
 
 ---
 
