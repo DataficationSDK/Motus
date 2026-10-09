@@ -93,16 +93,17 @@ public class ProtocolLogSinkTests
         var path = Path.Combine(_dir, "p.log");
         const int perWriter = 2000;
 
-        using var first = ProtocolLogFile.Open(path);
-        using var second = ProtocolLogFile.Open(path);
-
         static void Fill(ProtocolLogFile file, string name)
         {
             for (var i = 0; i < perWriter; i++)
                 file.Append(Encoding.UTF8.GetBytes($"{name} line {i:D4} of the protocol log\n"));
         }
 
-        await Task.WhenAll(Task.Run(() => Fill(first, "a")), Task.Run(() => Fill(second, "b")));
+        // Both writers close before the read: File.ReadAllLines shares for read only, which
+        // Windows refuses while another handle has the file open for writing.
+        using (var first = ProtocolLogFile.Open(path))
+        using (var second = ProtocolLogFile.Open(path))
+            await Task.WhenAll(Task.Run(() => Fill(first, "a")), Task.Run(() => Fill(second, "b")));
 
         var lines = File.ReadAllLines(path);
         Assert.AreEqual(2 * perWriter, lines.Length);
