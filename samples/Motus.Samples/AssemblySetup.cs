@@ -1,5 +1,10 @@
 namespace Motus.Samples;
 
+/// <summary>
+/// Launches the shared browser up front with options set in code. Optional: without it,
+/// <see cref="MotusTestBase"/> launches the browser with the configured defaults on first use and
+/// closes it when the run ends. It is here because these samples enable performance collection.
+/// </summary>
 [TestClass]
 public class AssemblySetup
 {

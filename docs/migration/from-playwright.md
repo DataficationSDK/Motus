@@ -315,14 +315,6 @@ public class MyTests : PageTest
 ### Motus (`MotusTestBase`)
 
 ```csharp
-[AssemblyInitialize]
-public static async Task AssemblyInit(TestContext _)
-    => await MotusTestBase.LaunchBrowserAsync();
-
-[AssemblyCleanup]
-public static async Task AssemblyCleanup()
-    => await MotusTestBase.CloseBrowserAsync();
-
 [TestClass]
 public class MyTests : MotusTestBase
 {
@@ -460,7 +452,7 @@ public class MyTests : PageTest { ... }
 public class MyTests : MotusTestBase { ... }
 ```
 
-Add `[AssemblyInitialize]` and `[AssemblyCleanup]` hooks to a static setup class if you do not already have them (see the example in the Test Base Class section above).
+No assembly hooks are needed: the shared browser launches on first use. Add an `[AssemblyInitialize]` that calls `MotusTestBase.LaunchBrowserAsync(options)` only if you set launch options in code (see [Browser lifecycle](../guides/testing-frameworks.md#browser-lifecycle)).
 
 ### 7. Update `GetByRole` calls
 

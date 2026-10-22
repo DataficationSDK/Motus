@@ -313,6 +313,81 @@ internal sealed class Browser : IBrowser
         _browserCts.Dispose();
     }
 
+    /// <summary>
+    /// Ends a browser this process started, synchronously and without a word to it, for a caller
+    /// that is about to exit and cannot wait on anything.
+    /// </summary>
+    /// <remarks>
+    /// A test host can be torn down within a tenth of a second of its exit beginning, which is far
+    /// too little for <see cref="DisposeAsync"/> to send a close and wait for an answer. So the
+    /// browser process alone is killed, and its profile directory removed after it. The browser's
+    /// helper processes exit on their own once it is gone, and a kill that walks the whole process
+    /// tree first has to enumerate every process on the machine, which on macOS takes several
+    /// times as long as the host allows. On Windows, releasing the job object ends the helpers
+    /// along with the browser. Nothing is awaited here and nothing is reported as an unexpected
+    /// loss.
+    /// </remarks>
+    internal void TerminateForProcessExit()
+    {
+        Interlocked.Exchange(ref _closedFlag, 1);
+        UnregisterProcessExitHandler();
+        _isConnected = false;
+
+        var exited = true;
+        if (_ownsProcess)
+        {
+            try
+            {
+                if (!_process!.HasExited)
+                {
+                    exited = false;
+                    _processGuard?.Dispose();
+                    _process.Kill();
+                }
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
+            {
+                // Already gone, or past the point of being asked
+            }
+        }
+
+        if (_tempUserDataDir is null)
+            return;
+
+        if (TryDeleteDirectory(_tempUserDataDir) || exited)
+            return;
+
+        // Windows will not delete files a dying process still holds open. The kill has been sent,
+        // so a short wait is usually enough for one more attempt to succeed.
+        try
+        {
+            _process!.WaitForExit(1000);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+        }
+
+        TryDeleteDirectory(_tempUserDataDir);
+    }
+
+    private static bool TryDeleteDirectory(string path)
+    {
+        try
+        {
+            Directory.Delete(path, recursive: true);
+            return true;
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return true;
+        }
+        catch
+        {
+            // Best-effort cleanup
+            return false;
+        }
+    }
+
     public async Task<IBrowserContext> NewContextAsync(ContextOptions? options = null)
     {
         options = ConfigMerge.ApplyConfig(options ?? new ContextOptions());

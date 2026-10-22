@@ -405,6 +405,10 @@ public sealed class TestRunner(int maxWorkers)
         {
             instance = Activator.CreateInstance(test.TestClass)!;
 
+            // Publish the test method name so MotusTestBase can resolve per-method attributes
+            // (e.g. [PerformanceBudget]) and name failure artifacts without a TestContext
+            TestMethodNameContext.Set(test.TestMethod.Name);
+
             // Run [ClassInitialize] once per type (static, takes TestContext)
             if (_initializedClasses.TryAdd(test.TestClass, true))
             {
@@ -458,6 +462,8 @@ public sealed class TestRunner(int maxWorkers)
                 else if (instance is IDisposable disposable)
                     disposable.Dispose();
             }
+
+            TestMethodNameContext.Clear();
         }
     }
 

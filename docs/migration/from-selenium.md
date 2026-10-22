@@ -258,20 +258,12 @@ Call `await browser.NewContextAsync()` to get an `IBrowserContext`, then `await 
 
 **4. Adopt MotusTestBase for MSTest projects.**
 
-Extend `MotusTestBase` instead of managing setup and teardown manually. The base class shares a single browser across the assembly and creates an isolated context per test, which is compatible with `[Parallelize]`:
+Extend `MotusTestBase` instead of managing setup and teardown manually. The base class launches a single browser on first use, shares it across the assembly, and creates an isolated context per test, which is compatible with `[Parallelize]`:
 
 ```csharp
 [TestClass]
 public class MyTests : MotusTestBase
 {
-    [AssemblyInitialize]
-    public static async Task AssemblyInit(TestContext _)
-        => await LaunchBrowserAsync();
-
-    [AssemblyCleanup]
-    public static async Task AssemblyCleanup()
-        => await CloseBrowserAsync();
-
     [TestMethod]
     public async Task ShouldDisplayWelcomeMessage()
     {
