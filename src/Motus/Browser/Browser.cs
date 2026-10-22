@@ -506,11 +506,9 @@ internal sealed class Browser : IBrowser
             var session = _registry.CreateSession(sessionId);
             page = new Page(session, context, targetId);
 
+            // Initialization reads the frame tree, which is what gives a tab that was already open
+            // its frames: it has already navigated, so enabling the Page domain replays nothing.
             await page.InitializeAsync(ct).ConfigureAwait(false);
-
-            // A tab that was already open has already navigated, so enabling the Page domain
-            // replays nothing and the frame map would stay empty. Read the tree instead.
-            await page.SeedFrameTreeAsync(ct).ConfigureAwait(false);
 
             await context.AdoptPageAsync(page, openerTargetId).ConfigureAwait(false);
         }

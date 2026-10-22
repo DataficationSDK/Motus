@@ -220,6 +220,10 @@ The sequence:
 
    g. Network monitoring and interception are initialized via `InitializeNetworkAsync`.
 
+   h. `Target.setAutoAttach` is armed so that a frame rendering in a process of its own is reported to the page.
+
+   i. `Page.getFrameTree` is read and recorded. The browser never announces a new tab's initial `about:blank` as a navigation, so this read is what gives the page its main frame before anything navigates it: `Url` reads `about:blank`, `MainFrame` and `Frames` are populated, and `EvaluateAsync` and `SetContentAsync` work straight away. On Firefox the same read is answered by `browsingContext.getTree`.
+
 4. Context options are applied to the new page: viewport (`Emulation.setDeviceMetricsOverride`), locale, timezone, color scheme, user agent, HTTPS error handling, and geolocation are each sent if the corresponding option is set.
 
 5. Context-level extra HTTP headers and offline state are propagated to the page.

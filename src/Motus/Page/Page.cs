@@ -187,29 +187,39 @@ internal sealed partial class Page : IPage
         // far as the page is concerned.
         await ArmAutoAttachAsync(_session, ct).ConfigureAwait(false);
 
-        // In BiDi, domain enables are no-ops and don't fire frameNavigated events,
-        // so _mainFrameId may still be null. The browsing context ID (targetId) serves
-        // as the frame identifier in BiDi.
-        if (_mainFrameId is null && _session is BiDiSession)
-            _mainFrameId = _targetId;
+        await SeedFrameTreeAsync(ct).ConfigureAwait(false);
+
+        // In BiDi, domain enables are no-ops and don't fire frameNavigated events, so the tree
+        // read above is the only source of the main frame. Should it come back empty, the browsing
+        // context ID (targetId) still serves as the frame identifier in BiDi.
+        if (_session is BiDiSession)
+            _mainFrameId ??= _targetId;
     }
 
     /// <summary>
-    /// Reads the page's current frame tree and records it, for a page that was already open
-    /// before Motus reached it.
+    /// Reads the page's current frame tree and records it, so the page has a main frame from the
+    /// moment it is handed out rather than from its first navigation.
     /// </summary>
     /// <remarks>
-    /// Enabling the Page domain does not replay the navigation a page has already done, so a
-    /// page taken over mid-life would otherwise have no frames recorded at all: no main frame,
-    /// an empty URL, and nothing for a locator to resolve against. Reading the tree once fills
-    /// in what the missed events would have.
+    /// Enabling the Page domain does not replay a navigation that has already happened. A new tab
+    /// sits on its initial about:blank, which the browser never announces, and a tab that was
+    /// already open navigated before Motus reached it. Either way the page would otherwise have no
+    /// frames recorded at all: no main frame, an empty URL, and no execution context for an
+    /// evaluation to run in. Reading the tree once fills in what the missed events would have.
+    /// Anything that changes after the read still arrives as an event, because the pump is
+    /// listening before the domains are enabled.
     /// </remarks>
-    internal async Task SeedFrameTreeAsync(CancellationToken ct)
+    private async Task SeedFrameTreeAsync(CancellationToken ct)
     {
         var result = await _session.SendAsync(
             "Page.getFrameTree",
             CdpJsonContext.Default.PageGetFrameTreeResult,
             ct).ConfigureAwait(false);
+
+        // A real browser always answers with a tree. An endpoint that answers with nothing leaves
+        // the page as it was, with the main frame claimed by the first navigation instead.
+        if (result.FrameTree?.Frame is null)
+            return;
 
         RecordFrameTreeNode(result.FrameTree, _session);
         _mainFrameId ??= result.FrameTree.Frame.Id;

@@ -9,17 +9,21 @@ namespace Motus.Recorder.Tests.Transport;
 internal static class CdpFakeResponse
 {
     /// <summary>
-    /// Commands that only switch a connection-wide feature on. They return an empty result and
-    /// carry nothing a fixture asserts against.
+    /// Commands a fixture does not answer itself: ones that only switch a connection-wide feature
+    /// on, and ones that ask the browser for state an empty answer reports as nothing to record.
+    /// They carry nothing a fixture asserts against.
     /// </summary>
     /// <remarks>
     /// A fake answers these by method name before it looks at anything a fixture queued. That is
-    /// what stops a command added to browser startup from pushing every queued response in the
-    /// suite one place along, or from leaving startup waiting on an answer no fixture wrote.
+    /// what stops a command added to browser startup or page initialization from pushing every
+    /// queued response in the suite one place along, or from leaving startup waiting on an answer
+    /// no fixture wrote. <c>Page.getFrameTree</c> answered empty leaves a new page without a main
+    /// frame until its first navigation, which is what fixtures were written against.
     /// </remarks>
     private static readonly HashSet<string> Bookkeeping = new(StringComparer.Ordinal)
     {
         "Target.setDiscoverTargets",
+        "Page.getFrameTree",
     };
 
     /// <summary>
