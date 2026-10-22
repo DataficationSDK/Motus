@@ -469,6 +469,30 @@ Either way, the session comes back without the state it was holding. Named conte
 
 ---
 
+## Seeing protocol traffic
+
+To see exactly what the server asked the browser to do, and what came back, set `MOTUS_PROTOCOL_LOG` in the environment the client starts the server with. It takes a file path, or `stderr`:
+
+```json
+{
+  "mcpServers": {
+    "motus": {
+      "command": "motus",
+      "args": ["mcp"],
+      "env": { "MOTUS_PROTOCOL_LOG": "/path/to/motus-protocol.log" }
+    }
+  }
+}
+```
+
+With Claude Code, pass it at registration: `claude mcp add motus -e MOTUS_PROTOCOL_LOG=/path/to/motus-protocol.log -- motus mcp`.
+
+Never point it at `stdout`, which carries the JSON-RPC channel; the server refuses it and logs nothing. The variable is read each time the server launches or attaches to a browser, so it also covers the browser a session acquires after recovering from a crash.
+
+The log holds everything the agent typed or filled, including into password fields. Headers, cookies and request bodies are redacted, but keystrokes and filled values are not. See [Troubleshooting with the protocol log](configuration.md#troubleshooting-with-the-protocol-log) for the format and the full list.
+
+---
+
 ## HTTP transport
 
 For hosted, team, or CI use, the same tools can be served over Streamable HTTP instead of stdio. This is the transport to use with remote MCP clients and the Anthropic API MCP connector.

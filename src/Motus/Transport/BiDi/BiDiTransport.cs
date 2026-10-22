@@ -12,6 +12,7 @@ namespace Motus;
 internal sealed class BiDiTransport : IMotusTransport
 {
     private readonly ICdpSocket _socket;
+    private readonly ProtocolLog? _log;
     private readonly SemaphoreSlim _sendLock = new(1, 1);
     private readonly CancellationTokenSource _cts = new();
     private Task? _receiveLoop;
@@ -31,9 +32,10 @@ internal sealed class BiDiTransport : IMotusTransport
     /// </summary>
     public event Action<Exception?>? Disconnected;
 
-    internal BiDiTransport(ICdpSocket socket)
+    internal BiDiTransport(ICdpSocket socket, ProtocolLog? log = null)
     {
         _socket = socket;
+        _log = log;
     }
 
     /// <summary>
@@ -83,11 +85,15 @@ internal sealed class BiDiTransport : IMotusTransport
         {
             var envelope = new BiDiCommandEnvelope(id, method, paramsElement);
             var bytes = JsonSerializer.SerializeToUtf8Bytes(envelope, BiDiJsonContext.Default.BiDiCommandEnvelope);
+            var logged = _log?.FormatCommand(method, paramsElement);
 
             // ClientWebSocket does not support concurrent sends; serialize access.
             await _sendLock.WaitAsync(effectiveCt).ConfigureAwait(false);
             try
             {
+                // Logged under the lock and before the bytes go out, so the command is on record
+                // before its response can be.
+                _log?.CommandSent(id, sessionId: null, method, logged!);
                 await _socket.SendAsync(bytes, effectiveCt).ConfigureAwait(false);
             }
             finally
@@ -101,6 +107,9 @@ internal sealed class BiDiTransport : IMotusTransport
         finally
         {
             _pending.TryRemove(id, out _);
+
+            if (_log is not null)
+                _log.CommandEnded(id, CdpTransport.DescribeUnanswered(ct, timeoutCts));
         }
     }
 
@@ -145,6 +154,7 @@ internal sealed class BiDiTransport : IMotusTransport
 
                 if (message.IsEmpty)
                 {
+                    _log?.Closed("by the browser");
                     FaultAllPending(new BiDiDisconnectedException());
                     CompleteAllChannels();
                     Disconnected?.Invoke(null);
@@ -160,11 +170,15 @@ internal sealed class BiDiTransport : IMotusTransport
                         BiDiJsonContext.Default.BiDiInboundDiscriminator);
 
                     if (discriminator is not null)
+                    {
+                        _log?.Received(discriminator, messageBytes);
                         DispatchMessage(discriminator);
+                    }
                 }
                 catch (JsonException)
                 {
                     // Malformed BiDi message; skip it.
+                    _log?.Malformed(messageBytes);
                 }
             }
         }
@@ -174,6 +188,7 @@ internal sealed class BiDiTransport : IMotusTransport
         }
         catch (Exception ex)
         {
+            _log?.Closed($"({ex.GetType().Name}: {ex.Message})");
             FaultAllPending(new BiDiDisconnectedException(ex));
             CompleteAllChannels();
             Disconnected?.Invoke(ex);
@@ -277,5 +292,13 @@ internal sealed class BiDiTransport : IMotusTransport
         await _socket.DisposeAsync().ConfigureAwait(false);
         _cts.Dispose();
         _sendLock.Dispose();
+
+        // Last, so everything the connection logged on its way down is written before the file
+        // closes.
+        if (_log is not null)
+        {
+            _log.Closed("by Motus");
+            await _log.DisposeAsync().ConfigureAwait(false);
+        }
     }
 }

@@ -354,6 +354,9 @@ Boolean variables accept `true`, `false`, `1`, or `0` (case-insensitive). Intege
 | `MOTUS_SHARD_INDEX` | `shard.index` | `int` | 1-based index of this shard. |
 | `MOTUS_SHARD_TOTAL` | `shard.total` | `int` | Total number of shards. |
 | `MOTUS_MCP_CAPS` | `mcp.caps` | `string` | Optional tool groups `motus mcp` advertises, as a comma-separated list. `--caps` wins over it. |
+| `MOTUS_PROTOCOL_LOG` | _(none; code only, as `ProtocolLog`)_ | `string` | Log every CDP or WebDriver BiDi message to this file, or to the standard error stream when set to `stderr`. See [Troubleshooting with the protocol log](#troubleshooting-with-the-protocol-log). |
+
+> `MOTUS_PROTOCOL_LOG` is the one variable read on every launch and connect rather than once at startup, so a long-running host such as `motus mcp` picks a change up the next time it connects to a browser. It has no config file key, because a debugging switch is not something to commit.
 
 > Not all config file sections have environment variable coverage. `reporter`, `recorder`, the locator `selectorPriority` arrays, and `performance.collectAfterNavigation` are file-only settings. Use the config file for those.
 
@@ -416,6 +419,7 @@ The merge checks are per-property:
 | `Plugins` | `IReadOnlyList<IPlugin>?` | `null` | Plugin instances loaded into every browser context created from this launch. |
 | `Accessibility` | `AccessibilityOptions?` | `null` | Accessibility audit hook configuration. Disabled when `null`. |
 | `Performance` | `PerformanceOptions?` | `null` | Performance metrics collector configuration. Disabled when `null`. |
+| `ProtocolLog` | `ProtocolLogOptions?` | `null` | Protocol log configuration. Disabled when `null`, unless `MOTUS_PROTOCOL_LOG` names a destination. Also on `ConnectOptions`. |
 
 ### AccessibilityOptions
 
@@ -440,6 +444,26 @@ Nested under `LaunchOptions.Performance`. A `null` value disables the collector 
 | `CollectAfterNavigation` | `bool` | `true` | Collect metrics after each page navigation. |
 
 Budget thresholds are not part of `PerformanceOptions`. They are configured via the `[PerformanceBudget]` attribute or the `performance` section in `motus.config.json`.
+
+### ProtocolLogOptions
+
+Nested under `LaunchOptions.ProtocolLog` and `ConnectOptions.ProtocolLog`. A `null` value leaves the decision to `MOTUS_PROTOCOL_LOG`. Options that name neither a `Path` nor a `Sink` take their destination from the variable and keep their other settings, so a test can fix its own limits and still be switched on from outside.
+
+| Property | Type | Default | Description |
+|---|---|---|---|
+| `Path` | `string?` | `null` | File to append the log to, or `"stderr"`. `"stdout"` is refused. |
+| `Sink` | `Action<string>?` | `null` | Receives each line, without a newline, on a background task. May be set together with `Path`. |
+| `MaxValueLength` | `int` | `1024` | Longest a JSON string may be before it is trimmed. Zero or less turns trimming off. |
+| `RedactSecrets` | `bool` | `true` | Replace authorization and cookie headers, cookie values, passwords and request bodies. There is no environment variable for this. |
+
+`Sink` is how the log reaches an `ILogger` without Motus taking a dependency on one:
+
+```csharp
+var browser = await MotusLauncher.LaunchAsync(new LaunchOptions
+{
+    ProtocolLog = new ProtocolLogOptions { Sink = line => logger.LogTrace("{Line}", line) }
+});
+```
 
 ---
 
@@ -529,6 +553,106 @@ Commit this file or add it to `.gitignore` depending on whether the whole team u
 
 ---
 
+## Troubleshooting with the protocol log
+
+When a test hangs or fails in a way that does not make sense, the first question is usually whether Motus sent the wrong thing or the browser answered strangely. The protocol log settles it. It records every command Motus sends to the browser and every message the browser sends back, over CDP for Chromium browsers and WebDriver BiDi for Firefox, launched or attached, from tests, the CLI and the MCP server alike.
+
+Turn it on with an environment variable, which needs no code change:
+
+```bash
+MOTUS_PROTOCOL_LOG=./motus-protocol.log dotnet test
+```
+
+```powershell
+$env:MOTUS_PROTOCOL_LOG = "motus-protocol.log"; dotnet test
+```
+
+Or from code, through `LaunchOptions.ProtocolLog` or `ConnectOptions.ProtocolLog` (see [ProtocolLogOptions](#protocollogoptions)):
+
+```csharp
+await using var browser = await MotusLauncher.LaunchAsync(new LaunchOptions
+{
+    ProtocolLog = new ProtocolLogOptions { Path = "motus-protocol.log" }
+});
+```
+
+Set the variable to `stderr` to write to the standard error stream instead of a file. `stdout` is refused with a warning, because standard output carries the MCP server's JSON-RPC channel and the test runner's report, and a log line there would corrupt either.
+
+### Reading a log
+
+This excerpt is from a run, on an older Motus on macOS, that typed into an input and then hung. Long session ids and payloads are cut here for width; a real log has them in full.
+
+```text
+# motus protocol log, pid 73696, 2026-10-09T18:08:01.696Z
+2026-10-09T18:08:01.699Z c1 open cdp-pipe pid 73717
+2026-10-09T18:08:01.750Z c1 -> #1 - Browser.getVersion {}
+2026-10-09T18:08:02.297Z c1 <- #1 - Browser.getVersion 548.4ms {"protocolVersion":"1.3","product":"Chrome/154.0.8037.98",...}
+2026-10-09T18:08:02.785Z c1 -> #11 3A92...6C82372 Network.setExtraHTTPHeaders {"headers":{"Authorization":"<redacted>"}}
+2026-10-09T18:08:02.786Z c1 <- #11 3A92...6C82372 Network.setExtraHTTPHeaders 1.2ms {}
+2026-10-09T18:08:02.819Z c1 <- event 3A92...6C82372 Network.requestWillBeSentExtraInfo {"requestId":"0C71...","associatedCookies":[{"cookie":{"name":"sess","value":"<redacted>",...}}],...}
+2026-10-09T18:08:02.977Z c1 -> #23 3A92...6C82372 Input.dispatchKeyEvent {"type":"rawKeyDown","code":"KeyB","key":"b","windowsVirtualKeyCode":66,"nativeVirtualKeyCode":66,"location":0}
+2026-10-09T18:08:02.986Z c1 <- #23 3A92...6C82372 Input.dispatchKeyEvent 8.6ms {}
+2026-10-09T18:08:02.986Z c1 -> #24 3A92...6C82372 Input.dispatchKeyEvent {"type":"char","text":"b","unmodifiedText":"b","code":"KeyB","key":"b",...}
+2026-10-09T18:08:06.589Z c1 <- #24 3A92...6C82372 Input.dispatchKeyEvent 3603.5ms {}
+2026-10-09T18:08:06.590Z c1 -> #25 3A92...6C82372 Input.dispatchKeyEvent {"type":"keyUp","code":"KeyB","key":"b",...}
+2026-10-09T18:08:07.316Z c1 -> #26 - Browser.getVersion {}
+2026-10-09T18:08:17.321Z c1 xx #26 - Browser.getVersion cancelled after 10004.3ms
+2026-10-09T18:08:17.328Z c1 xx #25 3A92...6C82372 Input.dispatchKeyEvent unanswered after 10738.7ms
+2026-10-09T18:08:17.332Z c1 closed by Motus
+```
+
+Read from the bottom: the key up for `b` (`#25`) was sent and never answered, and the browser stopped answering anything else too, including the `Browser.getVersion` probe Motus sends to check that a browser is alive. The character before it had already taken 3.6 seconds. The sequence itself is complete and in order, so the next place to look is inside each event. There it is: the key down (`#23`) carries `nativeVirtualKeyCode` set to 66, the Windows key code for B, which Chrome on macOS reads as a Mac key code for a different key, so the browser saw a key held down that was never let up and flooded the page with key presses until it stopped answering. That one field, visible in a single line, is the answer the log exists to give. Motus no longer sends it.
+
+Each line starts with a UTC timestamp and a connection tag (`c1`, `c2`, ...) that tells apart the browsers of one process sharing a file. Then comes one of:
+
+| Line | Meaning |
+|---|---|
+| `open <kind> <target>` | A connection opened: `cdp-pipe` with the browser's process id, or `cdp-ws` and `bidi-ws` with the endpoint's host and port. The endpoint's path is never logged, since it is what grants control of the browser. |
+| `-> #<id> <session> <method> <params>` | A command sent. `<session>` is the CDP session id in full, or `-` for the browser itself and for every BiDi command. |
+| `<- #<id> <session> <method> <elapsed> <result>` | Its response, with how long it took. An error response shows `error <code> "<message>"` in place of the result. |
+| `<- event <session> <method> <params>` | An event. Every event the browser sends is logged, whether anything in Motus listens for it or not. |
+| `xx #<id> <session> <method> <reason> after <elapsed>` | A command that ended with no response: `cancelled`, `timed out`, or `unanswered` when the connection went first. |
+| `<- #<id> - (no pending command) <result>` | A response to a command that had already given up waiting. |
+| `<- malformed <text>` | A message that was not JSON, which Motus drops. |
+| `closed <reason>` | The connection ended: `by the browser`, `by Motus`, or with the error that ended it. |
+
+Commands are logged as they go onto the wire, under the same lock that orders sends, so the order of `->` lines is the order the browser received them in, and a command always appears before its response.
+
+### What is trimmed
+
+A JSON string longer than 1024 characters keeps its start and ends with a count of what was cut, such as `"iVBORw0KGgo…[+2868 chars]"`. That covers screenshots, PDFs, screencast frames, trace chunks, response bodies and the scripts Motus injects, and the payload stays valid JSON. A payload still larger than 64 KB once trimmed, such as a DOM or accessibility tree, is cut at that size and ends with `…[+<n> bytes]`; such a line is no longer valid JSON. `ProtocolLogOptions.MaxValueLength` changes the string limit.
+
+### What is redacted, and what is not
+
+By default these are replaced with `<redacted>` before a line is written, in both directions and in events nobody asked for:
+
+- `Authorization`, `Proxy-Authorization`, `Cookie` and `Set-Cookie` headers, and any header whose name contains `auth`, `token`, `secret`, `api-key` or `apikey`, whether headers come keyed by name or as name and value pairs.
+- Raw header text (`headersText`, `requestHeadersText`, `binaryResponseHeaders`) and `cookieLine`.
+- Cookie values, in `Network.setCookie` and `Network.getCookies`, in `Storage` and BiDi `storage` commands, and in the cookies the browser attaches to network events.
+- Any property named `password`, which covers HTTP authentication answered through `Fetch.continueWithAuth`.
+- Request bodies (`postData` and `postDataEntries` on CDP, and the `body` of a BiDi `network.continueRequest`, which is where a route's `PostData` override goes on Firefox), shown only as their length, because a login form posts its password there.
+
+These are **not** redacted, because a log without them could not show what the browser was asked to do:
+
+- Typed keystrokes: every `Input.dispatchKeyEvent` and `Input.insertText`, and BiDi `input.performActions`.
+- Filled values. `FillAsync` passes the value, password fields included, as an argument to `Runtime.callFunctionOn`.
+- Script source and arguments for `EvaluateAsync` and everything built on it.
+- URLs, including their query strings, and page content returned in results.
+
+**Treat a protocol log as sensitive.** It holds whatever the test typed or filled. Read it before attaching it to an issue. Be careful with `stderr` in CI: the standard error stream usually ends up in the build log, and the build logs of a public repository are public. `RedactSecrets = false` turns redaction off; it can only be set in code, so logging secrets always takes a deliberate change.
+
+### Where lines go
+
+- A file is opened for appending, never truncated. Each process starts its part with a `# motus protocol log, pid <pid>` header, so several test processes or shards can share one path. Each write takes a lock that every process logging to that path shares and lands at the current end of the file, so lines from different processes interleave without overwriting each other, a batch of whole lines at a time. Give each process its own path if the interleaving gets in the way.
+- On macOS and Linux a new file is readable and writable by its owner only. On Windows it takes the permissions of its directory.
+- Lines are written by a background task and flushed as soon as the queue empties, so the file is current to within moments and a killed process loses almost nothing. When the last browser logging to a file is disposed, every line has been written and the file is closed.
+- A file that cannot be opened is reported once on standard error, and the browser launches without a log rather than failing.
+- When the log is off, it costs nothing beyond a null check per message.
+
+The log is verbose: with network events on, every request produces several lines, and coverage or video recording add a stream of their own. Filter it with `grep` on the method name, or on a session id to follow one page.
+
+---
+
 ## See Also
 
 - [Getting Started](../getting-started.md)
@@ -538,3 +662,4 @@ Commit this file or add it to `.gitignore` depending on whether the whole team u
 - [Testing Frameworks](./testing-frameworks.md)
 - [Sharding](./sharding.md)
 - [Flaky Tests and Quarantine](./flaky-tests-and-quarantine.md)
+- [Transport and Protocol Layer](../architecture/transport-and-protocol.md)
