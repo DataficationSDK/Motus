@@ -216,6 +216,55 @@ public class InputStateMachineTests
     }
 
     [TestMethod]
+    [DataRow("Dead")]
+    [DataRow("Process")]
+    [DataRow("Unidentified")]
+    public void KeyTheReplayKeyboardCannotPress_IsNotRecorded_AndLeavesTheFillOpen(string key)
+    {
+        var sm = CreateMachine();
+
+        sm.ProcessEvent(new DomEventPayload
+        {
+            Type = "input", Value = "caf", X = 10, Y = 20,
+            PageUrl = "https://example.com"
+        });
+
+        sm.ProcessEvent(new DomEventPayload
+        {
+            Type = "keydown", Key = key, Code = "Quote", Modifiers = 0,
+            PageUrl = "https://example.com"
+        });
+
+        Assert.IsNull(TryRead());
+
+        sm.ProcessEvent(new DomEventPayload
+        {
+            Type = "input", Value = "café", X = 10, Y = 20,
+            PageUrl = "https://example.com"
+        });
+        sm.Flush();
+
+        var fill = TryRead();
+        Assert.IsInstanceOfType<FillAction>(fill);
+        Assert.AreEqual("café", ((FillAction)fill).Value);
+        Assert.IsNull(TryRead());
+    }
+
+    [TestMethod]
+    public void KeyTheReplayKeyboardCannotPress_OutsideAFill_IsNotRecorded()
+    {
+        var sm = CreateMachine();
+
+        sm.ProcessEvent(new DomEventPayload
+        {
+            Type = "keydown", Key = "Unidentified", Code = "", Modifiers = 0,
+            PageUrl = "https://example.com"
+        });
+
+        Assert.IsNull(TryRead());
+    }
+
+    [TestMethod]
     public void PrintableKeyDuringFill_IsAbsorbed()
     {
         var sm = CreateMachine();

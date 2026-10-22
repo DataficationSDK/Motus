@@ -124,6 +124,42 @@ public class BiDiTranslationTests
         Assert.AreEqual("complete", bidiParams.GetProperty("wait").GetString());
     }
 
+    [TestMethod]
+    public void PageGetFrameTree_Reads_Only_The_Page_Context()
+    {
+        var translation = GetTranslation("Page.getFrameTree");
+
+        var bidiParams = translation.TranslateParams(JsonBuilder.Empty(), "ctx-1");
+        Assert.AreEqual("browsingContext.getTree", translation.BiDiMethod);
+        Assert.AreEqual("ctx-1", bidiParams.GetProperty("root").GetString());
+        Assert.AreEqual(0, bidiParams.GetProperty("maxDepth").GetInt32());
+    }
+
+    [TestMethod]
+    public void PageGetFrameTree_Maps_Root_Context_To_Main_Frame()
+    {
+        var translation = GetTranslation("Page.getFrameTree");
+
+        var bidiResult = Parse("""
+            {"contexts":[{"context":"ctx-1","url":"about:blank","children":null,"userContext":"default"}]}
+            """);
+        var frame = translation.TranslateResult(bidiResult).GetProperty("frameTree").GetProperty("frame");
+
+        Assert.AreEqual("ctx-1", frame.GetProperty("id").GetString());
+        Assert.AreEqual("about:blank", frame.GetProperty("url").GetString());
+        Assert.IsFalse(frame.TryGetProperty("parentId", out _));
+    }
+
+    [TestMethod]
+    public void PageGetFrameTree_No_Contexts_Returns_Empty()
+    {
+        var translation = GetTranslation("Page.getFrameTree");
+
+        var cdpResult = translation.TranslateResult(Parse("""{"contexts":[]}"""));
+
+        Assert.IsFalse(cdpResult.TryGetProperty("frameTree", out _));
+    }
+
     // ──────────────────────────────────────────
     // Script
     // ──────────────────────────────────────────

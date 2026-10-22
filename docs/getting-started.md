@@ -218,6 +218,23 @@ await cell.ClickAsync(new MouseButtonOptions(Modifiers: KeyModifier.Control | Ke
 
 The menu above is the page's own, drawn in HTML because the page handled the `contextmenu` event itself. That is the kind of menu a test can read and click. A browser's native context menu is drawn outside the page, so it neither appears in a screenshot nor answers to a locator.
 
+#### Keyboard input
+
+`locator.PressAsync` focuses the element and presses a key on it. The element has to be visible and enabled but not editable, so pressing Enter or Space on a button activates it the way a user's key press would. `Page.Keyboard` presses keys on whatever has focus.
+
+```csharp
+await Page.GetByRole("button", "Cancel").PressAsync("Enter");   // clicks the button
+await Page.GetByLabel("Search").PressAsync("Enter");            // submits the form
+await Page.Keyboard.PressAsync("Control+a");                   // a shortcut, types nothing
+await Page.Keyboard.PressAsync("Shift+Tab");
+```
+
+Keys follow a US keyboard layout. Name a key by the value it produces (`"a"`, `"A"`, `"!"`, `"Enter"`, `"Escape"`, `"ArrowDown"`, `"F5"`) or by the physical key's code (`"KeyA"`, `"Digit1"`, `"ShiftRight"`, `"ControlRight"`, `"NumpadEnter"`, `"Numpad0"`). `"Space"` also names the space bar. Join keys with `+` to press them together; a `+` that does not follow a key name is the plus key, so `"+"` and `"Shift++"` both press it. A name that is not a key throws an `ArgumentException` such as `Unknown key: 'Esc'` before anything is pressed.
+
+Held modifiers apply to the keys pressed under them. With Shift held, `"a"` arrives as `"A"`. With Control, Alt or Meta held, a key produces no text, so `"Control+a"` reaches the page as a shortcut and leaves the field's value alone.
+
+`TypeAsync` presses one key per character. `"\n"` and `"\r"` press Enter, which starts a new line in a text area and submits the form from a single-line field. A character with no key on a US layout, such as `é`, an emoji, or `"\t"`, is inserted as text without key events, the way `Keyboard.InsertTextAsync` does. To move focus to the next field, press Tab with `PressAsync("Tab")` rather than typing `"\t"`.
+
 #### Per-call timeouts
 
 Most actions take a timeout in milliseconds as their last argument, which overrides the default for that one call:

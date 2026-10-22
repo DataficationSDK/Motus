@@ -108,4 +108,33 @@ public class FirefoxIntegrationTests
 
         Assert.AreEqual(2, result);
     }
+
+    /// <summary>
+    /// A new Firefox page has a main frame and takes content before anything has navigated it,
+    /// the same as a new Chromium page.
+    /// </summary>
+    [TestMethod]
+    public async Task Firefox_NewPage_HasMainFrameAndTakesContentWithoutNavigation()
+    {
+        if (!FirefoxAvailable())
+        {
+            Assert.Inconclusive("Firefox not found on this machine.");
+            return;
+        }
+
+        await using var browser = await MotusLauncher.LaunchAsync(
+            new LaunchOptions { Headless = true, Channel = BrowserChannel.Firefox });
+
+        var context = await browser.NewContextAsync();
+        var page = await context.NewPageAsync();
+
+        Assert.AreEqual("about:blank", page.Url);
+        Assert.AreEqual("about:blank", page.MainFrame.Url);
+        Assert.AreEqual(1, page.Frames.Count);
+
+        await page.SetContentAsync("<title>T</title><p id=x>hi</p>");
+
+        Assert.AreEqual("T", await page.TitleAsync());
+        Assert.AreEqual(2, await page.MainFrame.EvaluateAsync<int>("1 + 1"));
+    }
 }
