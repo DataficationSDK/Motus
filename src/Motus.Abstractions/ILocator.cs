@@ -67,6 +67,9 @@ public interface ILocator
     /// <summary>
     /// Types text character by character into the element.
     /// </summary>
+    /// <remarks>
+    /// Characters are typed as <see cref="IKeyboard.TypeAsync"/> types them.
+    /// </remarks>
     /// <param name="text">The text to type.</param>
     /// <param name="options">Typing options.</param>
     Task TypeAsync(string text, KeyboardTypeOptions? options = null);
@@ -74,6 +77,10 @@ public interface ILocator
     /// <summary>
     /// Presses a key on the element.
     /// </summary>
+    /// <remarks>
+    /// The element is focused first and only has to be visible and enabled, not editable, so
+    /// pressing Enter or Space on a button activates it. Key names follow <see cref="IKeyboard.PressAsync"/>.
+    /// </remarks>
     /// <param name="key">The key to press.</param>
     /// <param name="options">Press options.</param>
     Task PressAsync(string key, KeyboardPressOptions? options = null);

@@ -22,7 +22,7 @@ public class FormInteractionTests : MotusTestBase
     {
         await Fixtures.SetPageContentAsync(Page,Fixtures.LoginForm);
 
-        // TypeAsync dispatches individual key events (keyDown, char, keyUp) with an
+        // TypeAsync dispatches individual key events (keyDown, keyUp) with an
         // optional delay between characters. Under load the browser can occasionally
         // drop one of those events, and a dropped key never self-corrects, so a value
         // assertion on its own would flake. Re-type until the field holds the full

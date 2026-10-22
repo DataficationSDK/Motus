@@ -626,7 +626,7 @@ internal static class ScriptResultTranslator
 
 /// <summary>
 /// Input.dispatchKeyEvent -> input.performActions (key)
-/// CDP params: { type: "rawKeyDown"|"char"|"keyUp", key, code, ... }
+/// CDP params: { type: "keyDown"|"rawKeyDown"|"keyUp", key, code, ... }
 /// BiDi: single-action key sequence
 /// </summary>
 internal sealed class InputDispatchKeyEventTranslation : IBiDiTranslation
