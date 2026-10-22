@@ -171,11 +171,16 @@ public class CodeEmitterTests
         var code = _emitter.Emit([], options);
 
         Assert.IsTrue(code.Contains("using Motus.Testing.xUnit;"));
-        Assert.IsTrue(code.Contains("[Collection(nameof(MotusCollection))]"));
-        Assert.IsTrue(code.Contains("public class MyTest : IAsyncLifetime"));
+        Assert.IsTrue(code.Contains("public class MyTest : IClassFixture<BrowserContextFixture>"));
+        Assert.IsTrue(code.Contains("public MyTest(BrowserContextFixture fixture)"));
         Assert.IsTrue(code.Contains("[Fact]"));
         Assert.IsTrue(code.Contains("public async Task Scenario1()"));
-        Assert.IsTrue(code.Contains("BrowserContextFixture"));
+        Assert.IsTrue(code.Contains("var page = _fixture.Page;"));
+
+        // xUnit ignores collection definitions outside the test assembly, so the generated class
+        // declares its fixture itself rather than relying on a collection to provide one.
+        Assert.IsFalse(code.Contains("[Collection("));
+        Assert.IsFalse(code.Contains("IAsyncLifetime"));
     }
 
     [TestMethod]

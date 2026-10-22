@@ -4,7 +4,7 @@ xUnit integration for the [Motus](https://github.com/DataficationSDK/Motus) brow
 
 ## Overview
 
-Provides collection and class fixtures for xUnit's parallel execution model. `SharedBrowserFixture` manages a single browser per test collection, and `BrowserContextFixture` creates an isolated context and page per test class. Tests in the same collection share the browser but run in separate contexts.
+Provides class fixtures for xUnit's parallel execution model. `BrowserContextFixture` gives each test class an isolated context and page, taken from one browser shared by the whole test process. That browser launches when the first class needs it and closes when the process exits, so there is nothing to declare beyond the class fixture. Test classes run in parallel, each in its own context.
 
 ## Installation
 
@@ -17,7 +17,6 @@ dotnet add package Motus.Testing.xUnit
 ```csharp
 using Motus.Testing.xUnit;
 
-[Collection(nameof(MotusCollection))]
 public class SearchTests : IClassFixture<BrowserContextFixture>
 {
     private readonly BrowserContextFixture _fixture;
@@ -38,14 +37,31 @@ public class SearchTests : IClassFixture<BrowserContextFixture>
 
 ### Customization
 
-Override `LaunchOptions` on `SharedBrowserFixture` to configure the browser:
+Launch options for the shared browser come from `motus.config.json` or `MOTUS_*` environment variables. Override `ContextOptions` on a `BrowserContextFixture` subclass to configure the context.
+
+To give a group of classes a browser of their own, launched with options set in code, subclass `SharedBrowserFixture` and declare a collection for it in your test project (xUnit reads collection definitions only from the test assembly). Classes in the collection take their context from it with `BrowserContextFixture<T>`:
 
 ```csharp
 public class HeadedBrowserFixture : SharedBrowserFixture
 {
     protected override LaunchOptions LaunchOptions => new() { Headless = false };
 }
+
+[CollectionDefinition("Headed")]
+public class HeadedCollection : ICollectionFixture<HeadedBrowserFixture> { }
+
+[Collection("Headed")]
+public class VisualTests : IClassFixture<BrowserContextFixture<HeadedBrowserFixture>>
+{
+    public VisualTests(BrowserContextFixture<HeadedBrowserFixture> fixture) { /* ... */ }
+}
 ```
+
+For the default options, `[CollectionDefinition("Name")] public class NameCollection : MotusCollection { }` declares the collection, and its classes use `BrowserContextFixture<SharedBrowserFixture>`.
+
+### Upgrading from 1.1
+
+The `BrowserContextFixture(SharedBrowserFixture)` constructor is now `protected`, because xUnit builds a class fixture through its only public constructor and that is now the parameterless one. Replace `new BrowserContextFixture(browser)` with `new BrowserContextFixture<SharedBrowserFixture>(browser)`; subclasses that call `base(browser)` build unchanged. Test assemblies compiled against 1.1 need rebuilding. The [testing frameworks guide](https://github.com/DataficationSDK/Motus/blob/main/docs/guides/testing-frameworks.md#upgrading-from-11) covers the rest of the upgrade.
 
 ### Failure Tracing
 

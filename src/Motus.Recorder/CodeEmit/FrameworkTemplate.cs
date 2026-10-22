@@ -51,32 +51,19 @@ using Motus.Testing.xUnit;
 
 namespace {{o.Namespace}};
 
-[Collection(nameof(MotusCollection))]
-public class {{o.TestClassName}} : IAsyncLifetime
+public class {{o.TestClassName}} : IClassFixture<BrowserContextFixture>
 {
     private readonly BrowserContextFixture _fixture;
-    private IPage _page = null!;
 
     public {{o.TestClassName}}(BrowserContextFixture fixture)
     {
         _fixture = fixture;
     }
 
-    public async Task InitializeAsync()
-    {
-        _page = _fixture.Page;
-        await Task.CompletedTask;
-    }
-
-    public async Task DisposeAsync()
-    {
-        await Task.CompletedTask;
-    }
-
     [Fact]
     public async Task {{o.TestMethodName}}()
     {
-        var page = _page;
+        var page = _fixture.Page;
 
 """;
 

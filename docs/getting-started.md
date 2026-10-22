@@ -101,13 +101,12 @@ public class SearchTests : MotusTestBase
 
 ### xUnit
 
-xUnit uses a collection fixture for the shared browser and a class fixture for per-test context.
+xUnit uses a class fixture: each test class gets its own context and page, and the shared browser launches when the first class needs it. There is nothing else to declare.
 
 ```csharp
 using Motus.Testing.xUnit;
 using static Motus.Assertions.Expect;
 
-[Collection(nameof(MotusCollection))]
 public class SearchTests : IClassFixture<BrowserContextFixture>
 {
     private readonly BrowserContextFixture _fixture;
