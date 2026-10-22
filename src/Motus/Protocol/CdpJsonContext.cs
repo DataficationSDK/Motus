@@ -637,7 +637,6 @@ internal sealed record InputDispatchKeyEventParams(
     string? Code = null,
     string? Key = null,
     int? WindowsVirtualKeyCode = null,
-    int? NativeVirtualKeyCode = null,
     bool? AutoRepeat = null,
     bool? IsKeypad = null,
     bool? IsSystemKey = null,

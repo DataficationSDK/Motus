@@ -128,13 +128,6 @@ public static class Fixtures
                     feedback.textContent = 'Welcome, ' + email + '!';
                     feedback.style.display = 'block';
                 }
-                // Explicit Enter-key handler so PressAsync("Enter") reliably submits
-                document.getElementById('email').addEventListener('keydown', function(e) {
-                    if (e.key === 'Enter') {
-                        e.preventDefault();
-                        handleSubmit(e);
-                    }
-                });
             </script>
         </body>
         </html>
