@@ -580,7 +580,7 @@ Set the variable to `stderr` to write to the standard error stream instead of a 
 
 ### Reading a log
 
-This excerpt is from a run that typed into an input and then hung. Long session ids and payloads are cut here for width; a real log has them in full.
+This excerpt is from a run, on an older Motus on macOS, that typed into an input and then hung. Long session ids and payloads are cut here for width; a real log has them in full.
 
 ```text
 # motus protocol log, pid 73696, 2026-10-09T18:08:01.696Z
@@ -601,7 +601,7 @@ This excerpt is from a run that typed into an input and then hung. Long session 
 2026-10-09T18:08:17.332Z c1 closed by Motus
 ```
 
-Read from the bottom: the key up for `b` (`#25`) was sent and never answered, and the browser stopped answering anything else too, including the `Browser.getVersion` probe Motus sends to check that a browser is alive. The character before it had already taken 3.6 seconds. Motus sent a complete, well-formed key sequence, so the fault lies with the browser, which is the answer the log exists to give.
+Read from the bottom: the key up for `b` (`#25`) was sent and never answered, and the browser stopped answering anything else too, including the `Browser.getVersion` probe Motus sends to check that a browser is alive. The character before it had already taken 3.6 seconds. The sequence itself is complete and in order, so the next place to look is inside each event. There it is: the key down (`#23`) carries `nativeVirtualKeyCode` set to 66, the Windows key code for B, which Chrome on macOS reads as a Mac key code for a different key, so the browser saw a key held down that was never let up and flooded the page with key presses until it stopped answering. That one field, visible in a single line, is the answer the log exists to give. Motus no longer sends it.
 
 Each line starts with a UTC timestamp and a connection tag (`c1`, `c2`, ...) that tells apart the browsers of one process sharing a file. Then comes one of:
 
