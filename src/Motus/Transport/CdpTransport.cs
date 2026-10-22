@@ -17,6 +17,7 @@ internal sealed class CdpTransport : IMotusTransport
 {
     private readonly ICdpSocket _socket;
     private readonly TimeSpan _slowMo;
+    private readonly ProtocolLog? _log;
     private readonly SemaphoreSlim _sendLock = new(1, 1);
     private readonly CancellationTokenSource _cts = new();
     private Task? _receiveLoop;
@@ -49,10 +50,11 @@ internal sealed class CdpTransport : IMotusTransport
     /// </summary>
     public event Action<Exception?>? Disconnected;
 
-    internal CdpTransport(ICdpSocket socket, TimeSpan slowMo = default)
+    internal CdpTransport(ICdpSocket socket, TimeSpan slowMo = default, ProtocolLog? log = null)
     {
         _socket = socket;
         _slowMo = slowMo;
+        _log = log;
     }
 
     /// <summary>
@@ -102,11 +104,15 @@ internal sealed class CdpTransport : IMotusTransport
 
             var envelope = new CdpCommandEnvelope(id, method, paramsElement, sessionId);
             var bytes = JsonSerializer.SerializeToUtf8Bytes(envelope, CdpJsonContext.Default.CdpCommandEnvelope);
+            var logged = _log?.FormatCommand(method, paramsElement);
 
             // ClientWebSocket does not support concurrent sends; serialize access.
             await _sendLock.WaitAsync(effectiveCt).ConfigureAwait(false);
             try
             {
+                // Logged under the lock and before the bytes go out: a socket can hand back the
+                // response before SendAsync returns, and the command has to be on record first.
+                _log?.CommandSent(id, sessionId, method, logged!);
                 await _socket.SendAsync(bytes, effectiveCt).ConfigureAwait(false);
             }
             finally
@@ -121,8 +127,19 @@ internal sealed class CdpTransport : IMotusTransport
         finally
         {
             _pending.TryRemove(id, out _);
+
+            if (_log is not null)
+                _log.CommandEnded(id, DescribeUnanswered(ct, timeoutCts));
         }
     }
+
+    /// <summary>
+    /// Says why a command ended without an answer, for the protocol log.
+    /// </summary>
+    internal static string DescribeUnanswered(CancellationToken callerToken, CancellationTokenSource timeoutCts)
+        => callerToken.IsCancellationRequested ? "cancelled"
+            : timeoutCts.IsCancellationRequested ? "timed out"
+            : "unanswered";
 
     /// <summary>
     /// Gets or creates an event channel for the given composite key.
@@ -194,6 +211,7 @@ internal sealed class CdpTransport : IMotusTransport
                 if (message.IsEmpty)
                 {
                     // Clean disconnect
+                    _log?.Closed("by the browser");
                     MarkDisconnectedAndFault(new CdpDisconnectedException());
                     Disconnected?.Invoke(null);
                     return;
@@ -210,11 +228,15 @@ internal sealed class CdpTransport : IMotusTransport
                         CdpJsonContext.Default.CdpInboundEnvelope);
 
                     if (envelope is not null)
+                    {
+                        _log?.Received(envelope, messageBytes);
                         DispatchMessage(envelope);
+                    }
                 }
                 catch (JsonException)
                 {
                     // Malformed CDP message; skip it.
+                    _log?.Malformed(messageBytes);
                 }
             }
         }
@@ -225,6 +247,7 @@ internal sealed class CdpTransport : IMotusTransport
         catch (Exception ex)
         {
             // Unexpected disconnect
+            _log?.Closed($"({ex.GetType().Name}: {ex.Message})");
             MarkDisconnectedAndFault(new CdpDisconnectedException(ex));
             Disconnected?.Invoke(ex);
         }
@@ -325,5 +348,13 @@ internal sealed class CdpTransport : IMotusTransport
         await _socket.DisposeAsync().ConfigureAwait(false);
         _cts.Dispose();
         _sendLock.Dispose();
+
+        // Last, so everything the connection logged on its way down is written before the file
+        // closes.
+        if (_log is not null)
+        {
+            _log.Closed("by Motus");
+            await _log.DisposeAsync().ConfigureAwait(false);
+        }
     }
 }

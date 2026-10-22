@@ -55,4 +55,10 @@ public sealed record LaunchOptions
 
     /// <summary>Code coverage collector configuration. Disabled by default.</summary>
     public CoverageOptions? Coverage { get; init; }
+
+    /// <summary>
+    /// Protocol log configuration. Disabled by default, unless the <c>MOTUS_PROTOCOL_LOG</c>
+    /// environment variable names a destination.
+    /// </summary>
+    public ProtocolLogOptions? ProtocolLog { get; init; }
 }
