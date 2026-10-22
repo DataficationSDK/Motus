@@ -43,6 +43,7 @@ internal static class BiDiTranslationRegistry
             // Page / Navigation
             new PageNavigateTranslation(),
             new PageReloadTranslation(),
+            new PageGetFrameTreeTranslation(),
 
             // Script
             new RuntimeEvaluateTranslation(),
@@ -369,6 +370,55 @@ internal sealed class PageReloadTranslation : IBiDiTranslation
 
     public JsonElement TranslateResult(JsonElement bidiResult)
         => JsonBuilder.Empty();
+}
+
+/// <summary>
+/// Page.getFrameTree -> browsingContext.getTree
+/// CDP params: {}
+/// CDP result: { frameTree: { frame: { id, loaderId, name, url } } }
+/// BiDi params: { root, maxDepth }
+/// BiDi result: { contexts: [{ context, url, children, parent? }] }
+/// </summary>
+/// <remarks>
+/// Only the page's own browsing context is read, which is all a page needs to have a main frame
+/// before its first navigation. Frames inside it are still learned the way they were before.
+/// </remarks>
+internal sealed class PageGetFrameTreeTranslation : IBiDiTranslation
+{
+    public string CdpMethod => "Page.getFrameTree";
+    public string BiDiMethod => "browsingContext.getTree";
+
+    public JsonElement TranslateParams(JsonElement cdpParams, string? contextId)
+        => JsonBuilder.FromObject(new
+        {
+            root = contextId ?? string.Empty,
+            maxDepth = 0
+        });
+
+    public JsonElement TranslateResult(JsonElement bidiResult)
+    {
+        if (!bidiResult.TryGetProperty("contexts", out var contexts) ||
+            contexts.ValueKind != JsonValueKind.Array ||
+            contexts.GetArrayLength() == 0)
+        {
+            return JsonBuilder.Empty();
+        }
+
+        var root = contexts[0];
+        return JsonBuilder.FromObject(new
+        {
+            frameTree = new
+            {
+                frame = new
+                {
+                    id = root.GetStringOrNull("context") ?? string.Empty,
+                    loaderId = string.Empty,
+                    name = string.Empty,
+                    url = root.GetStringOrNull("url") ?? string.Empty
+                }
+            }
+        });
+    }
 }
 
 // ──────────────────────────────────────────────

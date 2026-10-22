@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json;
 using System.Threading.Channels;
 
 namespace Motus.Tests.Transport;
@@ -121,6 +122,36 @@ internal sealed class FakeCdpSocket : ICdpSocket
     /// Decodes a sent message as UTF-8 string.
     /// </summary>
     internal string GetSentJson(int index) => Encoding.UTF8.GetString(_sent[index]);
+
+    /// <summary>
+    /// Decodes the sent command with <paramref name="method"/>, the <paramref name="occurrence"/>th
+    /// of them counting from zero.
+    /// </summary>
+    /// <remarks>
+    /// Finding a command by method rather than by position keeps a fixture from breaking when a
+    /// command is added earlier in the sequence it does not care about.
+    /// </remarks>
+    internal string GetSentJson(string method, int occurrence = 0)
+    {
+        var matches = _sent
+            .Select(bytes => Encoding.UTF8.GetString(bytes))
+            .Where(json => SentMethodIs(json, method))
+            .ToList();
+
+        if (occurrence >= matches.Count)
+            throw new InvalidOperationException(
+                $"Expected at least {occurrence + 1} sent {method} command(s), found {matches.Count}.");
+
+        return matches[occurrence];
+    }
+
+    private static bool SentMethodIs(string json, string method)
+    {
+        using var doc = JsonDocument.Parse(json);
+        return doc.RootElement.TryGetProperty("method", out var m) &&
+            m.ValueKind == JsonValueKind.String &&
+            m.GetString() == method;
+    }
 
     public ValueTask DisposeAsync()
     {
