@@ -177,12 +177,19 @@ Page.GetByPlaceholder("Search...")
 Page.GetByTestId("login-form")
 ```
 
+`GetByRole` matches implicit roles and computed accessible names, so a plain `<button>Submit</button>` is found without a `role` or `aria-label` attribute, and the name must match exactly. `GetByLabel` finds a control through its `<label for>`, a wrapping `<label>`, `aria-labelledby` or `aria-label`. `GetByText`, `GetByLabel`, `GetByPlaceholder`, `GetByTitle` and `GetByAltText` match a case-insensitive substring by default; pass `exact: true` to require the whole text, case-sensitively:
+
+```csharp
+Page.GetByText("welcome")               // matches "Welcome back, Ada"
+Page.GetByText("Welcome", exact: true)  // matches only "Welcome"
+```
+
 Locators can be chained and filtered:
 
 ```csharp
 Page.GetByRole("listitem")
     .Filter(new LocatorOptions { HasText = "Product A" })
-    .GetByRole("button", "Add to cart")
+    .Locator("button.add-to-cart")
     .ClickAsync();
 ```
 

@@ -3,7 +3,7 @@ using Motus.Abstractions;
 namespace Motus;
 
 /// <summary>
-/// Internal plugin that registers the five built-in selector strategies
+/// Internal plugin that registers the built-in selector strategies
 /// through the same IPluginContext path that third-party plugins use.
 /// </summary>
 internal sealed class BuiltinSelectorsPlugin : IPlugin
@@ -12,7 +12,7 @@ internal sealed class BuiltinSelectorsPlugin : IPlugin
     public string Name => "Built-in Selector Strategies";
     public string Version => "1.0.0";
     public string? Author => null;
-    public string? Description => "Registers the built-in selector strategies (CSS, XPath, Text, Role, TestId, backend node ID).";
+    public string? Description => "Registers the built-in selector strategies (CSS, XPath, Text, Role, TestId, backend node ID, and the text, label and attribute matchers behind the GetBy locators).";
 
     public Task OnLoadedAsync(IPluginContext context)
     {
@@ -22,6 +22,9 @@ internal sealed class BuiltinSelectorsPlugin : IPlugin
         context.RegisterSelectorStrategy(new RoleSelectorStrategy());
         context.RegisterSelectorStrategy(new TestIdSelectorStrategy());
         context.RegisterSelectorStrategy(new BackendNodeIdSelectorStrategy());
+        context.RegisterSelectorStrategy(new GetBySelectorStrategy(GetByKind.Text));
+        context.RegisterSelectorStrategy(new GetBySelectorStrategy(GetByKind.Label));
+        context.RegisterSelectorStrategy(new GetBySelectorStrategy(GetByKind.Attribute));
         return Task.CompletedTask;
     }
 
