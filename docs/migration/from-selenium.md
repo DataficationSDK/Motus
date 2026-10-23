@@ -22,7 +22,7 @@ Motus's `ILocator` is a lazy description of how to find an element. Calling `pag
 
 Selenium requires explicit coordination with the DOM through `WebDriverWait`, implicit waits, or `ExpectedConditions`. Forgetting a wait is a common source of flaky tests.
 
-Motus builds actionability checks into every action. Before performing a click, fill, or other interaction, Motus waits for the target element to be attached, visible, stable (not animating), and enabled. This happens automatically on every call with a configurable timeout. Most `WebDriverWait` constructs are unnecessary in Motus.
+Motus builds actionability checks into every action. Before performing a click, fill, or other interaction, Motus waits for the target element to be attached, visible, stable (not animating), and enabled, and scrolls it into view before any action that points at it. This happens automatically on every call with a configurable timeout. Most `WebDriverWait` constructs are unnecessary in Motus.
 
 ### PageFactory
 

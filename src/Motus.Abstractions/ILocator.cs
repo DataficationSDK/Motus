@@ -11,6 +11,12 @@ public interface ILocator
     /// Clicks the element.
     /// </summary>
     /// <param name="timeout">Maximum time in milliseconds to wait.</param>
+    /// <remarks>
+    /// The element is scrolled into view first, in the page, in any scrollable container around it,
+    /// and in the frames it sits in, then has to be visible, enabled, settled, and receiving events
+    /// at its center before the click. An element already in view is not scrolled. The same holds
+    /// for every action that points at the element: double-click, hover, tap, check, and uncheck.
+    /// </remarks>
     Task ClickAsync(double? timeout = null);
 
     /// <summary>
@@ -19,8 +25,9 @@ public interface ILocator
     /// <param name="options">The button to press, and the modifier keys the page sees held.</param>
     /// <param name="timeout">Maximum time in milliseconds to wait.</param>
     /// <remarks>
-    /// This runs the same actionability checks as <see cref="ClickAsync(double?)"/>: the element has
-    /// to be visible, enabled, settled, and receiving events before the button goes down. Assembling
+    /// This runs the same actionability checks as <see cref="ClickAsync(double?)"/>: the element is
+    /// scrolled into view, and has to be visible, enabled, settled, and receiving events before the
+    /// button goes down. Assembling
     /// the same click from a bounding box and <see cref="IMouse.ClickAsync"/> skips every one of
     /// them, which is why a right-click or a modified click belongs here rather than at the caller.
     /// </remarks>
@@ -36,12 +43,30 @@ public interface ILocator
     /// Checks the element (checkbox or radio button).
     /// </summary>
     /// <param name="timeout">Maximum time in milliseconds to wait.</param>
+    /// <remarks>
+    /// Does nothing when the element is already checked. Otherwise it is clicked the way
+    /// <see cref="ClickAsync(double?)"/> clicks, and its state is read back. The element can be a
+    /// checkbox, a radio button, an element whose ARIA role is checkable (read through
+    /// <c>aria-checked</c>), or a <c>label</c> for one of those.
+    /// </remarks>
+    /// <exception cref="MotusException">
+    /// The element has no checked state, or the click left it unchecked, for example because a
+    /// handler cancelled the click.
+    /// </exception>
     Task CheckAsync(double? timeout = null);
 
     /// <summary>
     /// Unchecks the element (checkbox).
     /// </summary>
     /// <param name="timeout">Maximum time in milliseconds to wait.</param>
+    /// <remarks>
+    /// Does nothing when the element is already unchecked, and otherwise clicks it and reads the
+    /// state back, as <see cref="CheckAsync"/> does.
+    /// </remarks>
+    /// <exception cref="MotusException">
+    /// The element has no checked state, is a checked radio button, which a click cannot uncheck,
+    /// or the click left it checked.
+    /// </exception>
     Task UncheckAsync(double? timeout = null);
 
     /// <summary>
@@ -49,6 +74,10 @@ public interface ILocator
     /// </summary>
     /// <param name="checked">Whether to check or uncheck the element.</param>
     /// <param name="timeout">Maximum time in milliseconds to wait.</param>
+    /// <remarks>
+    /// The same as <see cref="CheckAsync"/> or <see cref="UncheckAsync"/>, including the exceptions
+    /// they throw.
+    /// </remarks>
     Task SetCheckedAsync(bool @checked, double? timeout = null);
 
     /// <summary>
@@ -133,6 +162,12 @@ public interface ILocator
     /// Scrolls the element into view.
     /// </summary>
     /// <param name="timeout">Maximum time in milliseconds to wait.</param>
+    /// <remarks>
+    /// An element already wholly inside the viewport and inside every container that clips it is
+    /// left where it is; otherwise it is scrolled to the center, instantly, whatever the page's
+    /// <c>scroll-behavior</c>. Pointer actions such as <see cref="ClickAsync(double?)"/> do this on
+    /// their own, so calling it first is not needed.
+    /// </remarks>
     Task ScrollIntoViewIfNeededAsync(double? timeout = null);
 
     /// <summary>

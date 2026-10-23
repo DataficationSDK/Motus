@@ -198,7 +198,11 @@ await locator.CheckAsync();
 await locator.PressAsync("Enter");
 ```
 
-A click can name a mouse button or hold modifier keys by passing `MouseButtonOptions`. It runs the same actionability checks as a plain click, so the element still has to be visible, enabled, settled, and receiving events before the button goes down. Assembling the same click from a bounding box and `Page.Mouse` skips every one of those checks, which is why a right-click or a modified click belongs on the locator. Double-clicking stays left-button only.
+Clicking, double-clicking, hovering, tapping, checking, and unchecking all act on the center of the element, so each one first scrolls the element into view: the page, any scrollable container it sits in, and the frames around it. An element that is already in view is left where it is. The scroll is repeated while the action waits, so an element that layout pushes back out of view is brought back before the pointer moves.
+
+`CheckAsync` and `UncheckAsync` click only when the element is not already in the state asked for, and read the state back afterwards. A click that changes nothing, because a handler cancelled it or the page reset the box, throws a `MotusException` that says so rather than returning as though it had worked. They act on checkboxes, radio buttons, elements with a checkable ARIA role (`checkbox`, `switch`, `radio`, and the menu item variants) read through `aria-checked`, and a `<label>` for one of those. Anything else throws, and so does unchecking a radio button, which only checking another in its group can do.
+
+A click can name a mouse button or hold modifier keys by passing `MouseButtonOptions`. It runs the same actionability checks as a plain click, so the element is scrolled into view and still has to be visible, enabled, settled, and receiving events before the button goes down. Assembling the same click from a bounding box and `Page.Mouse` skips every one of those checks, which is why a right-click or a modified click belongs on the locator. Double-clicking stays left-button only.
 
 ```csharp
 // Right-click, then pick from the menu the page draws for itself

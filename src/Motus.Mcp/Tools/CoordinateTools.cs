@@ -137,8 +137,9 @@ public sealed class CoordinateTools
 
     [McpServerTool(Name = "drag", Title = "Drag and drop", Destructive = true)]
     [Description("Drags from one point to another with trusted input: press, intermediate moves, release. "
-        + "Address the endpoints either by elements (start_ref/end_ref, each a ref or a selector) or by viewport "
-        + "coordinates (start_x/start_y/end_x/end_y); coordinates work on canvas drop-zones that have no refs. "
+        + "Address the endpoints either by elements (start_ref/end_ref, each a ref or a selector, each scrolled into "
+        + "view before the pointer goes to it) or by viewport coordinates (start_x/start_y/end_x/end_y); "
+        + "coordinates work on canvas drop-zones that have no refs. "
         + "Intermediate moves are always emitted because drag libraries commonly require observed movement.")]
     public static async Task<CallToolResult> DragAsync(
         ActivePageService pageService,
@@ -167,16 +168,18 @@ public sealed class CoordinateTools
         {
             var page = await pageService.GetOrCreateActivePageAsync(cancellationToken).ConfigureAwait(false);
 
-            double sx, sy, ex, ey;
+            double sx = 0, sy = 0, ex = 0, ey = 0;
+            ILocator? startLocator = null, endLocator = null;
             string fromText, toText;
             if (hasRefs)
             {
+                // Resolved now so a stale ref is reported before anything is pressed, but measured
+                // only when the pointer is about to go there: each end is scrolled into view first,
+                // and scrolling to the drop target can move the element being dragged.
                 var snapshots = pageService.GetSnapshotService(page);
                 var scope = pageService.GetActiveFrame();
-                var start = await CenterOfAsync(snapshots, scope, start_ref!, pageService.ActionTimeout).ConfigureAwait(false);
-                var end = await CenterOfAsync(snapshots, scope, end_ref!, pageService.ActionTimeout).ConfigureAwait(false);
-                (sx, sy) = start;
-                (ex, ey) = end;
+                startLocator = snapshots.ResolveRef(start_ref!, scope);
+                endLocator = snapshots.ResolveRef(end_ref!, scope);
                 fromText = start_ref!;
                 toText = end_ref!;
             }
@@ -192,13 +195,30 @@ public sealed class CoordinateTools
 
             return await ActionRunner.RunAsync(pageService, page, cancellationToken, async token =>
             {
+                if (startLocator is not null)
+                    (sx, sy) = await CenterOfAsync(startLocator, start_ref!, pageService.ActionTimeout).ConfigureAwait(false);
+
                 await page.Mouse.MoveAsync(sx, sy).ConfigureAwait(false);
                 await page.Mouse.DownAsync().ConfigureAwait(false);
 
-                if (hold_ms is > 0)
-                    await Task.Delay(hold_ms.Value, token).ConfigureAwait(false);
+                try
+                {
+                    if (hold_ms is > 0)
+                        await Task.Delay(hold_ms.Value, token).ConfigureAwait(false);
 
-                await page.Mouse.MoveAsync(ex, ey, new MouseMoveOptions(Steps: moveSteps)).ConfigureAwait(false);
+                    if (endLocator is not null)
+                        (ex, ey) = await CenterOfAsync(endLocator, end_ref!, pageService.ActionTimeout).ConfigureAwait(false);
+
+                    await page.Mouse.MoveAsync(ex, ey, new MouseMoveOptions(Steps: moveSteps)).ConfigureAwait(false);
+                }
+                catch
+                {
+                    // A drop target that cannot be reached must not leave the button held down for
+                    // whatever the agent does next.
+                    await page.Mouse.UpAsync().ConfigureAwait(false);
+                    throw;
+                }
+
                 await page.Mouse.UpAsync().ConfigureAwait(false);
 
                 return ToolResultHelper.Text($"Dragged {fromText} to {toText}");
@@ -236,10 +256,11 @@ public sealed class CoordinateTools
         }
     }
 
-    private static async Task<(double X, double Y)> CenterOfAsync(
-        PageSnapshotService snapshots, IFrame? scope, string @ref, double? timeout)
+    // Scrolls the element into view first, since a point outside the viewport is one the pointer
+    // cannot reach.
+    private static async Task<(double X, double Y)> CenterOfAsync(ILocator locator, string @ref, double? timeout)
     {
-        var locator = snapshots.ResolveRef(@ref, scope);
+        await locator.ScrollIntoViewIfNeededAsync(timeout).ConfigureAwait(false);
         var box = await locator.BoundingBoxAsync(timeout).ConfigureAwait(false)
             ?? throw new InvalidOperationException($"Element {@ref} has no visible bounding box.");
         return (box.X + box.Width / 2, box.Y + box.Height / 2);
