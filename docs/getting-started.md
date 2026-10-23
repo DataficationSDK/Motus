@@ -234,6 +234,8 @@ Held modifiers apply to the keys pressed under them. With Shift held, `"a"` arri
 
 `TypeAsync` presses one key per character. `"\n"` and `"\r"` press Enter, which starts a new line in a text area and submits the form from a single-line field. A character with no key on a US layout, such as `é`, an emoji, or `"\t"`, is inserted as text without key events, the way `Keyboard.InsertTextAsync` does. To move focus to the next field, press Tab with `PressAsync("Tab")` rather than typing `"\t"`.
 
+On Firefox, keys travel as WebDriver BiDi key actions and every key above works the same way, with two differences. WebDriver has no value for CapsLock, NumLock, ScrollLock, PrintScreen, ContextMenu or the media and volume keys, so pressing one of them on Firefox throws a `NotSupportedException` that names the key. And since WebDriver BiDi cannot insert text, `TypeAsync` presses a character off the US layout as a key of its own rather than inserting it.
+
 #### Per-call timeouts
 
 Most actions take a timeout in milliseconds as their last argument, which overrides the default for that one call:
