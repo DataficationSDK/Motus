@@ -17,11 +17,11 @@ namespace Motus.Assertions;
 /// await Expect.That(response).ToBeOkAsync();
 /// </code>
 /// <para>
-/// Re-evaluating covers a value the page has not settled on yet, so an assertion after a
-/// navigation or an interaction is safe. It does not cover an element that is not there: a
-/// locator assertion needs its element present already and fails at once when the locator matches
-/// nothing, so wait for one that has still to render with <c>ToBeAttachedAsync</c> first. Insert
-/// <c>Not</c> to invert an assertion: <c>Expect.That(locator).Not.ToBeVisibleAsync()</c>.
+/// Re-evaluating covers a value the page has not settled on yet and an element that has still to
+/// render, so an assertion after a navigation or an interaction is safe without a wait in front of
+/// it. Insert <c>Not</c> to invert an assertion: <c>Expect.That(locator).Not.ToBeVisibleAsync()</c>.
+/// What a locator that matches nothing means for each assertion is set out on
+/// <see cref="LocatorAssertions"/>.
 /// </para>
 /// </remarks>
 public static class Expect
