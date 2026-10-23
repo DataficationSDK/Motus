@@ -1,4 +1,7 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+#if MSTEST_V4
+using System.Runtime.CompilerServices;
+#endif
 
 // Motus has a test result of its own, for the runs its own runner reports. This file is about
 // MSTest's, so the one name it borrows from Motus is named on its own.
@@ -27,6 +30,34 @@ public class MotusTestMethodAttribute : TestMethodAttribute
 {
     private readonly TestMethodAttribute? _inner;
 
+#if MSTEST_V4
+    /// <summary>
+    /// Applies to a test method directly, in place of <c>[TestMethod]</c>.
+    /// </summary>
+    /// <remarks>
+    /// The caller's file and line are filled in by the compiler and passed on to MSTest, which uses
+    /// them to take the test explorer to the test's source.
+    /// </remarks>
+    public MotusTestMethodAttribute([CallerFilePath] string callerFilePath = "", [CallerLineNumber] int callerLineNumber = -1)
+        : base(callerFilePath, callerLineNumber)
+    {
+    }
+
+    /// <summary>
+    /// Wraps another kind of test method, so what that one does is kept and only the retry is added.
+    /// </summary>
+    /// <remarks>
+    /// Called from code rather than written on a method, so the source location is the wrapped
+    /// attribute's, not this constructor's caller.
+    /// </remarks>
+#pragma warning disable MSTEST0057 // the location comes from the wrapped attribute
+    public MotusTestMethodAttribute(TestMethodAttribute? inner)
+        : base(inner?.DeclaringFilePath ?? "", inner?.DeclaringLineNumber ?? -1)
+#pragma warning restore MSTEST0057
+    {
+        _inner = inner;
+    }
+#else
     /// <summary>
     /// Applies to a test method directly, in place of <c>[TestMethod]</c>.
     /// </summary>
@@ -41,12 +72,34 @@ public class MotusTestMethodAttribute : TestMethodAttribute
     {
         _inner = inner;
     }
+#endif
 
     /// <summary>
     /// How many further attempts a lost browser is worth. Zero runs the test once, whatever happens.
     /// </summary>
     public int Retries { get; set; } = 1;
 
+    // MSTest 4 runs a test through ExecuteAsync, and MSTest 3 through Execute, which 4 removed.
+#if MSTEST_V4
+    /// <inheritdoc />
+    public override async Task<TestResult[]> ExecuteAsync(ITestMethod testMethod)
+    {
+        // No ConfigureAwait(false): each attempt resumes on the context MSTest ran the first one
+        // on, which an attribute being wrapped may depend on.
+        var results = await RunAsync(testMethod);
+
+        for (int attempt = 1; attempt <= Retries && LostTheBrowser(results); attempt++)
+        {
+            AnnounceRetry(testMethod, attempt);
+            results = await RunAsync(testMethod);
+        }
+
+        return results;
+    }
+
+    private Task<TestResult[]> RunAsync(ITestMethod testMethod)
+        => _inner is not null ? _inner.ExecuteAsync(testMethod) : base.ExecuteAsync(testMethod);
+#else
     /// <inheritdoc />
     public override TestResult[] Execute(ITestMethod testMethod)
     {
@@ -63,6 +116,7 @@ public class MotusTestMethodAttribute : TestMethodAttribute
 
     private TestResult[] Run(ITestMethod testMethod)
         => _inner is not null ? _inner.Execute(testMethod) : base.Execute(testMethod);
+#endif
 
     private static bool LostTheBrowser(TestResult[]? results)
         => results is not null && Array.Exists(results, result => BrowserFailure.IsBrowserLost(result.TestFailureException));

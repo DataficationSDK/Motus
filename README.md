@@ -27,7 +27,7 @@ The result is a framework that talks directly to Chromium and Firefox (CDP and W
 
 ```bash
 dotnet add package Motus
-dotnet add package Motus.Testing.MSTest # or Motus.Testing.xUnit / Motus.Testing.NUnit
+dotnet add package Motus.Testing.MSTest.v4 # MSTest 4; or Motus.Testing.MSTest (MSTest 3) / Motus.Testing.xUnit / Motus.Testing.NUnit
 dotnet tool install --global Motus.Cli
 ```
 
@@ -276,7 +276,7 @@ All CDP types are source-generated at build time from the protocol JSON schema. 
 | `Motus.Recorder` | Action capture, selector inference, POM generation |
 | `Motus.Runner` | Blazor visual test runner with live screencast and timeline |
 | `Motus.Cli` | `motus` CLI tool |
-| `Motus.Testing.*` | Test framework integrations (MSTest, xUnit, NUnit) |
+| `Motus.Testing.*` | Test framework integrations (MSTest 3 and 4, xUnit, NUnit) |
 
 ## The Extension Model
 

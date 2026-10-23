@@ -16,7 +16,8 @@ Add the Motus core package and the integration for your test framework:
 dotnet add package Motus
 
 # Pick one test framework integration
-dotnet add package Motus.Testing.MSTest
+dotnet add package Motus.Testing.MSTest.v4   # MSTest 4, which `dotnet new mstest` uses
+dotnet add package Motus.Testing.MSTest      # MSTest 3
 dotnet add package Motus.Testing.NUnit
 dotnet add package Motus.Testing.xUnit
 ```

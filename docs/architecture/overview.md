@@ -14,7 +14,8 @@ Motus is a .NET browser automation framework that communicates directly with Chr
 | `Motus.Runner` | Blazor visual test runner with live screencast and action timeline |
 | `Motus.Cli` | `motus` CLI tool (`run`, `record`, `codegen`, `screenshot`, `pdf`, `trace`, `install`) |
 | `Motus.Testing` | Shared base types for test framework integrations |
-| `Motus.Testing.MSTest` | MSTest integration (`MotusTestBase`, lifecycle management) |
+| `Motus.Testing.MSTest` | MSTest 3 integration (`MotusTestBase`, lifecycle management) |
+| `Motus.Testing.MSTest.v4` | The same source built for MSTest 4 |
 | `Motus.Testing.xUnit` | xUnit integration |
 | `Motus.Testing.NUnit` | NUnit integration |
 | `Motus.Samples` | Runnable usage examples |
