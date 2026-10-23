@@ -25,6 +25,23 @@ public class UrlMatchingTests
     public void Whole_PlainString_DoesNotMatchAUrlThatOnlyContainsIt(string url, string pattern) =>
         Assert.IsFalse(Motus.Page.UrlMatchesWhole(url, pattern));
 
+    /// <summary>
+    /// The browser reports a bare origin with a trailing slash and a host in lower case, so a
+    /// base URL written without the slash still names the page.
+    /// </summary>
+    [TestMethod]
+    [DataRow("http://localhost:5000/", "http://localhost:5000")]
+    [DataRow("https://example.test/", "https://EXAMPLE.test")]
+    [DataRow("https://example.test/a%20b", "https://example.test/a b")]
+    public void Whole_PlainString_MatchesTheBrowsersFormOfTheSameUrl(string url, string pattern) =>
+        Assert.IsTrue(Motus.Page.UrlMatchesWhole(url, pattern));
+
+    [TestMethod]
+    [DataRow("https://example.test/account", "https://example.test")]
+    [DataRow("file:///orders", "/orders")]
+    public void Whole_Normalizing_DoesNotWidenTheMatch(string url, string pattern) =>
+        Assert.IsFalse(Motus.Page.UrlMatchesWhole(url, pattern));
+
     [TestMethod]
     public void Whole_QueryPrefix_DoesNotMatchALongerValue()
     {

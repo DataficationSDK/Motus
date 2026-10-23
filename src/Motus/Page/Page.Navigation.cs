@@ -404,11 +404,26 @@ internal sealed partial class Page
     /// Unlike <see cref="UrlMatchesStatic"/> there is no substring fallback. A site's root is a
     /// prefix of every URL on the site, and <c>?page=1</c> is a prefix of <c>?page=10</c>, so a
     /// containment check answered "yes" for pages the caller was not waiting for.
+    /// <para>
+    /// A browser reports a URL in its normal form, so <c>https://example.com</c> comes back as
+    /// <c>https://example.com/</c> and a host in lower case. An http or https pattern written the
+    /// short way names the same address, so it is also compared in that form; without that, a
+    /// wait for a site's base URL as it is usually written would never match.
+    /// </para>
     /// </remarks>
-    internal static bool UrlMatchesWhole(string url, string pattern) =>
-        pattern.Contains('*')
-            ? GlobMatches(url, pattern)
-            : string.Equals(url, pattern, StringComparison.Ordinal);
+    internal static bool UrlMatchesWhole(string url, string pattern)
+    {
+        if (pattern.Contains('*'))
+            return GlobMatches(url, pattern);
+
+        if (string.Equals(url, pattern, StringComparison.Ordinal))
+            return true;
+
+        return pattern.Contains("://", StringComparison.Ordinal)
+            && Uri.TryCreate(pattern, UriKind.Absolute, out var parsed)
+            && (parsed.Scheme == Uri.UriSchemeHttp || parsed.Scheme == Uri.UriSchemeHttps)
+            && string.Equals(url, parsed.AbsoluteUri, StringComparison.Ordinal);
+    }
 
     // Each * stands for any run of characters, path separators included, so * and ** are the same.
     // Everything else in the pattern is literal, and the glob has to cover the whole URL.

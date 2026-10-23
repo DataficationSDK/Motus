@@ -3,6 +3,7 @@ using System.Net.Sockets;
 using System.Text;
 using System.Text.RegularExpressions;
 using Motus.Abstractions;
+using Motus.Assertions;
 
 namespace Motus.Tests.Page;
 
@@ -79,6 +80,19 @@ public class WaitForUrlIntegrationTests
         await _page.WaitForURLAsync(_server.Origin + "/", Within(10_000));
 
         Assert.AreEqual(_server.Origin + "/", _page.Url);
+    }
+
+    /// <summary>
+    /// A base URL is usually written without a trailing slash, while the browser reports the
+    /// site's root with one.
+    /// </summary>
+    [TestMethod]
+    public async Task Page_OriginWithoutATrailingSlash_MatchesTheSitesRoot()
+    {
+        await _page!.GotoAsync(_server.Origin + "/");
+
+        await _page.WaitForURLAsync(_server.Origin, Within(1_000));
+        await Expect.That(_page).ToHaveUrlAsync(_server.Origin, new AssertionOptions { Timeout = 1_000 });
     }
 
     [TestMethod]
