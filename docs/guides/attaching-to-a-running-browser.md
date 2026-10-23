@@ -191,6 +191,8 @@ A remote debugging endpoint grants complete control of the browser and of every 
 curl http://127.0.0.1:9222/json/version
 ```
 
+**An attached browser runs with whatever switches it was started with.** A browser Motus launches gets switches that stop Chromium from backgrounding its pages; see [Default browser arguments](configuration.md#default-browser-arguments). One Motus attached to has only what its own command line gave it, so a page whose window is covered or minimized can be marked hidden, with its timers throttled and its animation frames and observers stopped. Start it with `--disable-backgrounding-occluded-windows --disable-renderer-backgrounding --disable-background-timer-throttling` when that matters. Focus is handled the same way it is on a launched browser for the contexts Motus creates, whose pages report `document.hasFocus()` as true, and left alone for contexts that were already open, whose windows have focus or not as the person using them decides.
+
 **When it is unclear whether Motus or the browser is at fault, read the protocol log.** An attached browser is often one with extensions, a signed-in profile or another client on the same endpoint, any of which can change how it answers. Setting `MOTUS_PROTOCOL_LOG` to a file path, or `ConnectOptions.ProtocolLog` in code, records every command Motus sent and every reply and event the browser returned, including events from targets Motus never asked about. See [Troubleshooting with the protocol log](configuration.md#troubleshooting-with-the-protocol-log).
 
 ---

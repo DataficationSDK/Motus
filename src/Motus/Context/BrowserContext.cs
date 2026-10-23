@@ -292,9 +292,9 @@ internal sealed class BrowserContext : IBrowserContext
     }
 
     /// <summary>
-    /// Gives a page everything the context carries: its emulation options, its extra headers, its
-    /// offline state, the storage state it was configured with, and a video recording when one was
-    /// asked for.
+    /// Gives a page everything the context carries: focus, its emulation options, its extra
+    /// headers, its offline state, the storage state it was configured with, and a video recording
+    /// when one was asked for.
     /// </summary>
     /// <remarks>
     /// Shared by a page opened by a call and a page opened by the page, because a tab that appears
@@ -304,6 +304,8 @@ internal sealed class BrowserContext : IBrowserContext
     /// </remarks>
     private async Task ApplyContextStateToPageAsync(Page page)
     {
+        await EmulateFocusAsync(page).ConfigureAwait(false);
+
         // Apply context options (viewport, locale, timezone, etc.)
         await ApplyContextOptionsToPageAsync(page).ConfigureAwait(false);
 
@@ -891,6 +893,38 @@ internal sealed class BrowserContext : IBrowserContext
     }
 
     // --- Helpers ---
+
+    /// <summary>
+    /// Has the page behave as though its window had focus, so <c>document.hasFocus()</c> is true
+    /// and focus events fire in every page of a run at once, not only in whichever window the
+    /// browser last brought forward.
+    /// </summary>
+    /// <remarks>
+    /// A context that was already open in the browser is left alone, for the same reason its
+    /// viewport is: whether its windows have focus belongs to whoever is using them. WebDriver
+    /// BiDi has no equivalent command, so a Firefox page is left alone too. A Chromium build that
+    /// does not know the command answers with an error, and the page goes on without it rather
+    /// than failing to open. The emulation lasts as long as Motus's session on the page.
+    /// </remarks>
+    private async Task EmulateFocusAsync(Page page)
+    {
+        if (_adopted || (page.Session.Capabilities & MotusCapabilities.EmulationOverrides) == 0)
+            return;
+
+        try
+        {
+            await page.Session.SendAsync(
+                "Emulation.setFocusEmulationEnabled",
+                new EmulationSetFocusEmulationEnabledParams(Enabled: true),
+                CdpJsonContext.Default.EmulationSetFocusEmulationEnabledParams,
+                CdpJsonContext.Default.EmulationSetFocusEmulationEnabledResult,
+                CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (MotusProtocolException)
+        {
+            // Not supported by this build: the page keeps the browser's own idea of focus.
+        }
+    }
 
     private async Task ApplyContextOptionsToPageAsync(Page page)
     {
