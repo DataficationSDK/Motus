@@ -16,7 +16,7 @@ public class LiveWebTests : MotusTestBase
         await Page.GotoAsync("https://example.com");
 
         await Expect.That(Page).ToHaveTitleAsync("Example Domain");
-        await Expect.That(Page.GetByText("Example Domain")).ToBeVisibleAsync();
+        await Expect.That(Page.GetByText("for use in documentation examples")).ToBeVisibleAsync();
     }
 
     [TestMethod]
