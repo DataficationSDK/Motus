@@ -41,17 +41,19 @@ public sealed class PageAssertions
     /// </param>
     /// <param name="options">Timeout and failure message overrides.</param>
     /// <remarks>
-    /// Three forms are accepted, and which one applies depends on the pattern. A pattern equal to
-    /// the URL matches it. A pattern containing <c>*</c> is matched against the whole URL, so
-    /// <c>https://example.com/orders/*</c> matches any order page but not the site root. A pattern
-    /// containing no <c>*</c> at all matches when the URL merely contains it, which is worth
-    /// knowing: <c>/orders</c> also matches <c>https://example.com/orders/17/edit</c>.
+    /// A pattern containing <c>*</c> is a glob matched against the whole URL, where each <c>*</c>
+    /// stands for any run of characters, path separators included, so
+    /// <c>https://example.com/orders/*</c> matches any order page but not the site root. Any other
+    /// pattern has to equal the URL exactly: <c>https://example.com/orders</c> does not match
+    /// <c>https://example.com/orders/17/edit</c>. To match part of a URL, use a glob such as
+    /// <c>**/orders**</c>. This is the same matching <see cref="IPage.WaitForURLAsync(string, NavigationOptions?)"/>
+    /// uses, so a wait and an assertion given the same string agree.
     /// </remarks>
     public Task ToHaveUrlAsync(string urlOrGlob, AssertionOptions? options = null) =>
         RetryAsync(async ct =>
         {
             var url = _page.Url;
-            var matches = Page.UrlMatchesStatic(url, urlOrGlob);
+            var matches = Page.UrlMatchesWhole(url, urlOrGlob);
             return (matches, url);
         }, "ToHaveUrl", urlOrGlob, options);
 

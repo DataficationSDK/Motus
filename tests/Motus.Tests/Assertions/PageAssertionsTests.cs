@@ -148,6 +148,22 @@ public class PageAssertionsTests
             () => Expect.That(page).ToHaveUrlAsync("https://example.com/correct", new() { Timeout = 200 }));
     }
 
+    /// <summary>
+    /// A string with no wildcard is the whole expected URL, the same as for a URL wait. A URL that
+    /// only starts with it, as every page on a site starts with the site's root, is not a match.
+    /// </summary>
+    [TestMethod]
+    public async Task ToHaveUrlAsync_Throws_WhenTheUrlOnlyContainsTheString()
+    {
+        var page = await CreatePageWithFrameAsync("https://example.com/orders?page=10");
+
+        await Assert.ThrowsExceptionAsync<MotusAssertionException>(
+            () => Expect.That(page).ToHaveUrlAsync("https://example.com/", new() { Timeout = 200 }));
+        await Assert.ThrowsExceptionAsync<MotusAssertionException>(
+            () => Expect.That(page).ToHaveUrlAsync("https://example.com/orders?page=1", new() { Timeout = 200 }));
+        await Expect.That(page).ToHaveUrlAsync("**/orders**", new() { Timeout = 200 });
+    }
+
     [TestMethod]
     public async Task Not_ToHaveUrlAsync_Passes_WhenNoMatch()
     {

@@ -166,7 +166,7 @@ All methods accept an optional `AssertionOptions? options` parameter and return 
 
 | Method | Condition checked |
 |---|---|
-| `ToHaveUrlAsync(string)` | Current page URL matches a literal string or glob pattern (via `Page.UrlMatchesStatic`) |
+| `ToHaveUrlAsync(string)` | Current page URL equals the string, or matches it as a glob over the whole URL when it contains `*` (via `Page.UrlMatchesWhole`, the same matcher `WaitForURLAsync` uses). There is no substring match. |
 | `ToHaveTitleAsync(string)` | `document.title` equals expected (via `TitleAsync`) |
 | `ToPassAccessibilityAuditAsync(Action<AccessibilityAssertionOptions>?, AssertionOptions?)` | No accessibility violations; see below |
 

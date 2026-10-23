@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Motus.Abstractions;
 
 namespace Motus;
@@ -148,25 +149,109 @@ internal sealed partial class Page
         await CreateLifecycleWaiter(waitUntil, TimeSpan.FromMilliseconds(timeoutMs)).ConfigureAwait(false);
     }
 
-    public async Task WaitForURLAsync(string urlPattern, NavigationOptions? options = null)
+    public Task WaitForURLAsync(string urlPattern, NavigationOptions? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(urlPattern);
+        return WaitForFrameUrlAsync(
+            frame: null, url => UrlMatchesWhole(url, urlPattern), $"'{urlPattern}'", options);
+    }
+
+    public Task WaitForURLAsync(Regex urlPattern, NavigationOptions? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(urlPattern);
+        return WaitForFrameUrlAsync(
+            frame: null, urlPattern.IsMatch, $"/{urlPattern}/", options);
+    }
+
+    public Task WaitForURLAsync(Func<string, bool> predicate, NavigationOptions? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(predicate);
+        return WaitForFrameUrlAsync(frame: null, predicate, "a predicate", options);
+    }
+
+    /// <summary>
+    /// Waits until a frame's URL satisfies <paramref name="matches"/>, returning at once when it
+    /// already does.
+    /// </summary>
+    /// <param name="frame">The frame to watch, or <see langword="null"/> for the main frame.</param>
+    /// <param name="matches">Decides whether a URL is the one being waited for.</param>
+    /// <param name="description">How the expected URL reads in a timeout message.</param>
+    /// <param name="options">The timeout; navigation options other than that are unused.</param>
+    /// <remarks>
+    /// Every URL the frame navigates to is tested, including ones it passes through on the way
+    /// somewhere else and ones reached without loading a new document (the history API, or a
+    /// fragment), so a wait does not miss a URL that was current for less than a polling
+    /// interval. The current URL is polled as well, which covers a change no event was raised
+    /// for. <paramref name="matches"/> is only ever called from the waiting loop, never from the
+    /// thread delivering events, so a caller's predicate is not run concurrently with itself.
+    /// </remarks>
+    internal async Task WaitForFrameUrlAsync(
+        Frame? frame, Func<string, bool> matches, string description, NavigationOptions? options)
     {
         var timeout = TimeSpan.FromMilliseconds(options?.Timeout ?? 30_000);
+        string CurrentUrl() => frame?.Url ?? Url;
+
+        var visited = new System.Collections.Concurrent.ConcurrentQueue<string>();
+
+        // Not disposed: an event already being raised when the handler is removed may still
+        // release it, and a semaphore with no wait handle holds nothing that needs freeing.
+        var signal = new SemaphoreSlim(0);
+
+        void OnNavigated(object? sender, IFrame navigated)
+        {
+            var watched = frame is null
+                ? navigated is Frame f && f.Id == _mainFrameId
+                : ReferenceEquals(navigated, frame);
+            if (!watched)
+                return;
+
+            visited.Enqueue(navigated.Url);
+            signal.Release();
+        }
+
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(_pageCts.Token);
         cts.CancelAfter(timeout);
 
-        while (!cts.Token.IsCancellationRequested)
+        // Subscribed before the first check, so a navigation landing in between is still seen.
+        FrameNavigated += OnNavigated;
+        try
         {
-            if (UrlMatches(Url, urlPattern))
+            if (matches(CurrentUrl()))
                 return;
 
-            await Task.Delay(100, cts.Token).ConfigureAwait(false);
+            while (true)
+            {
+                try
+                {
+                    await signal.WaitAsync(100, cts.Token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (!_pageCts.IsCancellationRequested)
+                {
+                    break;
+                }
+
+                while (visited.TryDequeue(out var url))
+                {
+                    if (matches(url))
+                        return;
+                }
+
+                if (matches(CurrentUrl()))
+                    return;
+            }
+        }
+        finally
+        {
+            FrameNavigated -= OnNavigated;
         }
 
+        var lastUrl = CurrentUrl();
         throw new WaitTimeoutException(
-            condition: $"URL match '{urlPattern}'",
+            condition: $"URL match {description}",
             timeoutDuration: timeout,
-            lastEvaluatedValue: Url,
-            message: $"WaitForURL timed out waiting for '{urlPattern}' after {timeout.TotalMilliseconds}ms.");
+            lastEvaluatedValue: lastUrl,
+            message: $"WaitForURL timed out waiting for {description} after {timeout.TotalMilliseconds}ms. "
+                + $"The URL was '{lastUrl}'.");
     }
 
     public async Task WaitForTimeoutAsync(double timeout) =>
@@ -292,6 +377,11 @@ internal sealed partial class Page
         return tcs.Task;
     }
 
+    /// <summary>
+    /// Matches a request URL the way routes and request or response waits do: an exact URL, a
+    /// glob over the whole URL when the pattern contains <c>*</c>, and otherwise any URL that
+    /// contains the pattern.
+    /// </summary>
     internal static bool UrlMatchesStatic(string url, string pattern) =>
         UrlMatches(url, pattern);
 
@@ -301,12 +391,30 @@ internal sealed partial class Page
             return true;
 
         if (pattern.Contains('*'))
-        {
-            var regex = "^" + System.Text.RegularExpressions.Regex.Escape(pattern)
-                .Replace("\\*", ".*") + "$";
-            return System.Text.RegularExpressions.Regex.IsMatch(url, regex);
-        }
+            return GlobMatches(url, pattern);
 
         return url.Contains(pattern, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Matches the URL of a page or frame: a pattern containing <c>*</c> is a glob that has to
+    /// cover the whole URL, and any other pattern has to equal the URL exactly.
+    /// </summary>
+    /// <remarks>
+    /// Unlike <see cref="UrlMatchesStatic"/> there is no substring fallback. A site's root is a
+    /// prefix of every URL on the site, and <c>?page=1</c> is a prefix of <c>?page=10</c>, so a
+    /// containment check answered "yes" for pages the caller was not waiting for.
+    /// </remarks>
+    internal static bool UrlMatchesWhole(string url, string pattern) =>
+        pattern.Contains('*')
+            ? GlobMatches(url, pattern)
+            : string.Equals(url, pattern, StringComparison.Ordinal);
+
+    // Each * stands for any run of characters, path separators included, so * and ** are the same.
+    // Everything else in the pattern is literal, and the glob has to cover the whole URL.
+    private static bool GlobMatches(string url, string pattern)
+    {
+        var regex = "^" + Regex.Escape(pattern).Replace("\\*", ".*") + "$";
+        return Regex.IsMatch(url, regex);
     }
 }

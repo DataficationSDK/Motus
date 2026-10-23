@@ -287,6 +287,17 @@ await Page.ReloadAsync();
 await Page.WaitForURLAsync("**/dashboard");
 ```
 
+`WaitForURLAsync` returns at once when the URL already matches. A string with no `*` has to be the whole URL, so `WaitForURLAsync("https://example.com/")` waits for the site's root and is not satisfied by `https://example.com/account`. A string containing `*` is a glob that has to cover the whole URL, where each `*` stands for any run of characters, path separators included. For anything a glob cannot say, pass a `Regex` or a predicate instead:
+
+```csharp
+await Page.WaitForURLAsync(new Regex(@"/orders/\d+$"));
+await Page.WaitForURLAsync(url => new Uri(url).AbsolutePath == "/checkout");
+```
+
+The wait sees navigations that keep the same document as well, such as a single-page application changing its route through `history.pushState`. `IFrame.WaitForURLAsync` takes the same arguments and waits on that frame's own URL.
+
+`ToHaveUrlAsync` matches a string the same way, so a wait and an assertion given the same string agree.
+
 A tab the page opens for itself, through `window.open` or a link with `target="_blank"`, is a page like any other: it joins the context's pages and the page that opened it raises `Popup` with the new `IPage`. Subscribe before the click that opens it, since the tab can arrive before the click returns. The new tab is often still on `about:blank` when it is handed over, so wait on it rather than reading its URL straight away.
 
 ```csharp

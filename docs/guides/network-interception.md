@@ -53,6 +53,8 @@ A pattern is matched against the full request URL, query string and fragment inc
 
 Because a glob has to cover the whole URL, `**/api/products` does not match `https://example.com/api/products?page=2`. End the pattern with `**` when the request may carry a query string.
 
+The substring form belongs to request matching: routes, `WaitForRequestAsync` and `WaitForResponseAsync`. `IPage.WaitForURLAsync`, `IFrame.WaitForURLAsync` and the `ToHaveUrlAsync` assertion use the same glob syntax but have no substring form, so a string with no `*` there has to equal the whole URL.
+
 One handler takes a request, rather than each matching handler in turn. Page handlers are consulted before context handlers, and within each the most recently registered matching handler is the one that runs, so registering a second handler for a pattern shadows the first rather than queuing behind it. If the handler that runs returns without calling `FulfillAsync`, `ContinueAsync`, or `AbortAsync`, the request continues as it stands and no other handler is offered it.
 
 ## Fulfilling Requests

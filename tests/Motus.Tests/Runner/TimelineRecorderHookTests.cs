@@ -100,6 +100,8 @@ public class TimelineRecorderHookTests
         public Task WaitForLoadStateAsync(LoadState? state = null, double? timeout = null) => throw new NotImplementedException();
         public Task<IResponse?> WaitForNavigationAsync(NavigationOptions? options = null) => throw new NotImplementedException();
         public Task WaitForURLAsync(string urlPattern, NavigationOptions? options = null) => throw new NotImplementedException();
+        public Task WaitForURLAsync(System.Text.RegularExpressions.Regex urlPattern, NavigationOptions? options = null) => throw new NotImplementedException();
+        public Task WaitForURLAsync(Func<string, bool> predicate, NavigationOptions? options = null) => throw new NotImplementedException();
         public ILocator Locator(string selector, LocatorOptions? options = null) => throw new NotImplementedException();
         public ILocator LocatorByBackendNodeId(long backendNodeId) => throw new NotImplementedException();
         public Task<AccessibilitySnapshot> AccessibilitySnapshotAsync(CancellationToken ct = default) => throw new NotImplementedException();
