@@ -4,6 +4,7 @@ using System.Reflection;
 using Motus;
 using Motus.Abstractions;
 using Motus.Cli.Services.Reporters;
+using Motus.Runner.Services.Execution;
 using CliTestResult = Motus.Cli.Services.TestResult;
 
 namespace Motus.Cli.Services;
@@ -399,93 +400,32 @@ public sealed class TestRunner(int maxWorkers)
 
     private async Task<(CliTestResult Result, Exception? Failure)> ExecuteTestAsync(DiscoveredTest test)
     {
-        var testSw = Stopwatch.StartNew();
-        object? instance = null;
-        try
-        {
-            instance = Activator.CreateInstance(test.TestClass)!;
-
-            // Publish the test method name so MotusTestBase can resolve per-method attributes
-            // (e.g. [PerformanceBudget]) and name failure artifacts without a TestContext
-            TestMethodNameContext.Set(test.TestMethod.Name);
-
-            // Run [ClassInitialize] once per type (static, takes TestContext)
-            if (_initializedClasses.TryAdd(test.TestClass, true))
+        var run = await TestCaseInvoker.RunAsync(
+            test.TestClass,
+            test.TestMethod,
+            test.Arguments,
+            DisplayNameOf(test),
+            beforeInstance: async () =>
             {
-                await RunStaticLifecycleMethodAsync(test.TestClass, "ClassInitializeAttribute");
-                await RunStaticLifecycleMethodAsync(test.TestClass, "OneTimeSetUpAttribute");
-            }
-
-            // Run [TestInitialize] / [SetUp]
-            await ExecuteLifecycleMethodAsync(instance, test.TestClass, "TestInitializeAttribute");
-            await ExecuteLifecycleMethodAsync(instance, test.TestClass, "SetUpAttribute");
-
-            var result = test.TestMethod.Invoke(instance, null);
-
-            if (result is Task task)
-                await task;
-
-            testSw.Stop();
-            return (new CliTestResult(test.FullName, true, testSw.Elapsed, null, null), null);
-        }
-        catch (TargetInvocationException ex) when (ex.InnerException is not null)
-        {
-            testSw.Stop();
-            return (
-                new CliTestResult(test.FullName, false, testSw.Elapsed, ex.InnerException.Message, ex.InnerException.StackTrace),
-                ex.InnerException);
-        }
-        catch (Exception ex)
-        {
-            testSw.Stop();
-            return (
-                new CliTestResult(test.FullName, false, testSw.Elapsed, ex.Message, ex.StackTrace),
-                ex);
-        }
-        finally
-        {
-            if (instance is not null)
-            {
-                try
+                // Run [ClassInitialize] once per type (static, takes TestContext)
+                if (_initializedClasses.TryAdd(test.TestClass, true))
                 {
-                    // Run [TestCleanup] / [TearDown]
-                    await ExecuteLifecycleMethodAsync(instance, test.TestClass, "TestCleanupAttribute");
-                    await ExecuteLifecycleMethodAsync(instance, test.TestClass, "TearDownAttribute");
+                    await RunStaticLifecycleMethodAsync(test.TestClass, "ClassInitializeAttribute");
+                    await RunStaticLifecycleMethodAsync(test.TestClass, "OneTimeSetUpAttribute");
                 }
-                catch (Exception ex)
-                {
-                    Console.Error.WriteLine($"TestCleanup failed for {test.FullName}: {ex.InnerException?.Message ?? ex.Message}");
-                }
+            },
+            onCleanupFailure: ex => Console.Error.WriteLine($"TestCleanup failed for {test.FullName}: {ex.Message}"));
 
-                if (instance is IAsyncDisposable asyncDisposable)
-                    await asyncDisposable.DisposeAsync();
-                else if (instance is IDisposable disposable)
-                    disposable.Dispose();
-            }
-
-            TestMethodNameContext.Clear();
-        }
+        return run.Failure is null
+            ? (new CliTestResult(test.FullName, true, run.Duration, null, null), null)
+            : (new CliTestResult(test.FullName, false, run.Duration, run.Failure.Message, run.Failure.StackTrace), run.Failure);
     }
 
-    private static async Task ExecuteLifecycleMethodAsync(object instance, Type testClass, string attributeName)
+    /// <summary>The test case's name without its class, such as <c>SignsIn ("owner")</c>.</summary>
+    private static string DisplayNameOf(DiscoveredTest test)
     {
-        // Walk the hierarchy bottom-up, then reverse so base-class methods run first
-        var methods = new List<MethodInfo>();
-        var type = testClass;
-        while (type is not null && type != typeof(object))
-        {
-            var declared = type.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
-                .Where(m => m.GetCustomAttributes(true).Any(a => a.GetType().Name == attributeName));
-            methods.InsertRange(0, declared);
-            type = type.BaseType;
-        }
-
-        foreach (var method in methods)
-        {
-            var result = method.Invoke(instance, null);
-            if (result is Task task)
-                await task;
-        }
+        var prefix = test.TestClass.FullName + ".";
+        return test.FullName.StartsWith(prefix, StringComparison.Ordinal) ? test.FullName[prefix.Length..] : test.TestMethod.Name;
     }
 
     private static async Task RunAssemblyCleanupAsync(Assembly assembly)
@@ -496,11 +436,7 @@ public sealed class TestRunner(int maxWorkers)
                 .Where(m => m.GetCustomAttributes(true).Any(a => a.GetType().Name == "AssemblyCleanupAttribute"));
 
             foreach (var method in methods)
-            {
-                var result = method.Invoke(null, null);
-                if (result is Task task)
-                    await task;
-            }
+                await TestCaseInvoker.InvokeStaticAsync(method, type);
         }
     }
 
@@ -512,13 +448,7 @@ public sealed class TestRunner(int maxWorkers)
                 .Where(m => m.GetCustomAttributes(true).Any(a => a.GetType().Name == "AssemblyInitializeAttribute"));
 
             foreach (var method in methods)
-            {
-                var parameters = method.GetParameters();
-                object?[] args = parameters.Length > 0 ? [null] : [];
-                var result = method.Invoke(null, args);
-                if (result is Task task)
-                    await task;
-            }
+                await TestCaseInvoker.InvokeStaticAsync(method, type);
         }
     }
 
@@ -528,12 +458,6 @@ public sealed class TestRunner(int maxWorkers)
             .Where(m => m.GetCustomAttributes(true).Any(a => a.GetType().Name == attributeName));
 
         foreach (var method in methods)
-        {
-            var parameters = method.GetParameters();
-            object?[] args = parameters.Length > 0 ? [null] : [];
-            var result = method.Invoke(null, args);
-            if (result is Task task)
-                await task;
-        }
+            await TestCaseInvoker.InvokeStaticAsync(method, type);
     }
 }

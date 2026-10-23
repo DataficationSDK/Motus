@@ -11,4 +11,5 @@ public sealed record DiscoveredTest(
     string? IgnoreReason = null,
     string? CodeBase = null,
     IReadOnlyList<string>? Categories = null,
-    string? ClassFullName = null);
+    string? ClassFullName = null,
+    object?[]? Arguments = null);

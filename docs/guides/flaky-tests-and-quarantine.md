@@ -60,7 +60,7 @@ Or supply a list file, which quarantines without touching the source. That suits
 motus run bin/Release/net8.0/MyTests.dll --quarantine quarantine.txt
 ```
 
-One fully qualified test name per line. Blank lines are ignored, and a line whose first non-blank character is `#` is a comment. The whole line is the name, so a trailing `# reason` on the same line becomes part of it and the entry silently matches nothing; put the reason on its own line above.
+One fully qualified test name per line. A data-driven test is listed by the name of one row, such as `MyTests.CheckoutTests.PaysBy (card)`, or by its method, `MyTests.CheckoutTests.PaysBy`, which covers every row. Blank lines are ignored, and a line whose first non-blank character is `#` is a comment. The whole line is the name, so a trailing `# reason` on the same line becomes part of it and the entry silently matches nothing; put the reason on its own line above.
 
 ```
 # Flaky since the payment provider sandbox migration (#412)

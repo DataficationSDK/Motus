@@ -4,6 +4,7 @@ using System.Reflection;
 using Motus;
 using Motus.Abstractions;
 using Motus.Runner.Services.Coverage;
+using Motus.Runner.Services.Execution;
 using Motus.Runner.Services.Models;
 
 namespace Motus.Runner.Services;
@@ -16,6 +17,9 @@ public sealed class TestExecutionService(ILogger<TestExecutionService> logger, I
 
     // Track which assemblies have had [AssemblyInitialize] run
     private readonly ConcurrentDictionary<Assembly, bool> _initializedAssemblies = new();
+
+    // Track which classes have had [ClassInitialize] / [OneTimeSetUp] run in this batch
+    private readonly ConcurrentDictionary<Type, bool> _initializedClasses = new();
 
     public async Task ExecuteAsync(
         List<DiscoveredTest> tests,
@@ -88,7 +92,7 @@ public sealed class TestExecutionService(ILogger<TestExecutionService> logger, I
                     await reporters.FireOnTestStartAsync(new TestInfo(test.FullName, suiteName));
 
                 CoverageSink.Begin();
-                var result = await ExecuteTestAsync(test, logger);
+                var result = await ExecuteTestAsync(test, ct);
                 onStateChanged(result);
 
                 var coverage = CoverageSink.End();
@@ -133,6 +137,23 @@ public sealed class TestExecutionService(ILogger<TestExecutionService> logger, I
             logger.LogInformation("Test run cancelled");
         }
 
+        // Run [ClassCleanup] / [OneTimeTearDown] for each class initialized in this batch
+        foreach (var type in _initializedClasses.Keys.ToList())
+        {
+            if (_initializedClasses.TryRemove(type, out _))
+            {
+                try
+                {
+                    await RunStaticLifecycleMethodsAsync(type, "ClassCleanupAttribute");
+                    await RunStaticLifecycleMethodsAsync(type, "OneTimeTearDownAttribute");
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "ClassCleanup failed for {Class}", type.FullName);
+                }
+            }
+        }
+
         // Run [AssemblyCleanup] for each initialized assembly to close browsers
         foreach (var assembly in assemblies)
         {
@@ -174,30 +195,6 @@ public sealed class TestExecutionService(ILogger<TestExecutionService> logger, I
         }
     }
 
-    private static async Task ExecuteLifecycleMethodAsync(object instance, Type testClass, string attributeName)
-    {
-        // Walk the hierarchy bottom-up, then reverse so base-class methods run first.
-        // GetMethods with FlattenHierarchy does not guarantee ordering, and running a
-        // derived [TestInitialize] before the base (e.g. MotusTestBase.MotusTestInitialize)
-        // causes null-reference failures when the derived method accesses Page/Context.
-        var methods = new List<MethodInfo>();
-        var type = testClass;
-        while (type is not null && type != typeof(object))
-        {
-            var declared = type.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
-                .Where(m => m.GetCustomAttributes(true).Any(a => a.GetType().Name == attributeName));
-            methods.InsertRange(0, declared);
-            type = type.BaseType;
-        }
-
-        foreach (var method in methods)
-        {
-            var result = method.Invoke(instance, null);
-            if (result is Task task)
-                await task;
-        }
-    }
-
     private static async Task RunAssemblyInitializeAsync(Assembly assembly)
     {
         // [AssemblyInitialize] is a static method that takes TestContext
@@ -208,14 +205,7 @@ public sealed class TestExecutionService(ILogger<TestExecutionService> logger, I
                 .Where(m => m.GetCustomAttributes(true).Any(a => a.GetType().Name == "AssemblyInitializeAttribute"));
 
             foreach (var method in methods)
-            {
-                var parameters = method.GetParameters();
-                // MSTest [AssemblyInitialize] takes a TestContext parameter
-                object?[] args = parameters.Length > 0 ? [null] : [];
-                var result = method.Invoke(null, args);
-                if (result is Task task)
-                    await task;
-            }
+                await TestCaseInvoker.InvokeStaticAsync(method, type);
         }
     }
 
@@ -227,72 +217,48 @@ public sealed class TestExecutionService(ILogger<TestExecutionService> logger, I
                 .Where(m => m.GetCustomAttributes(true).Any(a => a.GetType().Name == "AssemblyCleanupAttribute"));
 
             foreach (var method in methods)
-            {
-                var result = method.Invoke(null, null);
-                if (result is Task task)
-                    await task;
-            }
+                await TestCaseInvoker.InvokeStaticAsync(method, type);
         }
     }
 
-    private static async Task<TestNodeState> ExecuteTestAsync(DiscoveredTest test, ILogger logger)
+    private static async Task RunStaticLifecycleMethodsAsync(Type type, string attributeName)
     {
-        var sw = Stopwatch.StartNew();
-        object? instance = null;
-        try
-        {
-            instance = Activator.CreateInstance(test.TestClass!)!;
+        var methods = type.GetMethods(BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy)
+            .Where(m => m.GetCustomAttributes(true).Any(a => a.GetType().Name == attributeName));
 
-            // Publish the test method name so MotusTestBase can resolve
-            // per-method attributes (e.g. [PerformanceBudget]) without TestContext
-            TestMethodNameContext.Set(test.TestMethod!.Name);
+        foreach (var method in methods)
+            await TestCaseInvoker.InvokeStaticAsync(method, type);
+    }
 
-            // Run [TestInitialize] methods
-            await ExecuteLifecycleMethodAsync(instance, test.TestClass!, "TestInitializeAttribute");
-            // Also support NUnit [SetUp]
-            await ExecuteLifecycleMethodAsync(instance, test.TestClass!, "SetUpAttribute");
-
-            var result = test.TestMethod!.Invoke(instance, null);
-
-            if (result is Task task)
-                await task;
-
-            sw.Stop();
-            return new TestNodeState(test.FullName, TestStatus.Passed, sw.Elapsed, null, null);
-        }
-        catch (TargetInvocationException ex) when (ex.InnerException is not null)
-        {
-            sw.Stop();
-            return new TestNodeState(test.FullName, TestStatus.Failed, sw.Elapsed, ex.InnerException.Message, ex.InnerException.StackTrace);
-        }
-        catch (Exception ex)
-        {
-            sw.Stop();
-            return new TestNodeState(test.FullName, TestStatus.Failed, sw.Elapsed, ex.Message, ex.StackTrace);
-        }
-        finally
-        {
-            if (instance is not null)
+    private async Task<TestNodeState> ExecuteTestAsync(DiscoveredTest test, CancellationToken ct)
+    {
+        var testClass = test.TestClass!;
+        var run = await TestCaseInvoker.RunAsync(
+            testClass,
+            test.TestMethod!,
+            test.Arguments,
+            DisplayNameOf(test),
+            beforeInstance: async () =>
             {
-                try
+                // Run [ClassInitialize] / [OneTimeSetUp] once per class, before its first test
+                if (_initializedClasses.TryAdd(testClass, true))
                 {
-                    // Run [TestCleanup] methods
-                    await ExecuteLifecycleMethodAsync(instance, test.TestClass!, "TestCleanupAttribute");
-                    // Also support NUnit [TearDown]
-                    await ExecuteLifecycleMethodAsync(instance, test.TestClass!, "TearDownAttribute");
+                    await RunStaticLifecycleMethodsAsync(testClass, "ClassInitializeAttribute");
+                    await RunStaticLifecycleMethodsAsync(testClass, "OneTimeSetUpAttribute");
                 }
-                catch (Exception ex)
-                {
-                    logger.LogWarning(ex, "TestCleanup failed for {Test}", test.FullName);
-                }
+            },
+            onCleanupFailure: ex => logger.LogWarning(ex, "TestCleanup failed for {Test}", test.FullName),
+            cancellationToken: ct);
 
-                if (instance is IAsyncDisposable asyncDisposable)
-                    await asyncDisposable.DisposeAsync();
-                else if (instance is IDisposable disposable)
-                    disposable.Dispose();
-            }
+        return run.Failure is null
+            ? new TestNodeState(test.FullName, TestStatus.Passed, run.Duration, null, null)
+            : new TestNodeState(test.FullName, TestStatus.Failed, run.Duration, run.Failure.Message, run.Failure.StackTrace);
+    }
 
-            TestMethodNameContext.Clear();
-        }
+    /// <summary>The test case's name without its class, such as <c>SignsIn ("owner")</c>.</summary>
+    private static string DisplayNameOf(DiscoveredTest test)
+    {
+        var prefix = test.TestClass!.FullName + ".";
+        return test.FullName.StartsWith(prefix, StringComparison.Ordinal) ? test.FullName[prefix.Length..] : test.TestMethod!.Name;
     }
 }
