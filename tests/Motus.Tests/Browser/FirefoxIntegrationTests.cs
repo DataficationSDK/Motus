@@ -137,4 +137,36 @@ public class FirefoxIntegrationTests
         Assert.AreEqual("T", await page.TitleAsync());
         Assert.AreEqual(2, await page.MainFrame.EvaluateAsync<int>("1 + 1"));
     }
+
+    /// <summary>
+    /// Evaluating straight after a navigation works on Firefox too. BiDi addresses script to a
+    /// browsing context rather than to an execution context id, so there is no id to go stale, and
+    /// the waiting Chromium needs must not get in its way.
+    /// </summary>
+    [TestMethod]
+    public async Task Firefox_EvaluateRightAfterNavigation_Succeeds()
+    {
+        if (!FirefoxAvailable())
+        {
+            Assert.Inconclusive("Firefox not found on this machine.");
+            return;
+        }
+
+        await using var browser = await MotusLauncher.LaunchAsync(
+            new LaunchOptions { Headless = true, Channel = BrowserChannel.Firefox });
+
+        for (var i = 0; i < 30; i++)
+        {
+            var context = await browser.NewContextAsync();
+            var page = await context.NewPageAsync();
+
+            await page.GotoAsync("about:blank");
+            Assert.AreEqual(2, await page.EvaluateAsync<int>("1+1"), $"iteration {i}");
+
+            await page.GotoAsync($"data:text/html,<title>t{i}</title>");
+            Assert.AreEqual($"t{i}", await page.TitleAsync(), $"iteration {i}");
+
+            await context.CloseAsync();
+        }
+    }
 }

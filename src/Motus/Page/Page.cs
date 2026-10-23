@@ -25,8 +25,6 @@ internal sealed partial class Page : IPage
     // own for every frame the browser puts in its own process.
     private readonly List<string> _frameOrder = [];
 
-    private readonly ConcurrentDictionary<string, int> _frameIdToExecutionContext = new();
-
     // Frames that render in their own process are reached over a session of their own. A frame
     // absent from this map is driven over the page session, which is every frame the page's own
     // renderer hosts.
@@ -260,27 +258,6 @@ internal sealed partial class Page : IPage
             : new Frame(this, SyntheticSelectorFrameId, parentFrameId: null);
 
     /// <summary>
-    /// Returns the execution context to resolve selectors in for the given frame, or null to use
-    /// the session default.
-    /// </summary>
-    /// <remarks>
-    /// The main frame maps to the default context, which is what every page-level locator has
-    /// always used, so page-level resolution keeps sending exactly what it sent before. Passing an
-    /// explicit id for the main frame would also be fragile: a context id can go stale across a
-    /// navigation, where null always resolves to whatever the current default is.
-    /// </remarks>
-    internal int? GetSelectorContextId(IFrame frame)
-    {
-        if (frame is not Frame f)
-            return null;
-
-        if (f.Id == _mainFrameId || f.Id == SyntheticSelectorFrameId)
-            return null;
-
-        return GetExecutionContextId(f.Id);
-    }
-
-    /// <summary>
     /// Returns the session that owns the given frame, or the page session when the frame is null
     /// or is hosted by the page's own renderer.
     /// </summary>
@@ -359,30 +336,27 @@ internal sealed partial class Page : IPage
         }
     }
 
-    internal int? GetExecutionContextId(string frameId) =>
-        _frameIdToExecutionContext.TryGetValue(frameId, out var id) ? id : null;
-
     internal async Task<T> EvaluateInFrameAsync<T>(
-        string frameId, string expression, object? arg = null, ExecutionWorld world = ExecutionWorld.Main)
+        string frameId, string expression, object? arg = null, ExecutionWorld world = ExecutionWorld.Main,
+        CancellationToken ct = default)
     {
-        await WhenFrameReadyAsync(frameId).ConfigureAwait(false);
+        var wrapped = WrapExpression(expression, arg);
 
-        _frames.TryGetValue(frameId, out var frame);
+        Task<RuntimeEvaluateResult> Evaluate(ExecutionTarget target) =>
+            target.Session.SendAsync(
+                "Runtime.evaluate",
+                new RuntimeEvaluateParams(
+                    Expression: wrapped,
+                    ReturnByValue: true,
+                    AwaitPromise: true,
+                    ContextId: target.ContextId),
+                CdpJsonContext.Default.RuntimeEvaluateParams,
+                CdpJsonContext.Default.RuntimeEvaluateResult,
+                CancellationToken.None);
 
-        var contextId = world == ExecutionWorld.Isolated
-            ? await GetIsolatedWorldContextIdAsync(frameId).ConfigureAwait(false)
-            : GetExecutionContextId(frameId);
-
-        var result = await SessionFor(frame).SendAsync(
-            "Runtime.evaluate",
-            new RuntimeEvaluateParams(
-                Expression: WrapExpression(expression, arg),
-                ReturnByValue: true,
-                AwaitPromise: true,
-                ContextId: contextId),
-            CdpJsonContext.Default.RuntimeEvaluateParams,
-            CdpJsonContext.Default.RuntimeEvaluateResult,
-            CancellationToken.None).ConfigureAwait(false);
+        var result = world == ExecutionWorld.Isolated
+            ? await RunInIsolatedWorldAsync(frameId, Evaluate).ConfigureAwait(false)
+            : await RunInFrameAsync(frameId, Evaluate, ct).ConfigureAwait(false);
 
         if (result.ExceptionDetails is not null)
             throw new InvalidOperationException(
@@ -402,7 +376,8 @@ internal sealed partial class Page : IPage
         {
             try
             {
-                var result = await EvaluateInFrameAsync<JsonElement>(frameId, expression, arg).ConfigureAwait(false);
+                var result = await EvaluateInFrameAsync<JsonElement>(
+                    frameId, expression, arg, ct: cts.Token).ConfigureAwait(false);
 
                 if (IsTruthy(result))
                     return result.Deserialize<T>()!;
@@ -410,6 +385,11 @@ internal sealed partial class Page : IPage
             catch (InvalidOperationException)
             {
                 // Evaluation failed, will retry
+            }
+            catch (OperationCanceledException) when (cts.Token.IsCancellationRequested)
+            {
+                // Ran out of time waiting for the frame's context
+                break;
             }
 
             try
