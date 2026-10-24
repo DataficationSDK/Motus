@@ -4,6 +4,8 @@ A page is a tree of frames. The main frame is the document you navigated to; eve
 
 Some of those frames run in a renderer process of their own. That changes a great deal underneath and nothing at all in the API: an out-of-process frame is discovered, traversed, evaluated, and clicked exactly like any other.
 
+Frames are reported on Chromium-based browsers. A Firefox page does not report the frames inside it yet, so there `page.Frames` holds only the main frame.
+
 ---
 
 ## Traversing

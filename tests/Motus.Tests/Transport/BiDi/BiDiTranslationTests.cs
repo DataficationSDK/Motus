@@ -215,6 +215,164 @@ public class BiDiTranslationTests
     }
 
     [TestMethod]
+    public void RuntimeCallFunctionOn_ObjectId_Becomes_This_Reference()
+    {
+        var translation = GetTranslation("Runtime.callFunctionOn");
+
+        var onNode = translation.TranslateParams(
+            Parse("""{"functionDeclaration":"function(){}","objectId":"sharedId:node-7"}"""), "ctx-1");
+        var onHandle = translation.TranslateParams(
+            Parse("""{"functionDeclaration":"function(){}","objectId":"handle-3"}"""), "ctx-1");
+
+        Assert.AreEqual("""{"sharedId":"node-7"}""", onNode.GetProperty("this").GetRawText());
+        Assert.AreEqual("""{"handle":"handle-3"}""", onHandle.GetProperty("this").GetRawText());
+        Assert.AreEqual("ctx-1", onNode.GetProperty("target").GetProperty("context").GetString());
+        Assert.AreEqual("root", onNode.GetProperty("resultOwnership").GetString());
+    }
+
+    [TestMethod]
+    public void RuntimeCallFunctionOn_Arguments_Become_Local_Values_In_Order()
+    {
+        var translation = GetTranslation("Runtime.callFunctionOn");
+
+        var cdpParams = Parse("""
+            {"functionDeclaration":"function(){}","arguments":[
+                {"objectId":"sharedId:node-1"},
+                {},
+                {"value":null},
+                {"value":"s"},
+                {"value":["a",2]},
+                {"value":{"bubbles":true,"detail":{"n":1}}},
+                {"unserializableValue":"NaN"}
+            ]}
+            """);
+        var args = translation.TranslateParams(cdpParams, "ctx-1").GetProperty("arguments");
+
+        Assert.AreEqual(7, args.GetArrayLength());
+        Assert.AreEqual("""{"sharedId":"node-1"}""", args[0].GetRawText());
+        Assert.AreEqual("""{"type":"undefined"}""", args[1].GetRawText());
+        Assert.AreEqual("""{"type":"null"}""", args[2].GetRawText());
+        Assert.AreEqual("""{"type":"string","value":"s"}""", args[3].GetRawText());
+        Assert.AreEqual(
+            """{"type":"array","value":[{"type":"string","value":"a"},{"type":"number","value":2}]}""",
+            args[4].GetRawText());
+        Assert.AreEqual(
+            """{"type":"object","value":[["bubbles",{"type":"boolean","value":true}],["detail",{"type":"object","value":[["n",{"type":"number","value":1}]]}]]}""",
+            args[5].GetRawText());
+        Assert.AreEqual("""{"type":"number","value":"NaN"}""", args[6].GetRawText());
+    }
+
+    [TestMethod]
+    public void ScriptResult_Node_Is_Named_By_Its_SharedId()
+    {
+        var translation = GetTranslation("Runtime.callFunctionOn");
+
+        var cdpResult = translation.TranslateResult(Parse(
+            """{"type":"success","result":{"type":"node","sharedId":"node-9","handle":"h-1","value":{"nodeType":1}}}"""));
+
+        var remote = cdpResult.GetProperty("result");
+        Assert.AreEqual("object", remote.GetProperty("type").GetString());
+        Assert.AreEqual("node", remote.GetProperty("subtype").GetString());
+        Assert.AreEqual("sharedId:node-9", remote.GetProperty("objectId").GetString());
+    }
+
+    [TestMethod]
+    public void ScriptResult_Structured_Value_Becomes_Plain_Json()
+    {
+        var translation = GetTranslation("Runtime.callFunctionOn");
+
+        var cdpResult = translation.TranslateResult(Parse("""
+            {"type":"success","result":{"type":"object","value":[
+                ["x",{"type":"number","value":1.5}],
+                ["gone",{"type":"undefined"}],
+                ["list",{"type":"array","value":[{"type":"string","value":"a"},{"type":"undefined"},{"type":"number","value":"NaN"}]}],
+                ["el",{"type":"node","sharedId":"n"}]
+            ]}}
+            """));
+
+        Assert.AreEqual(
+            """{"x":1.5,"list":["a",null,null],"el":{}}""",
+            cdpResult.GetProperty("result").GetProperty("value").GetRawText());
+    }
+
+    [TestMethod]
+    public void ScriptResult_Unserializable_Number_Is_Reported_As_Such()
+    {
+        var translation = GetTranslation("Runtime.evaluate");
+
+        var cdpResult = translation.TranslateResult(Parse(
+            """{"type":"success","result":{"type":"number","value":"-Infinity"}}"""));
+
+        var remote = cdpResult.GetProperty("result");
+        Assert.AreEqual("-Infinity", remote.GetProperty("unserializableValue").GetString());
+        Assert.IsFalse(remote.TryGetProperty("value", out _));
+    }
+
+    [TestMethod]
+    public void RuntimeGetProperties_Returns_The_Object_To_Itself()
+    {
+        var translation = GetTranslation("Runtime.getProperties");
+        Assert.AreEqual("script.callFunction", translation.BiDiMethod);
+
+        var bidiParams = translation.TranslateParams(
+            Parse("""{"objectId":"array-handle","ownProperties":true}"""), "ctx-1");
+
+        Assert.AreEqual("""{"handle":"array-handle"}""", bidiParams.GetProperty("this").GetRawText());
+        Assert.AreEqual("ctx-1", bidiParams.GetProperty("target").GetProperty("context").GetString());
+        Assert.AreEqual("none", bidiParams.GetProperty("resultOwnership").GetString());
+        Assert.AreEqual(1, bidiParams.GetProperty("serializationOptions").GetProperty("maxObjectDepth").GetInt32());
+    }
+
+    [TestMethod]
+    public void RuntimeGetProperties_Array_Elements_Become_Indexed_Properties()
+    {
+        var translation = GetTranslation("Runtime.getProperties");
+
+        var cdpResult = translation.TranslateResult(Parse("""
+            {"type":"success","result":{"type":"array","value":[
+                {"type":"node","sharedId":"node-a","value":{"nodeType":1}},
+                {"type":"node","sharedId":"node-b","value":{"nodeType":1}}
+            ]}}
+            """));
+
+        var properties = JsonSerializer.Deserialize(cdpResult, CdpJsonContext.Default.RuntimeGetPropertiesResult)!.Result;
+        Assert.AreEqual(2, properties.Length);
+        Assert.AreEqual("0", properties[0].Name);
+        Assert.AreEqual("sharedId:node-a", properties[0].Value!.ObjectId);
+        Assert.AreEqual("1", properties[1].Name);
+        Assert.AreEqual("sharedId:node-b", properties[1].Value!.ObjectId);
+    }
+
+    [TestMethod]
+    public void RuntimeGetProperties_Object_Entries_Become_Named_Properties()
+    {
+        var translation = GetTranslation("Runtime.getProperties");
+
+        var cdpResult = translation.TranslateResult(Parse("""
+            {"type":"success","result":{"type":"object","value":[["first",{"type":"string","value":"x"}]]}}
+            """));
+
+        var properties = JsonSerializer.Deserialize(cdpResult, CdpJsonContext.Default.RuntimeGetPropertiesResult)!.Result;
+        Assert.AreEqual(1, properties.Length);
+        Assert.AreEqual("first", properties[0].Name);
+        Assert.AreEqual("x", properties[0].Value!.Value!.Value.GetString());
+    }
+
+    [TestMethod]
+    public void DomSetFileInputFiles_Names_The_Input_By_SharedId()
+    {
+        var translation = GetTranslation("DOM.setFileInputFiles");
+        Assert.AreEqual("input.setFiles", translation.BiDiMethod);
+
+        var bidiParams = translation.TranslateParams(
+            Parse("""{"files":["/tmp/a.txt"],"objectId":"sharedId:input-1"}"""), "ctx-1");
+
+        Assert.AreEqual("ctx-1", bidiParams.GetProperty("context").GetString());
+        Assert.AreEqual("""{"sharedId":"input-1"}""", bidiParams.GetProperty("element").GetRawText());
+        Assert.AreEqual("/tmp/a.txt", bidiParams.GetProperty("files")[0].GetString());
+    }
+
+    [TestMethod]
     public void RuntimeReleaseObject_Is_NoOp()
     {
         var translation = GetTranslation("Runtime.releaseObject");

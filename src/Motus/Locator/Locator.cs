@@ -58,6 +58,13 @@ internal sealed class Locator : ILocator
     // The frame this locator resolves against, falling back to the page's main frame.
     private IFrame ResolutionFrame => _frameRoot ?? _page.GetFrameForSelectors();
 
+    // Whether the locator is rooted at a frame inside the page, rather than at the page or its main
+    // frame. Only such a frame has a viewport of its own, so only its elements need measuring in
+    // the page's coordinate space. A main-frame root is measured the way a page-level locator is,
+    // which also keeps it off the Chromium-only box model command.
+    private bool IsRootedInChildFrame =>
+        _frameRoot is not null && !ReferenceEquals(_frameRoot, _page.GetFrameForSelectors());
+
     // The session that owns this locator's frame. Always the page session while every frame
     // renders in the page's process, but looked up so that stops being an assumption.
     private IMotusSession Session => _page.SessionFor(_frameRoot);
@@ -119,6 +126,10 @@ internal sealed class Locator : ILocator
 
     private async Task<AccessibilityAXNodeSimple?> QuerySingleAXNodeAsync(CancellationToken ct)
     {
+        // Checked before resolving, so an element that has not rendered yet does not hold the
+        // assertion polling until its timeout for an answer it could never give.
+        CapabilityGuard.RequireAccessibilityTree(Session, "ToHaveAccessibleNameAsync and ToHaveRoleAsync");
+
         var objectId = await ResolveObjectIdCoreAsync(ct).ConfigureAwait(false);
 
         if (!_accessibilityEnabled)
@@ -493,7 +504,7 @@ internal sealed class Locator : ILocator
         // and touch input is dispatched in the page's coordinate space. Reading the rect through
         // the element would aim input at the frame's offset rather than the element, so a
         // frame-rooted locator measures with the box model, which is reported against the page.
-        if (_frameRoot is not null)
+        if (IsRootedInChildFrame)
         {
             var pageBox = await GetPageRelativeBoxAsync(objectId, ct).ConfigureAwait(false);
             if (pageBox is not null)
@@ -701,7 +712,7 @@ internal sealed class Locator : ILocator
     private async Task<bool> ScrollIntoViewAsync(string objectId, CancellationToken ct)
     {
         var scrolled = await ActionabilityChecker.ScrollIntoViewIfNeededAsync(Session, objectId, ct).ConfigureAwait(false);
-        if (_frameRoot is null)
+        if (!IsRootedInChildFrame)
             return true;
 
         var box = await GetPageRelativeBoxAsync(objectId, ct).ConfigureAwait(false);
@@ -1182,7 +1193,7 @@ internal sealed class Locator : ILocator
         // Reported in the page's coordinate space, the same space input is dispatched in, so a box
         // read here can be handed straight to the mouse. Measuring through the element instead
         // would answer in the frame's own space and quietly disagree with where a click lands.
-        if (_frameRoot is not null)
+        if (IsRootedInChildFrame)
         {
             var pageBox = await GetPageRelativeBoxAsync(objectId, cts.Token).ConfigureAwait(false);
             if (pageBox is not null)

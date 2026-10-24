@@ -68,6 +68,24 @@ internal static class CapabilityGuard
         }
     }
 
+    /// <summary>
+    /// Fails unless the session can read the browser's accessibility tree, saying which feature
+    /// needed it and that only a Chromium-based browser has one to read.
+    /// </summary>
+    /// <param name="session">The session the feature would read the tree through.</param>
+    /// <param name="featureName">What needed the tree, written as the subject of "read".</param>
+    /// <param name="alternative">What to use instead, as a sentence, or null.</param>
+    internal static void RequireAccessibilityTree(
+        IMotusSession session, string featureName, string? alternative = null)
+    {
+        if ((session.Capabilities & MotusCapabilities.AccessibilityTree) != 0)
+            return;
+
+        var message = $"{featureName} read the browser's accessibility tree, which only Chromium-based " +
+                      $"browsers expose, and this browser is driven over {GetTransportDescription(session)}.";
+        throw new NotSupportedException(alternative is null ? message : message + " " + alternative);
+    }
+
     internal static string GetTransportDescription(IMotusTransport transport) => transport switch
     {
         CdpTransport => "Chrome/CDP",

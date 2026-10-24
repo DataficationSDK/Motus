@@ -173,7 +173,7 @@ public class FirefoxIntegrationTests
     /// <summary>
     /// Pointer actions scroll their target into view with a script that runs in the page rather
     /// than with a Chromium-only command, so the script has to behave the same under Firefox. It is
-    /// run directly here because locator resolution is not yet translated for WebDriver BiDi.
+    /// run directly here so the scroll decisions can be checked one at a time.
     /// </summary>
     [TestMethod]
     public async Task Firefox_ScrollIntoViewScript_ScrollsOnlyWhenNeeded()

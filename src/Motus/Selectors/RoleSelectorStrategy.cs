@@ -28,8 +28,8 @@ internal sealed class RoleSelectorStrategy : ISelectorStrategy
     {
         var page = SelectorStrategyHelpers.GetPage(frame);
         var session = page.SessionFor(frame);
-        CapabilityGuard.Require(session.Capabilities, MotusCapabilities.AccessibilityTree,
-            "Role selector (Accessibility.queryAXTree)", CapabilityGuard.GetTransportDescription(session));
+        CapabilityGuard.RequireAccessibilityTree(session, "GetByRole and role= selectors",
+            "Match by label, text, test id or CSS selector instead.");
 
         var (role, name) = ParseRoleSelector(selector);
 

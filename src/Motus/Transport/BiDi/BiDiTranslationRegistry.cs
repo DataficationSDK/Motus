@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 
 namespace Motus;
@@ -48,12 +49,14 @@ internal static class BiDiTranslationRegistry
             // Script
             new RuntimeEvaluateTranslation(),
             new RuntimeCallFunctionOnTranslation(),
+            new RuntimeGetPropertiesTranslation(),
             new RuntimeReleaseObjectTranslation(),
 
             // Input
             new InputDispatchKeyEventTranslation(),
             new InputDispatchMouseEventTranslation(),
             new InputDispatchTouchEventTranslation(),
+            new DomSetFileInputFilesTranslation(),
 
             // Network
             new FetchEnableTranslation(),
@@ -459,6 +462,11 @@ internal sealed class RuntimeEvaluateTranslation : IBiDiTranslation
 /// CDP params: { functionDeclaration, objectId?, arguments?, returnByValue?, awaitPromise? }
 /// CDP result: { result: RuntimeRemoteObject, exceptionDetails? }
 /// </summary>
+/// <remarks>
+/// The object id becomes <c>this</c> and each argument a local value, both as
+/// <see cref="BiDiScriptValues"/> describes. Every argument is passed on, an empty one as
+/// <c>undefined</c>, so the ones after it keep their positions.
+/// </remarks>
 internal sealed class RuntimeCallFunctionOnTranslation : IBiDiTranslation
 {
     public string CdpMethod => "Runtime.callFunctionOn";
@@ -470,33 +478,18 @@ internal sealed class RuntimeCallFunctionOnTranslation : IBiDiTranslation
         var awaitPromise = cdpParams.GetBoolOrDefault("awaitPromise", false);
         var returnByValue = cdpParams.GetBoolOrDefault("returnByValue", false);
 
-        // Build BiDi arguments from CDP arguments
-        BiDiScriptLocalValue[]? bidiArgs = null;
+        JsonElement[]? bidiArgs = null;
         if (cdpParams.TryGetProperty("arguments", out var args) &&
-            args.ValueKind == JsonValueKind.Array)
+            args.ValueKind == JsonValueKind.Array &&
+            args.GetArrayLength() > 0)
         {
-            var list = new List<BiDiScriptLocalValue>();
-            foreach (var arg in args.EnumerateArray())
-            {
-                if (arg.TryGetProperty("value", out var val))
-                {
-                    list.Add(new BiDiScriptLocalValue(
-                        Type: MapValueKindToType(val.ValueKind),
-                        Value: val));
-                }
-            }
-            bidiArgs = list.Count > 0 ? list.ToArray() : null;
+            bidiArgs = args.EnumerateArray().Select(BiDiScriptValues.ToLocalValue).ToArray();
         }
 
-        // Map objectId to a "this" reference
-        BiDiScriptLocalValue? thisRef = null;
         var objectId = cdpParams.GetStringOrNull("objectId");
-        if (objectId is not null)
-        {
-            thisRef = new BiDiScriptLocalValue(
-                Type: "handle",
-                Value: JsonSerializer.SerializeToElement(objectId));
-        }
+        JsonElement? thisRef = objectId is not null
+            ? BiDiScriptValues.ToRemoteReference(objectId)
+            : null;
 
         return JsonSerializer.SerializeToElement(
             new BiDiScriptCallFunctionParams(
@@ -511,17 +504,83 @@ internal sealed class RuntimeCallFunctionOnTranslation : IBiDiTranslation
 
     public JsonElement TranslateResult(JsonElement bidiResult)
         => ScriptResultTranslator.ToCdpResult(bidiResult);
+}
 
-    private static string MapValueKindToType(JsonValueKind kind) => kind switch
+/// <summary>
+/// Runtime.getProperties -> script.callFunction
+/// CDP params: { objectId, ownProperties? }
+/// CDP result: { result: [{ name, value: RuntimeRemoteObject }] }
+/// </summary>
+/// <remarks>
+/// BiDi has no command that lists an object's properties, but serializing an array or an object
+/// carries its contents, and every node among them carries the shared id that names it. So the
+/// object is handed back to itself as <c>this</c> and returned, one level deep, and each element
+/// or entry becomes a property. That is enough for what the engine reads properties for: the
+/// elements of an array of matches. Only nodes and primitives come back usable; any other object
+/// among the contents has its serialized value but no object id, since BiDi gives a handle only to
+/// the value a call returns.
+/// </remarks>
+internal sealed class RuntimeGetPropertiesTranslation : IBiDiTranslation
+{
+    public string CdpMethod => "Runtime.getProperties";
+    public string BiDiMethod => "script.callFunction";
+
+    public JsonElement TranslateParams(JsonElement cdpParams, string? contextId)
     {
-        JsonValueKind.String => "string",
-        JsonValueKind.Number => "number",
-        JsonValueKind.True or JsonValueKind.False => "boolean",
-        JsonValueKind.Null => "null",
-        JsonValueKind.Array => "array",
-        JsonValueKind.Object => "object",
-        _ => "undefined"
-    };
+        var objectId = cdpParams.GetStringOrNull("objectId") ?? string.Empty;
+
+        return JsonSerializer.SerializeToElement(
+            new BiDiScriptCallFunctionParams(
+                FunctionDeclaration: "function() { return this; }",
+                AwaitPromise: false,
+                Target: new BiDiScriptTarget(Context: contextId ?? string.Empty),
+                ResultOwnership: "none",
+                This: BiDiScriptValues.ToRemoteReference(objectId),
+                SerializationOptions: new BiDiScriptSerializationOptions(MaxObjectDepth: 1)),
+            BiDiJsonContext.Default.BiDiScriptCallFunctionParams);
+    }
+
+    public JsonElement TranslateResult(JsonElement bidiResult)
+    {
+        if (bidiResult.GetStringOrNull("type") == "exception")
+        {
+            var text = bidiResult.TryGetProperty("exceptionDetails", out var details)
+                ? details.GetStringOrNull("text")
+                : null;
+            throw new BiDiProtocolException($"Reading the object's properties failed: {text ?? "Evaluation failed"}");
+        }
+
+        var properties = new List<object>();
+        if (bidiResult.TryGetProperty("result", out var remoteValue) &&
+            remoteValue.TryGetProperty("value", out var contents) &&
+            contents.ValueKind == JsonValueKind.Array)
+        {
+            var isArray = remoteValue.GetStringOrNull("type") is "array" or "nodelist" or "htmlcollection";
+            var index = 0;
+            foreach (var item in contents.EnumerateArray())
+            {
+                if (isArray)
+                {
+                    properties.Add(new
+                    {
+                        name = (index++).ToString(CultureInfo.InvariantCulture),
+                        value = BiDiScriptValues.ToCdpRemoteObject(item)
+                    });
+                }
+                else if (item.ValueKind == JsonValueKind.Array && item.GetArrayLength() == 2 &&
+                         item[0].ValueKind == JsonValueKind.String)
+                {
+                    properties.Add(new
+                    {
+                        name = item[0].GetString(),
+                        value = BiDiScriptValues.ToCdpRemoteObject(item[1])
+                    });
+                }
+            }
+        }
+
+        return JsonBuilder.FromObject(new { result = properties });
+    }
 }
 
 /// <summary>
@@ -546,7 +605,7 @@ internal static class ScriptResultTranslator
 {
     internal static JsonElement ToCdpResult(JsonElement bidiResult)
     {
-        // BiDi result: { type: "success"|"exception", result?: { type, value?, handle? }, exceptionDetails? }
+        // BiDi result: { type: "success"|"exception", result?: RemoteValue, exceptionDetails? }
         var resultType = bidiResult.GetStringOrNull("type") ?? "success";
 
         if (resultType == "exception")
@@ -565,59 +624,11 @@ internal static class ScriptResultTranslator
             });
         }
 
-        // Success path
         if (bidiResult.TryGetProperty("result", out var remoteValue))
-        {
-            var type = remoteValue.GetStringOrNull("type") ?? "undefined";
-            var handle = remoteValue.GetStringOrNull("handle");
-
-            // Map BiDi type to CDP type
-            var (cdpType, cdpSubtype) = MapBiDiTypeToCdp(type);
-
-            if (remoteValue.TryGetProperty("value", out var value))
-            {
-                return JsonBuilder.FromObject(new
-                {
-                    result = new
-                    {
-                        type = cdpType,
-                        subtype = cdpSubtype,
-                        value = (object?)value,
-                        objectId = handle
-                    }
-                });
-            }
-
-            return JsonBuilder.FromObject(new
-            {
-                result = new
-                {
-                    type = cdpType,
-                    subtype = cdpSubtype,
-                    objectId = handle
-                }
-            });
-        }
+            return JsonBuilder.FromObject(new { result = BiDiScriptValues.ToCdpRemoteObject(remoteValue) });
 
         return JsonBuilder.FromObject(new { result = new { type = "undefined" } });
     }
-
-    private static (string type, string? subtype) MapBiDiTypeToCdp(string biDiType) => biDiType switch
-    {
-        "string" => ("string", null),
-        "number" => ("number", null),
-        "boolean" => ("boolean", null),
-        "null" => ("object", "null"),
-        "undefined" => ("undefined", null),
-        "array" => ("object", "array"),
-        "node" => ("object", "node"),
-        "regexp" => ("object", "regexp"),
-        "date" => ("object", "date"),
-        "map" => ("object", "map"),
-        "set" => ("object", "set"),
-        "object" => ("object", null),
-        _ => ("object", null)
-    };
 }
 
 // ──────────────────────────────────────────────
@@ -811,6 +822,43 @@ internal sealed class InputDispatchTouchEventTranslation : IBiDiTranslation
                         Parameters: new BiDiInputSourceParameters(PointerType: "touch"))
                 ]),
             BiDiJsonContext.Default.BiDiInputPerformActionsParams);
+    }
+
+    public JsonElement TranslateResult(JsonElement bidiResult)
+        => JsonBuilder.Empty();
+}
+
+/// <summary>
+/// DOM.setFileInputFiles -> input.setFiles
+/// CDP params: { files, objectId }
+/// BiDi params: { context, element: { sharedId }, files }
+/// </summary>
+/// <remarks>
+/// BiDi names the input by its shared id, which every element a locator or a query hands out
+/// carries. An input reached any other way has no shared id to send.
+/// </remarks>
+internal sealed class DomSetFileInputFilesTranslation : IBiDiTranslation
+{
+    public string CdpMethod => "DOM.setFileInputFiles";
+    public string BiDiMethod => "input.setFiles";
+
+    public JsonElement TranslateParams(JsonElement cdpParams, string? contextId)
+    {
+        var objectId = cdpParams.GetStringOrNull("objectId");
+        var sharedId = objectId is null ? null : BiDiScriptValues.SharedIdOf(objectId);
+        if (sharedId is null)
+            throw new BiDiProtocolException("Setting input files needs the input element, and none was given.");
+
+        var files = cdpParams.TryGetProperty("files", out var list) && list.ValueKind == JsonValueKind.Array
+            ? list.EnumerateArray().Select(f => f.GetString() ?? string.Empty).ToArray()
+            : [];
+
+        return JsonSerializer.SerializeToElement(
+            new BiDiInputSetFilesParams(
+                Context: contextId ?? string.Empty,
+                Element: BiDiScriptValues.ToRemoteReference(objectId!),
+                Files: files),
+            BiDiJsonContext.Default.BiDiInputSetFilesParams);
     }
 
     public JsonElement TranslateResult(JsonElement bidiResult)

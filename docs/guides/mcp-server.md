@@ -309,7 +309,7 @@ An agent can also attach at any point with `browser_attach`, which is what to re
 motus mcp --allow-attach
 ```
 
-Attaching speaks the Chrome DevTools Protocol, so the browser at the other end is a Chromium-based one; Firefox is driven only by a session the server starts, with `--channel firefox`. Snapshot refs are unavailable in a Firefox session either way, because the accessibility tree they are built from is read over that same protocol: the `snapshot` tool says so rather than describing the page, and the coordinate tools take over from there with `--caps coordinates`.
+Attaching speaks the Chrome DevTools Protocol, so the browser at the other end is a Chromium-based one; Firefox is driven only by a session the server starts, with `--channel firefox`. Snapshot refs are unavailable in a Firefox session either way, because the accessibility tree they are built from is read over that same protocol: the `snapshot` tool says so rather than describing the page. A selector still reaches an element anywhere a ref is accepted, except a `role=` selector, which reads that same tree, and the coordinate tools take over from there with `--caps coordinates`.
 
 Three consequences are worth knowing:
 
@@ -429,7 +429,7 @@ navigate(url: "https://example.com/status", snapshot: true)
 |---|---|---|
 | `--connect` | _(none)_ | Drive a browser that is already running instead of starting one. Takes the debugging endpoint it was started with (`http://127.0.0.1:9222`) or its CDP WebSocket URL. The browser is never closed by the server, and the options that describe starting one no longer apply. |
 | `--headless` | `true` | Run the browser without a visible window. Pass `--headless false` to watch the agent drive a real window. |
-| `--channel` | `chromium` | Browser to drive: `chromium`, `chrome`, `edge`, or `firefox`. A channel named here has to be installed: the server stops with an error rather than starting a different browser in its place. Snapshot refs need a Chromium-based browser, because the accessibility tree they are built from is read over the Chrome DevTools Protocol; on Firefox the `snapshot` tool says so rather than describing the page, and the coordinate tools still work against a screenshot, which makes `--caps coordinates` worth adding for a Firefox session. |
+| `--channel` | `chromium` | Browser to drive: `chromium`, `chrome`, `edge`, or `firefox`. A channel named here has to be installed: the server stops with an error rather than starting a different browser in its place. Snapshot refs need a Chromium-based browser, because the accessibility tree they are built from is read over the Chrome DevTools Protocol; on Firefox the `snapshot` tool says so rather than describing the page, selectors other than `role=` still work in place of refs, and the coordinate tools still work against a screenshot, which makes `--caps coordinates` worth adding for a Firefox session. |
 | `--executable-path` | _(none)_ | Start this browser binary instead of resolving one from `--channel`. Pins a session to an exact build, and is the way past a channel the server cannot find. |
 | `--browser-arg` | _(none)_ | An extra command-line argument for the browser. Attach the value with `=`, and repeat the flag for more than one: `--browser-arg=--no-sandbox --browser-arg=--disable-dev-shm-usage`. Chromium refuses to start as root, so a container usually needs `--no-sandbox`. |
 | `--user-data-dir` | _(none)_ | Browser profile directory. Cookies, history, and signed-in sessions persist in it between runs instead of every session starting clean. |
