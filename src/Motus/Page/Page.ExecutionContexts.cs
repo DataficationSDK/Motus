@@ -180,6 +180,27 @@ internal sealed partial class Page
     }
 
     /// <summary>
+    /// Forgets every context reported over a session that has gone away.
+    /// </summary>
+    /// <remarks>
+    /// Only contexts that session reported are dropped, not every context of the frames it hosted.
+    /// A frame moving back into its parent's process has its new context reported by the parent's
+    /// session, and that can be recorded before the old target's departure is handled. Dropping it
+    /// then would leave the frame waiting for a context that has already arrived.
+    /// </remarks>
+    private void ForgetExecutionContextsFrom(string? sessionId)
+    {
+        if (sessionId is null)
+            return;
+
+        foreach (var (frameId, context) in _frameIdToExecutionContext)
+        {
+            if (context.Session.SessionId == sessionId)
+                _frameIdToExecutionContext.TryRemove(new KeyValuePair<string, FrameExecutionContext>(frameId, context));
+        }
+    }
+
+    /// <summary>
     /// Drops the frame's isolated world when it is the one with the given id, so the next ask makes
     /// a fresh one rather than handing back a world the browser has torn down.
     /// </summary>

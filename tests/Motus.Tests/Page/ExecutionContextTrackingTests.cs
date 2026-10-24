@@ -337,6 +337,33 @@ public class ExecutionContextTrackingTests
         Assert.AreEqual(5, last.ContextId, "the frame's own process still holds its context");
     }
 
+    [TestMethod]
+    public async Task FrameReturningToThePageProcess_KeepsTheContextItReportedThere()
+    {
+        var page = await _browser.NewPageAsync();
+        ContextCreated(5, "frame-main");
+        AdoptOutOfProcessFrame();
+        await Settle(250);
+        ContextCreated(5, "frame-oop", sessionId: "session-2");
+        await Settle();
+
+        // The frame navigates back to its parent's origin. The page's process reports the new
+        // document's context, and the frame's own target goes away. The two travel separately, so
+        // the context can be recorded before the target's departure is handled, and the departure
+        // must not take the new context with it.
+        ContextCreated(20, "frame-oop");
+        await Settle();
+        TargetDetached("session-2");
+        await Settle();
+
+        var oop = Frame(page, "frame-oop");
+        Assert.AreEqual(2, await oop.EvaluateAsync<int>("1 + 1").WaitAsync(TimeSpan.FromSeconds(5)));
+
+        var last = LastEvaluation();
+        Assert.AreEqual("session-1", last.SessionId);
+        Assert.AreEqual(20, last.ContextId, "the context the page's process reported for the frame");
+    }
+
     private (string? SessionId, int? ContextId) LastEvaluation()
     {
         Assert.IsTrue(_evaluations.Count > 0, "no Runtime.evaluate was sent");
@@ -397,6 +424,15 @@ public class ExecutionContextTrackingTests
                 "method": "Page.frameDetached",
                 "sessionId": "session-1",
                 "params": { "frameId": "{{frameId}}" }
+            }
+            """);
+
+    private void TargetDetached(string sessionId)
+        => _socket.Enqueue($$"""
+            {
+                "method": "Target.detachedFromTarget",
+                "sessionId": "session-1",
+                "params": { "sessionId": "{{sessionId}}" }
             }
             """);
 

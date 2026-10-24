@@ -315,6 +315,57 @@ public class OutOfProcessFrameTests
         return (width, height);
     }
 
+    /// <summary>
+    /// A frame that leaves its own process for its parent's is the same frame, and evaluating in it
+    /// once it gets there has to reach the document it now holds.
+    /// </summary>
+    /// <remarks>
+    /// The page's process reports the frame's new context and the frame's old target goes away,
+    /// and those two arrive separately. Handling the departure second must not forget the context
+    /// the page's process has just reported, or the next evaluation waits for one that has already
+    /// come. A few round trips give both orders a chance to happen.
+    /// </remarks>
+    [TestMethod]
+    public async Task CrossOriginFrame_MovingIntoItsParentsProcess_StillEvaluates()
+    {
+        var middle = await FrameAsync("middle");
+        var page = (Motus.Page)_page!;
+
+        for (var i = 0; i < 4; i++)
+        {
+            await _page!.EvaluateAsync<object?>(
+                $"document.getElementById('remote').src = '{_server.PrimaryOrigin}/deep.html?i={i}'");
+            await WaitUntilAsync(
+                () => middle.Url.Contains($"/deep.html?i={i}", StringComparison.Ordinal) && !page.HasOwnSession(middle),
+                "the frame never moved into its parent's process");
+
+            Assert.AreEqual(
+                "deep",
+                await middle.EvaluateAsync<string>("window.marker").WaitAsync(TimeSpan.FromSeconds(10)),
+                $"round trip {i}");
+
+            await _page.EvaluateAsync<object?>(
+                $"document.getElementById('remote').src = '{_server.SecondaryOrigin}/middle.html?i={i}'");
+            await WaitUntilAsync(
+                () => middle.Url.Contains($"/middle.html?i={i}", StringComparison.Ordinal) && page.HasOwnSession(middle),
+                "the frame never moved back into a process of its own");
+
+            Assert.AreEqual(
+                "middle",
+                await middle.EvaluateAsync<string>("window.marker").WaitAsync(TimeSpan.FromSeconds(10)),
+                $"round trip {i}");
+        }
+
+        static async Task WaitUntilAsync(Func<bool> condition, string message)
+        {
+            var deadline = DateTime.UtcNow.AddSeconds(10);
+            while (!condition() && DateTime.UtcNow < deadline)
+                await Task.Delay(50);
+
+            Assert.IsTrue(condition(), message);
+        }
+    }
+
     [TestMethod]
     public async Task DetachingAFrame_LeavesItsHandleReportingDetached()
     {
