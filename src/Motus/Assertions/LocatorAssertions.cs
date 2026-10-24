@@ -7,14 +7,29 @@ namespace Motus.Assertions;
 /// Assertions about a single locator, obtained from <see cref="Expect.That(ILocator)"/>.
 /// </summary>
 /// <remarks>
+/// <para>
 /// Every assertion here re-evaluates its condition until it holds or the timeout elapses, so a
-/// value the page has not settled on yet is waited for rather than failed on, which makes an
-/// assertion after a navigation or an interaction safe. The element itself is a separate question:
-/// these need it present already and fail at once when the locator matches nothing, rather than
-/// waiting for it to appear, so wait for one that has still to render with
-/// <c>ToBeAttachedAsync</c> first.
+/// value the page has not settled on yet is waited for rather than failed on, and so is an element
+/// that has not rendered yet. An assertion straight after a navigation, a form submit, or a click
+/// that loads new content needs no wait in front of it.
+/// </para>
+/// <para>
+/// A locator that matches nothing means one of two things, depending on the assertion. For
+/// <see cref="ToBeVisibleAsync"/>, <see cref="ToBeHiddenAsync"/>, <see cref="ToBeAttachedAsync"/>,
+/// <see cref="ToBeDetachedAsync"/>, and <see cref="ToHaveCountAsync"/> absence is an answer (not
+/// visible, hidden, not attached, detached, a count of zero), and <see cref="Not"/> inverts that
+/// answer as usual. So <c>ToBeHiddenAsync</c> and
+/// <c>Not.ToBeVisibleAsync</c> pass at once when nothing matches. For every other assertion
+/// absence is no answer at all: an element that is not there has no text, value, or state to
+/// compare, so the assertion and its negated form both keep waiting for the element, and fail
+/// at the timeout reporting <c>&lt;element not found&gt;</c> as what was received. To assert
+/// that an element is gone, use <see cref="ToBeDetachedAsync"/> or <see cref="ToBeHiddenAsync"/>
+/// rather than negating a text or state assertion.
+/// </para>
+/// <para>
 /// The timeout and the message on failure come from the <see cref="AssertionOptions"/> each method
 /// accepts.
+/// </para>
 /// </remarks>
 public sealed class LocatorAssertions
 {
@@ -32,36 +47,67 @@ public sealed class LocatorAssertions
     /// </summary>
     /// <remarks>
     /// The retry still applies, inverted with it: a negated assertion waits for the condition to
-    /// stop holding rather than passing the moment it does not hold yet.
+    /// stop holding rather than passing the moment it does not hold yet. A locator that matches
+    /// nothing passes a negated assertion only where absence answers the question, as with
+    /// <c>Not.ToBeVisibleAsync</c>; see the class remarks for which assertions those are.
     /// </remarks>
     public LocatorAssertions Not => new(_locator, !_negate);
 
+    // What a failure message reports as received when the locator matched nothing.
+    private const string ElementNotFound = "<element not found>";
+
+    // whenAbsent says what a locator that matches nothing means for this assertion. A value is an
+    // answer: the condition holds (true) or does not (false), and negation inverts it as usual.
+    // Null means absence answers nothing, so the poll is not satisfied whichever way round the
+    // assertion is, and the retry waits for the element to appear.
     private Task RetryAsync(
         Func<CancellationToken, Task<(bool, string)>> condition,
-        string name, string expected, AssertionOptions? options) =>
+        string name, string expected, AssertionOptions? options, bool? whenAbsent = null) =>
         AssertionRetryHelper.RetryUntilAsync(
-            condition, _negate, name, expected,
+            async ct =>
+            {
+                try
+                {
+                    return await condition(ct).ConfigureAwait(false);
+                }
+                catch (ElementNotFoundException)
+                {
+                    // Reporting the assertion's own polarity as the result makes the helper's
+                    // negation come out unsatisfied for both forms, which is how "no answer" is
+                    // expressed through a pass/fail result.
+                    return (whenAbsent ?? _negate, ElementNotFound);
+                }
+            },
+            _negate, name, expected,
             _locator.Selector, _locator.ContextUrl,
             AssertionRetryHelper.ResolveTimeout(options?.Timeout),
             options?.Message, CancellationToken.None);
 
     /// <summary>Asserts that the element is present in the DOM and visible on the page.</summary>
     /// <param name="options">Timeout and failure message overrides.</param>
+    /// <remarks>
+    /// A locator that matches nothing is not visible, so this waits for the element to appear and
+    /// <c>Not.ToBeVisibleAsync</c> passes at once.
+    /// </remarks>
     public Task ToBeVisibleAsync(AssertionOptions? options = null) =>
         RetryAsync(async ct =>
         {
-            var visible = await _locator.IsVisibleAsync().ConfigureAwait(false);
+            var visible = await _locator.IsVisibleCoreAsync().ConfigureAwait(false);
             return (visible, visible.ToString());
-        }, "ToBeVisible", "visible", options);
+        }, "ToBeVisible", "visible", options, whenAbsent: false);
 
     /// <summary>Asserts that the element is absent from the DOM or not visible on the page.</summary>
     /// <param name="options">Timeout and failure message overrides.</param>
+    /// <remarks>
+    /// A locator that matches nothing is hidden, so this passes at once and
+    /// <c>Not.ToBeHiddenAsync</c> waits for the element to appear and become visible.
+    /// </remarks>
     public Task ToBeHiddenAsync(AssertionOptions? options = null) =>
         RetryAsync(async ct =>
         {
-            var hidden = await _locator.IsHiddenAsync().ConfigureAwait(false);
+            var hidden = !await _locator.IsVisibleCoreAsync().ConfigureAwait(false);
             return (hidden, hidden.ToString());
-        }, "ToBeHidden", "hidden", options);
+        }, "ToBeHidden", "hidden", options, whenAbsent: true);
 
     /// <summary>Asserts that the element accepts interaction rather than being disabled.</summary>
     /// <param name="options">Timeout and failure message overrides.</param>
@@ -223,6 +269,10 @@ public sealed class LocatorAssertions
     /// <summary>Asserts that the locator matches exactly the expected number of elements.</summary>
     /// <param name="expected">The number of matches required.</param>
     /// <param name="options">Timeout and failure message overrides.</param>
+    /// <remarks>
+    /// A locator that matches nothing has a count of zero, so <c>ToHaveCountAsync(0)</c> passes
+    /// when nothing matches.
+    /// </remarks>
     public Task ToHaveCountAsync(int expected, AssertionOptions? options = null) =>
         RetryAsync(async ct =>
         {

@@ -170,6 +170,36 @@ public class OutOfProcessFrameTests
     }
 
     /// <summary>
+    /// A frame from another origin hides its host element from the document inside it, so the
+    /// frame cannot tell from the inside that the page has it scrolled out of view. The click has
+    /// to land anyway.
+    /// </summary>
+    [TestMethod]
+    public async Task Click_InACrossOriginFrameBelowTheFold_ScrollsThePageToIt()
+    {
+        var middle = await FrameAsync("middle");
+        await _page!.EvaluateAsync<object?>("document.getElementById('spacer').style.height = '3000px'");
+
+        await middle.Locator("#target").ClickAsync(5000);
+
+        Assert.AreEqual(1, await middle.EvaluateAsync<int>("window.clicks"));
+        Assert.IsTrue(await _page.EvaluateAsync<double>("window.scrollY") > 0,
+            "The page was never scrolled to the frame.");
+    }
+
+    [TestMethod]
+    public async Task Click_InANestedCrossOriginFrameBelowTheFold_ScrollsThePageToIt()
+    {
+        var middle = await FrameAsync("middle");
+        var deep = middle.ChildFrames.Single(f => f.Url.EndsWith("/deep.html", StringComparison.Ordinal));
+        await _page!.EvaluateAsync<object?>("document.getElementById('spacer').style.height = '3000px'");
+
+        await deep.Locator("#target").ClickAsync(5000);
+
+        Assert.AreEqual(1, await deep.EvaluateAsync<int>("window.clicks"));
+    }
+
+    /// <summary>
     /// A renderer measures against its own root, so an element inside a frame with its own process
     /// reports coordinates the page knows nothing about. The click test above catches that as a
     /// miss; this one says by how much and in which direction.

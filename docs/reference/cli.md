@@ -139,7 +139,7 @@ motus install --revision 1421000
 | `--revision` | latest | Install one exact revision instead of resolving the current one. |
 | `--path` | default cache | Override the browser cache directory. |
 
-Pinning a revision is what makes a CI run reproducible when the stable channel moves. The command prints the path it installed to, which is the value to hand to `launch.executablePath` or `MOTUS_EXECUTABLE_PATH`. See [Browser Lifecycle](../architecture/browser-lifecycle.md).
+Pinning a revision is what makes a CI run reproducible when the stable channel moves. A launch that names no browser, or names `chromium`, uses the browser installed into the default cache, ahead of one installed on the machine. The command also prints the path it installed to, which is the value to hand to `launch.executablePath` or `MOTUS_EXECUTABLE_PATH` to name it explicitly, and which a download made with `--path` needs. See [Browser Lifecycle](../architecture/browser-lifecycle.md).
 
 ---
 

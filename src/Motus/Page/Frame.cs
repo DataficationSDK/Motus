@@ -92,27 +92,25 @@ internal sealed class Frame : IFrame
         => new Locator(this, $"{BackendNodeIdSelectorStrategy.Prefix}={backendNodeId}");
 
     public ILocator GetByRole(string role, string? name = null)
-        => name is not null
-            ? new Locator(this, $"[role=\"{role}\"][aria-label=\"{name}\"]")
-            : new Locator(this, $"[role=\"{role}\"]");
+        => new Locator(this, GetBySelectors.Role(role, name));
 
     public ILocator GetByText(string text, bool? exact = null)
-        => new Locator(this, "*", new LocatorOptions { HasText = text });
+        => new Locator(this, GetBySelectors.Text(text, exact));
 
     public ILocator GetByLabel(string text, bool? exact = null)
-        => new Locator(this, $"[aria-label=\"{text}\"]");
+        => new Locator(this, GetBySelectors.Label(text, exact));
 
     public ILocator GetByPlaceholder(string text, bool? exact = null)
-        => new Locator(this, $"[placeholder=\"{text}\"]");
+        => new Locator(this, GetBySelectors.Placeholder(text, exact));
 
     public ILocator GetByTestId(string testId)
-        => new Locator(this, $"[data-testid=\"{testId}\"]");
+        => new Locator(this, GetBySelectors.TestId(testId));
 
     public ILocator GetByTitle(string text, bool? exact = null)
-        => new Locator(this, $"[title=\"{text}\"]");
+        => new Locator(this, GetBySelectors.Title(text, exact));
 
     public ILocator GetByAltText(string text, bool? exact = null)
-        => new Locator(this, $"[alt=\"{text}\"]");
+        => new Locator(this, GetBySelectors.AltText(text, exact));
 
     public Task<IElementHandle> AddScriptTagAsync(string? url = null, string? content = null)
         => _page.AddScriptTagAsync(url, content, this);

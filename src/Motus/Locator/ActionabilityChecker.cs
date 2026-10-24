@@ -12,6 +12,10 @@ internal enum ActionabilityFlags
     Stable         = 1 << 2,
     ReceivesEvents = 1 << 3,
     Editable       = 1 << 4,
+
+    // Not a check that can fail: brings the element into view before the stability and hit tests,
+    // which can only pass for an element the pointer can actually reach.
+    ScrollIntoView = 1 << 5,
 }
 
 internal static class ActionabilityChecker
@@ -23,6 +27,9 @@ internal static class ActionabilityChecker
     /// The session matters: a remote object id is only meaningful on the session that produced it,
     /// so an element inside a frame with a process of its own has to be checked over that frame's
     /// session. The page is still needed, but only to name the page in a timeout message.
+    /// <paramref name="scrollIntoView"/> replaces the in-page scroll for a caller that knows more
+    /// about where the element sits than the element's own document does. It answers whether the
+    /// element is in view now, and the pass is retried while it is not.
     /// </remarks>
     internal static async Task<string> WaitForActionabilityAsync(
         Page page,
@@ -30,7 +37,8 @@ internal static class ActionabilityChecker
         Func<CancellationToken, Task<string>> resolveObjectId,
         ActionabilityFlags flags,
         string selector,
-        CancellationToken ct)
+        CancellationToken ct,
+        Func<string, CancellationToken, Task<bool>>? scrollIntoView = null)
     {
         string lastCheckName = "resolve";
         string? lastCheckDetail = null;
@@ -85,6 +93,24 @@ internal static class ActionabilityChecker
                         lastCheckDetail = "element was found but is not editable";
                         await Task.Delay(PollingIntervalMs, ct).ConfigureAwait(false);
                         continue;
+                    }
+
+                    // Scrolled on every pass rather than once up front, because the layout can move
+                    // while an earlier check is waiting and take the element back out of view.
+                    lastCheckName = "scrollIntoView";
+                    lastCheckDetail = null;
+                    if (flags.HasFlag(ActionabilityFlags.ScrollIntoView))
+                    {
+                        if (scrollIntoView is null)
+                        {
+                            await ScrollIntoViewIfNeededAsync(session, objectId, ct).ConfigureAwait(false);
+                        }
+                        else if (!await scrollIntoView(objectId, ct).ConfigureAwait(false))
+                        {
+                            lastCheckDetail = "element was scrolled toward the viewport but its center is still outside it";
+                            await Task.Delay(PollingIntervalMs, ct).ConfigureAwait(false);
+                            continue;
+                        }
                     }
 
                     lastCheckName = "stable";
@@ -173,6 +199,95 @@ internal static class ActionabilityChecker
             }
             """, ct).ConfigureAwait(false);
     }
+
+    /// <summary>
+    /// Scrolls the element into view unless it is already there. Returns whether it scrolled.
+    /// </summary>
+    /// <remarks>
+    /// Runs in the page rather than through <c>DOM.scrollIntoViewIfNeeded</c>, which only Chromium
+    /// has. "Already there" means wholly inside the viewport and inside every ancestor that clips
+    /// it, or, for an element too big to fit, centered inside them, since the center is where a
+    /// pointer action aims. An element that is already in view is left exactly where it is, so a
+    /// retried action does not make the page jump.
+    /// </remarks>
+    internal static async Task<bool> ScrollIntoViewIfNeededAsync(
+        IMotusSession session, string objectId, CancellationToken ct)
+    {
+        return await EvalBoolAsync(session, objectId, ScrollIntoViewIfNeededJs, ct).ConfigureAwait(false);
+    }
+
+    // Walks the element's clipping ancestors, crossing shadow roots, and then each frame it sits in
+    // for as long as the frame's host element can be reached from inside it. A frame from another
+    // origin hides its host, so the walk stops there and the caller has to look further itself.
+    // Scrolling is instant whatever the page's scroll-behavior says, so the stability check that
+    // follows measures the element where it settled rather than partway through an animation.
+    internal const string ScrollIntoViewIfNeededJs = """
+        function() {
+            if (!this.isConnected) return false;
+            function parentOf(node) {
+                if (node.assignedSlot) return node.assignedSlot;
+                if (node.parentElement) return node.parentElement;
+                var root = node.parentNode;
+                return root && root.host ? root.host : null;
+            }
+            function within(lo, hi, clipLo, clipHi) {
+                if (hi - lo <= clipHi - clipLo) return lo >= clipLo && hi <= clipHi;
+                var mid = (lo + hi) / 2;
+                return mid >= clipLo && mid <= clipHi;
+            }
+            function shown(box, clip) {
+                return within(box.left, box.right, clip.left, clip.right) &&
+                       within(box.top, box.bottom, clip.top, clip.bottom);
+            }
+            function inView(el) {
+                var r = el.getBoundingClientRect();
+                var box = { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
+                var node = el;
+                var win = el.ownerDocument.defaultView;
+                while (win) {
+                    var doc = win.document;
+                    var root = doc.documentElement;
+                    var rootStyle = win.getComputedStyle(root);
+                    var bodyIsViewport = rootStyle.overflowX === 'visible' && rootStyle.overflowY === 'visible';
+                    for (var p = parentOf(node); p; p = parentOf(p)) {
+                        if (p === root || (p === doc.body && bodyIsViewport)) continue;
+                        var s = win.getComputedStyle(p);
+                        var clipX = s.overflowX !== 'visible';
+                        var clipY = s.overflowY !== 'visible';
+                        if (!clipX && !clipY) continue;
+                        var pr = p.getBoundingClientRect();
+                        var left = pr.left + p.clientLeft;
+                        var top = pr.top + p.clientTop;
+                        var clip = {
+                            left: clipX ? left : -Infinity, right: clipX ? left + p.clientWidth : Infinity,
+                            top: clipY ? top : -Infinity, bottom: clipY ? top + p.clientHeight : Infinity
+                        };
+                        if (!shown(box, clip)) return false;
+                    }
+                    var vw = win.innerWidth, vh = win.innerHeight;
+                    if (doc.scrollingElement === root && root.clientWidth > 0 && root.clientHeight > 0) {
+                        vw = Math.min(vw, root.clientWidth);
+                        vh = Math.min(vh, root.clientHeight);
+                    }
+                    if (!shown(box, { left: 0, top: 0, right: vw, bottom: vh })) return false;
+                    var owner = null;
+                    try { owner = win.frameElement; } catch (e) { owner = null; }
+                    if (!owner) return true;
+                    var or = owner.getBoundingClientRect();
+                    var os = owner.ownerDocument.defaultView.getComputedStyle(owner);
+                    var dx = or.left + owner.clientLeft + (parseFloat(os.paddingLeft) || 0);
+                    var dy = or.top + owner.clientTop + (parseFloat(os.paddingTop) || 0);
+                    box = { left: box.left + dx, top: box.top + dy, right: box.right + dx, bottom: box.bottom + dy };
+                    node = owner;
+                    win = owner.ownerDocument.defaultView;
+                }
+                return true;
+            }
+            if (inView(this)) return false;
+            this.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
+            return true;
+        }
+        """;
 
     private readonly record struct StabilityResult(bool IsStable, double Drift);
 

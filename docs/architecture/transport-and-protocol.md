@@ -156,6 +156,8 @@ BiDi requires an explicit `session.new` handshake after the WebSocket connects. 
 
 Event subscriptions in `BiDiSession` also pass through `BiDiEventMap.GetEventTranslation` to remap CDP event names to BiDi event names and translate event payloads. Before yielding the first event for a given BiDi event name, `BiDiSession.EnsureSubscribedAsync` sends a `session.subscribe` command with the event name and, where applicable, the context ID. This subscription is tracked per-session in a `HashSet<string>` so it is only sent once.
 
+Key events need more than a renamed method. CDP names a key by its DOM `key` value, such as `"Enter"` or `"Shift"`, but a WebDriver key action takes a single character, and every key that produces no character is named by the Private Use Area code point the WebDriver key table gives it: U+E006 for Enter, U+E004 for Tab, U+E008 for the left Shift and U+E050 for the right one. `BiDiKeyValues` does this mapping, and it reads the CDP `code` as well, so the right-hand modifiers, the numpad Enter and the numpad digits keep their location. A key that produces a character is sent as that character, and a key WebDriver has no value for, such as CapsLock, fails with a `NotSupportedException` before anything is sent. The CDP `modifiers` bitmask is not carried over, because WebDriver keeps the keys an input source holds between commands and derives the modifiers from them. A CDP `char` event becomes a pause, because a WebDriver key down already produces the key's text.
+
 ---
 
 ## Source-Generated Protocol Bindings
