@@ -125,9 +125,9 @@ public sealed class TestRunner(int maxWorkers)
                     attempts = attempt;
                 }
 
-                var violations = report?.Violations ?? [];
-                var perfMetrics = report?.PerformanceMetrics;
-                var coverage = report?.Coverage;
+                var violations = TestCaseReportExtras.Violations(report);
+                var perfMetrics = TestCaseReportExtras.PerformanceMetrics(report);
+                var coverage = TestCaseReportExtras.Coverage(report);
 
                 if (coverage is not null)
                 {
@@ -348,9 +348,9 @@ public sealed class TestRunner(int maxWorkers)
     private Task<TestCaseReport> ExecuteTestAsync(DiscoveredTest test)
     {
         if (test.Host is { } host)
-            return host.RunAsync(test.FullName);
+            return host.RunAsync(test.TestId, test.FullName);
 
-        var testCase = new DiscoveredTestCase(test.TestClass!, test.TestMethod!, test.FullName, test.Arguments, test.IsIgnored, null, test.Quarantined);
+        var testCase = new DiscoveredTestCase(test.TestClass!, test.TestMethod!, test.FullName, test.Arguments, test.IsIgnored, null, test.Quarantined, test.TestId);
         return ((InProcessTestHost)HostFor(test)).RunAsync(testCase);
     }
 }

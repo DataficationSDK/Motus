@@ -41,7 +41,8 @@ public sealed class TestDiscovery(ILogger<TestDiscovery> logger)
                         test.IgnoreReason,
                         CodeBase: fullPath,
                         ClassFullName: test.ClassName,
-                        MethodName: test.MethodName));
+                        MethodName: test.MethodName,
+                        TestId: test.Id));
                 }
             }
             catch (TestHostException ex)

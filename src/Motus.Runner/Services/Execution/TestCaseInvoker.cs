@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.Reflection;
-using Motus;
 
 namespace Motus.Runner.Services.Execution;
 
@@ -51,7 +50,7 @@ internal static class TestCaseInvoker
 
         // Publish the test method name so MotusTestBase can resolve per-method attributes
         // (e.g. [PerformanceBudget]) and name failure artifacts without a TestContext
-        TestMethodNameContext.Set(testMethod.Name);
+        MotusInterop.SetTestMethodName(testMethod.Name);
         try
         {
             if (beforeInstance is not null)
@@ -112,7 +111,7 @@ internal static class TestCaseInvoker
 
             if (context is not null)
                 MSTestContextFactory.SetCurrent(contextType!, null);
-            TestMethodNameContext.Clear();
+            MotusInterop.ClearTestMethodName();
         }
 
         return new TestCaseRunResult(failure, sw.Elapsed);

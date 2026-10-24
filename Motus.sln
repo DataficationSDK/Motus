@@ -61,6 +61,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Motus.Fixtures.WebApp", "te
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Motus.Fixtures.WebApp.Tests", "tests\Fixtures\Motus.Fixtures.WebApp.Tests\Motus.Fixtures.WebApp.Tests.csproj", "{0A715F83-AD63-4AE5-B4ED-14FBDB84E231}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Motus.Fixtures.OldMotus.Tests", "tests\Fixtures\Motus.Fixtures.OldMotus.Tests\Motus.Fixtures.OldMotus.Tests.csproj", "{9ED082D7-8B0C-464D-A9F1-A17E3BE73038}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -383,6 +385,18 @@ Global
 		{0A715F83-AD63-4AE5-B4ED-14FBDB84E231}.Release|x64.Build.0 = Release|Any CPU
 		{0A715F83-AD63-4AE5-B4ED-14FBDB84E231}.Release|x86.ActiveCfg = Release|Any CPU
 		{0A715F83-AD63-4AE5-B4ED-14FBDB84E231}.Release|x86.Build.0 = Release|Any CPU
+		{9ED082D7-8B0C-464D-A9F1-A17E3BE73038}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9ED082D7-8B0C-464D-A9F1-A17E3BE73038}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9ED082D7-8B0C-464D-A9F1-A17E3BE73038}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{9ED082D7-8B0C-464D-A9F1-A17E3BE73038}.Debug|x64.Build.0 = Debug|Any CPU
+		{9ED082D7-8B0C-464D-A9F1-A17E3BE73038}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{9ED082D7-8B0C-464D-A9F1-A17E3BE73038}.Debug|x86.Build.0 = Debug|Any CPU
+		{9ED082D7-8B0C-464D-A9F1-A17E3BE73038}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9ED082D7-8B0C-464D-A9F1-A17E3BE73038}.Release|Any CPU.Build.0 = Release|Any CPU
+		{9ED082D7-8B0C-464D-A9F1-A17E3BE73038}.Release|x64.ActiveCfg = Release|Any CPU
+		{9ED082D7-8B0C-464D-A9F1-A17E3BE73038}.Release|x64.Build.0 = Release|Any CPU
+		{9ED082D7-8B0C-464D-A9F1-A17E3BE73038}.Release|x86.ActiveCfg = Release|Any CPU
+		{9ED082D7-8B0C-464D-A9F1-A17E3BE73038}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -414,6 +428,7 @@ Global
 		{88F3ADB4-C36D-4DDD-8976-0B4645EE0381} = {47F5729D-17CB-4046-88FA-BB0F9F660B6E}
 		{12681CE2-69A2-4EC8-A551-C5D1467C2272} = {47F5729D-17CB-4046-88FA-BB0F9F660B6E}
 		{0A715F83-AD63-4AE5-B4ED-14FBDB84E231} = {47F5729D-17CB-4046-88FA-BB0F9F660B6E}
+		{9ED082D7-8B0C-464D-A9F1-A17E3BE73038} = {47F5729D-17CB-4046-88FA-BB0F9F660B6E}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {3A99AF87-BFA9-49CF-A20A-71753BE54A53}

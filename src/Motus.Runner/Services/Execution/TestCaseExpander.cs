@@ -10,7 +10,11 @@ namespace Motus.Runner.Services.Execution;
 /// <param name="FullName">The name the runners report and filter on.</param>
 /// <param name="Arguments">The data row, or null for a test method without one.</param>
 /// <param name="IgnoreReason">Set when the data row itself is marked ignored.</param>
-internal sealed record ExpandedTestCase(string FullName, object?[]? Arguments, string? IgnoreReason);
+/// <param name="Id">Identifies the test case without depending on its display name: the class, the
+/// method with its parameter types, and for a data row, which data source on the method and which
+/// row of it. A data source can name its rows differently each time it is read (a Guid or a time in
+/// the row), so this is what a runner that discovers again in a new process looks the case up by.</param>
+internal sealed record ExpandedTestCase(string FullName, object?[]? Arguments, string? IgnoreReason, string Id);
 
 /// <summary>
 /// Turns a test method into its test cases, one per <c>[DataRow]</c>, <c>[DynamicData]</c> row or
@@ -46,7 +50,9 @@ internal static class TestCaseExpander
     public static List<ExpandedTestCase> Expand(Type testClass, MethodInfo method, Action<string>? onError = null)
     {
         var baseName = $"{testClass.FullName}.{method.Name}";
+        var methodId = MethodId(testClass, method);
         var cases = new List<ExpandedTestCase>();
+        var sourceIndex = -1;
         var seen = new HashSet<string>(StringComparer.Ordinal);
 
         foreach (var attribute in method.GetCustomAttributes(true))
@@ -54,6 +60,8 @@ internal static class TestCaseExpander
             var dataSource = attribute.GetType().GetInterfaces().FirstOrDefault(i => i.FullName == TestDataSourceInterfaceName);
             if (dataSource is null)
                 continue;
+
+            sourceIndex++;
 
             List<object?[]> rows;
             try
@@ -72,8 +80,9 @@ internal static class TestCaseExpander
             var ignoreReason = attribute.GetType().GetProperty("IgnoreMessage")?.GetValue(attribute) as string;
             var getDisplayName = dataSource.GetMethod("GetDisplayName");
 
-            foreach (var row in rows)
+            for (var rowIndex = 0; rowIndex < rows.Count; rowIndex++)
             {
+                var row = rows[rowIndex];
                 var displayName = TryGetDisplayName(getDisplayName, attribute, method, row)
                     ?? DefaultDisplayName(method, row);
 
@@ -87,16 +96,42 @@ internal static class TestCaseExpander
                 for (var n = 2; !seen.Add(unique); n++)
                     unique = $"{fullName} #{n}";
 
-                cases.Add(new ExpandedTestCase(unique, row, ignoreReason));
+                cases.Add(new ExpandedTestCase(unique, row, ignoreReason, RowId(methodId, sourceIndex, rowIndex)));
             }
         }
 
         // No data source, or none that could be read: a single case. One whose method takes
         // parameters fails when run, saying they were not supplied.
         if (cases.Count == 0)
-            cases.Add(new ExpandedTestCase(baseName, null, null));
+            cases.Add(new ExpandedTestCase(baseName, null, null, methodId));
 
         return cases;
+    }
+
+    /// <summary>
+    /// <c>{Class}.{Method}({parameter types})</c>, which tells overloads apart where the full name does not.
+    /// </summary>
+    internal static string MethodId(Type testClass, MethodInfo method)
+        => $"{testClass.FullName}.{method.Name}({string.Join(",", method.GetParameters().Select(p => p.ParameterType.FullName ?? p.ParameterType.Name))})";
+
+    /// <summary>The id of row <paramref name="rowIndex"/> of the method's data source <paramref name="sourceIndex"/>.</summary>
+    internal static string RowId(string methodId, int sourceIndex, int rowIndex) => $"{methodId}#{sourceIndex}:{rowIndex}";
+
+    /// <summary>Splits a row id into its method id, data source and row, or returns false for a test without rows.</summary>
+    internal static bool TryParseRowId(string id, out string methodId, out int sourceIndex, out int rowIndex)
+    {
+        methodId = id;
+        sourceIndex = rowIndex = -1;
+        var hash = id.LastIndexOf('#');
+        if (hash < 0 || id.IndexOf(')', hash) >= 0)
+            return false;
+
+        var parts = id[(hash + 1)..].Split(':');
+        if (parts.Length != 2 || !int.TryParse(parts[0], out sourceIndex) || !int.TryParse(parts[1], out rowIndex))
+            return false;
+
+        methodId = id[..hash];
+        return true;
     }
 
     private static string? TryGetDisplayName(MethodInfo? getDisplayName, object attribute, MethodInfo method, object?[] row)

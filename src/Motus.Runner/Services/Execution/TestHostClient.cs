@@ -4,7 +4,6 @@ using System.IO.Pipes;
 using System.Reflection;
 using System.Runtime.Versioning;
 using System.Text.Json.Nodes;
-using Motus.Runner.Services.Timeline;
 
 namespace Motus.Runner.Services.Execution;
 
@@ -21,7 +20,7 @@ internal sealed class TestHostOptions
     public Action<string>? OnFrame { get; init; }
 
     /// <summary>Told each timeline entry the recorder hook makes.</summary>
-    public Action<TimelineEntry>? OnTimelineEntry { get; init; }
+    public Action<TimelineEntryMessage>? OnTimelineEntry { get; init; }
 
     /// <summary>
     /// Asked before each browser action when <see cref="Visual"/> is set; the action waits for the
@@ -155,7 +154,7 @@ internal sealed class TestHostClient : ITestAssemblyHost
         }
     }
 
-    public async Task<TestCaseReport> RunAsync(string fullName, CancellationToken cancellationToken = default)
+    public async Task<TestCaseReport> RunAsync(string testId, string fullName, CancellationToken cancellationToken = default)
     {
         if (_exitMessage is { } exited)
             return TestCaseReport.NotRun(fullName, $"{exited} The test did not run.");
@@ -168,7 +167,7 @@ internal sealed class TestHostClient : ITestAssemblyHost
 
         try
         {
-            var reply = await RequestAsync(new TestHostMessage { Type = TestHostMessageTypes.Run, Id = id, Name = fullName }, CancellationToken.None);
+            var reply = await RequestAsync(new TestHostMessage { Type = TestHostMessageTypes.Run, Id = id, TestId = testId, Name = fullName }, CancellationToken.None);
             return reply.Report ?? TestCaseReport.NotRun(fullName, "The test host sent no result.");
         }
         catch (TestHostException ex)

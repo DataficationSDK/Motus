@@ -26,6 +26,13 @@ public sealed record DiscoveredTest(Type? TestClass, MethodInfo? TestMethod, str
     /// <summary>The test assembly's name, which reporters use as the suite name.</summary>
     public string AssemblyName { get; init; } = TestClass?.Assembly.GetName().Name ?? string.Empty;
 
+    /// <summary>
+    /// Identifies the test apart from its name: the class, the method with its parameter types, and
+    /// for a data row, its data source and its place in it. A data source can name its rows differently
+    /// each time it is read, so sharding keys on this rather than on the name.
+    /// </summary>
+    public string TestId { get; init; } = FullName;
+
     /// <summary>The test host that discovered this test and runs it, or null to run it in this process.</summary>
     internal ITestAssemblyHost? Host { get; init; }
 }
@@ -38,10 +45,18 @@ public sealed record DiscoveredTest(Type? TestClass, MethodInfo? TestMethod, str
 public sealed class TestDiscovery : IAsyncDisposable
 {
     private readonly List<TestHostClient> _hosts = [];
+    private readonly List<string> _failedAssemblies = [];
+
+    /// <summary>
+    /// The assemblies passed to <see cref="DiscoverAsync"/> that could not be loaded, or whose test
+    /// host could not start or exited during discovery. <c>motus run</c> fails the run for them.
+    /// </summary>
+    public IReadOnlyList<string> FailedAssemblies => _failedAssemblies;
 
     /// <summary>
     /// The tests in <paramref name="assemblyPaths"/> whose full name contains <paramref name="filter"/>,
-    /// ignoring case. An assembly that cannot be loaded is reported on standard error and skipped.
+    /// ignoring case. An assembly that cannot be loaded is reported on standard error, skipped, and
+    /// listed in <see cref="FailedAssemblies"/>.
     /// </summary>
     public async Task<List<DiscoveredTest>> DiscoverAsync(string[] assemblyPaths, string? filter, CancellationToken cancellationToken = default)
     {
@@ -71,6 +86,7 @@ public sealed class TestDiscovery : IAsyncDisposable
                         MethodName = test.MethodName,
                         AssemblyPath = fullPath,
                         AssemblyName = discovery.AssemblyName,
+                        TestId = test.Id,
                         Host = host,
                     });
                 }
@@ -78,6 +94,7 @@ public sealed class TestDiscovery : IAsyncDisposable
             catch (TestHostException ex)
             {
                 Console.Error.WriteLine($"Failed to load assembly {fullPath}: {ex.Message}");
+                _failedAssemblies.Add(fullPath);
                 if (host is not null)
                     await host.DisposeAsync();
             }

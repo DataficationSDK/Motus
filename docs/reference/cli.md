@@ -67,10 +67,10 @@ The output path for a reporter is part of its value, so it is `--reporter junit:
 
 - A relative path a test uses, including a relative `failure.tracePath` or `failure.screenshotPath`, resolves against the output folder, as it does under `dotnet test`.
 - `motus.config.json` is still looked up from the directory `motus run` was started in, so the runner and its test hosts read the same settings.
-- The tests run on the Motus version their project references. When that differs from the version of `motus`, `motus run` prints a warning; keep the two on the same version.
+- The tests run on the Motus version their project references. When that differs from the version of `motus`, `motus run` prints a warning; keep the two on the same version. With an older Motus, anything that version cannot provide, such as accessibility reports, performance metrics or coverage, is left out with a warning, and the tests still run and report their results.
 - A suite built for an older .NET than `motus` runs on the newest .NET installed.
 - A test that ends its process, or crashes it, takes only its test host down: that test fails with the host's exit code, each test of that assembly still to run fails saying it did not run, and other assemblies carry on. Whatever the process wrote before it ended, such as a stack overflow report, is on the console.
-- Starting a test host adds a fraction of a second per assembly. The visual runner starts a new one for each run, so a rebuilt assembly is picked up by the next run without restarting the runner.
+- Starting a test host adds a fraction of a second per assembly. The visual runner starts a new one for each run, so a rebuilt assembly is picked up by the next run without restarting the runner. It finds each test again by its class, method and, for a data row, its place in its data source, so a row whose name changes on every read (one that carries a Guid or a time) still runs; a row its data source no longer returns fails saying so.
 
 **How tests run.** Inside the test host, the runners call the tests by reflection, without going through the MSTest, NUnit or xUnit test adapter. They cover the parts of each framework that suites lean on:
 
@@ -79,7 +79,7 @@ The output path for a reporter is part of its value, so it is `--reporter junit:
 - Setup methods (`[TestInitialize]`, NUnit `[SetUp]`) run base class first. Cleanup methods (`[TestCleanup]`, NUnit `[TearDown]`) run derived class first and base class last, and each one runs even when an earlier one throws.
 - Attributes derived from `[TestClass]` or `[TestMethod]`, such as `[DataTestMethod]`, `[MotusTestClass]` and `[MotusTestMethod]`, mark tests as the attributes they derive from do. NUnit `[TestCase]` and xUnit `[Theory]` tests are not run.
 
-**Exit code.** `0` when everything passed. `1` when any test failed, when a coverage threshold was missed, or when `--fail-on-flaky` was given and any test was flaky.
+**Exit code.** `0` when everything passed. `1` when any test failed, when a test assembly could not be loaded or its test host could not start, when a coverage threshold was missed, or when `--fail-on-flaky` was given and any test was flaky. The tests of the other assemblies still run.
 
 See [Sharding](../guides/sharding.md), [Flaky Tests and Quarantine](../guides/flaky-tests-and-quarantine.md), and [Configuration](../guides/configuration.md) for the settings behind these.
 

@@ -7,7 +7,8 @@ namespace Motus.Runner.Services.Models;
 /// assembly (at <paramref name="CodeBase"/>), so <paramref name="TestClass"/>,
 /// <paramref name="TestMethod"/> and <paramref name="Arguments"/> are null and it is known by
 /// <paramref name="ClassFullName"/> and <paramref name="MethodName"/>. One built from reflection
-/// metadata runs in this process.
+/// metadata runs in this process. <paramref name="TestId"/> identifies a discovered test apart from
+/// its name, which a data row's data source may choose differently each time it is read.
 /// </summary>
 public sealed record DiscoveredTest(
     Type? TestClass,
@@ -20,4 +21,5 @@ public sealed record DiscoveredTest(
     IReadOnlyList<string>? Categories = null,
     string? ClassFullName = null,
     object?[]? Arguments = null,
-    string? MethodName = null);
+    string? MethodName = null,
+    string? TestId = null);

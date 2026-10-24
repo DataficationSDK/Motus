@@ -68,21 +68,16 @@ internal static class TestHostServer
         // there, where the runner reads it, so that both see the same settings; it is read once per
         // process, so reading it now keeps it. Then the tests get their own folder, where
         // WebApplicationFactory looks for the app's manifest and the tests' relative paths resolve.
-        LoadMotusConfig();
-        Environment.CurrentDirectory = testDirectory;
-    }
-
-    [MethodImpl(MethodImplOptions.NoInlining)]
-    private static void LoadMotusConfig()
-    {
         try
         {
-            _ = MotusConfigLoader.Config;
+            MotusInterop.LoadConfig();
         }
         catch
         {
-            // A Motus without this loader reads its settings when it first needs them.
+            // Motus reads its settings when it first needs them, from the folder below.
         }
+
+        Environment.CurrentDirectory = testDirectory;
     }
 
     /// <summary>Serves the runner until it closes the pipe. Returns the process exit code.</summary>
@@ -118,6 +113,8 @@ internal static class TestHostServer
 
         public async Task ServeAsync()
         {
+            MotusInterop.Warn = Log;
+
             if (visual)
                 InstallVisualHooks();
 
@@ -146,7 +143,7 @@ internal static class TestHostServer
                             TestCaseReport report;
                             try
                             {
-                                report = await Host.RunAsync(message.Name ?? "", cancellation.Token);
+                                report = await Host.RunAsync(message.TestId ?? message.Name ?? "", message.Name ?? "", cancellation.Token);
                             }
                             catch (Exception ex)
                             {
@@ -234,7 +231,7 @@ internal static class TestHostServer
         private void WarnAboutMotusVersion()
         {
             var expected = typeof(TestHostServer).Assembly.GetReferencedAssemblies().FirstOrDefault(a => a.Name == "Motus")?.Version;
-            var actual = typeof(Motus.BrowserContext).Assembly.GetName().Version;
+            var actual = MotusInterop.LoadedMotusVersion();
             if (expected is null || actual is null || expected == actual)
                 return;
 
@@ -246,26 +243,62 @@ internal static class TestHostServer
         {
             try
             {
-                var screencast = new ScreencastService();
-                screencast.FrameReceived += frame => connection.Post(new TestHostMessage { Type = TestHostMessageTypes.Frame, Text = frame });
-                var timeline = new RemoteTimeline(entry => connection.Post(new TestHostMessage { Type = TestHostMessageTypes.Timeline, Entry = entry }));
-                var stepDebug = new RemoteStepDebug(StepAsync);
-
-                // The pages the tests open, the way the visual runner watches them in its own process.
-                BrowserContext.GlobalPageCreated = page =>
-                {
-                    _ = Task.Run(async () =>
-                    {
-                        try { await screencast.AttachPageAsync(page); }
-                        catch { /* best-effort */ }
-                    });
-
-                    page.Context.GetPluginContext().RegisterLifecycleHook(new TimelineRecorderHook(timeline, stepDebug));
-                };
+                MotusInterop.Guard("the visual runner's browser view and timeline", InstallVisualHooksCore);
             }
             catch (Exception ex)
             {
                 Log($"The visual runner cannot show the browser for {Path.GetFileName(assemblyPath)}: {ex.Message}");
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private void InstallVisualHooksCore()
+        {
+            // Compile what the hooks will run now, so that a Motus without something they use turns
+            // the browser view off here rather than failing inside a test's browser action.
+            PrepareMethods(typeof(ScreencastService), except: nameof(ScreencastService.HighlightElementAsync));
+            PrepareMethods(typeof(TimelineRecorderHook), except: null);
+
+            var screencast = new ScreencastService();
+            screencast.FrameReceived += frame => connection.Post(new TestHostMessage { Type = TestHostMessageTypes.Frame, Text = frame });
+            var timeline = new RemoteTimeline(entry => connection.Post(new TestHostMessage
+            {
+                Type = TestHostMessageTypes.Timeline,
+                Entry = TimelineEntryMessage.From(entry),
+            }));
+            var stepDebug = new RemoteStepDebug(StepAsync);
+
+            // The pages the tests open, the way the visual runner watches them in its own process.
+            BrowserContext.GlobalPageCreated = page =>
+            {
+                _ = Task.Run(async () =>
+                {
+                    try { await screencast.AttachPageAsync(page); }
+                    catch { /* best-effort */ }
+                });
+
+                page.Context.GetPluginContext().RegisterLifecycleHook(new TimelineRecorderHook(timeline, stepDebug));
+            };
+        }
+
+        /// <summary>
+        /// JIT-compiles the methods of <paramref name="type"/>, including the state machines and
+        /// closures of its async methods and lambdas, apart from those of <paramref name="except"/>.
+        /// </summary>
+        private static void PrepareMethods(Type type, string? except)
+        {
+            const BindingFlags all = BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly;
+            var types = new[] { type }.Concat(type.GetNestedTypes(BindingFlags.NonPublic | BindingFlags.Public))
+                .Where(t => except is null || !t.Name.Contains($"<{except}>", StringComparison.Ordinal) && !t.IsGenericTypeDefinition);
+
+            foreach (var candidate in types)
+            {
+                foreach (var method in candidate.GetMethods(all).Cast<MethodBase>().Concat(candidate.GetConstructors(all)))
+                {
+                    if (method.IsAbstract || method.ContainsGenericParameters || method.Name == except)
+                        continue;
+                    RuntimeHelpers.PrepareMethod(method.MethodHandle);
+                }
             }
         }
 

@@ -9,6 +9,8 @@ namespace Motus.Runner.Services.Execution;
 /// <param name="Arguments">The data row, or null for a test method without one.</param>
 /// <param name="IgnoreReason">Why the test is ignored, when it is and a reason was given.</param>
 /// <param name="Quarantined">True when the test or its class carries <c>[Quarantine]</c>.</param>
+/// <param name="Id">The case's identity apart from its name (see <see cref="ExpandedTestCase.Id"/>).
+/// Defaults to <paramref name="FullName"/> for a case built by hand.</param>
 internal sealed record DiscoveredTestCase(
     Type TestClass,
     MethodInfo TestMethod,
@@ -16,11 +18,15 @@ internal sealed record DiscoveredTestCase(
     object?[]? Arguments,
     bool IsIgnored,
     string? IgnoreReason,
-    bool Quarantined)
+    bool Quarantined,
+    string? Id = null)
 {
+    /// <summary>The case's identity, which the runner asks for it by.</summary>
+    public string Id { get; init; } = Id ?? FullName;
+
     /// <summary>What a runner in another process is told about this test case.</summary>
     public TestCaseInfo ToInfo()
-        => new(FullName, TestClass.FullName ?? TestClass.Name, TestMethod.Name, IsIgnored, IgnoreReason, Quarantined);
+        => new(FullName, TestClass.FullName ?? TestClass.Name, TestMethod.Name, IsIgnored, IgnoreReason, Quarantined, Id);
 }
 
 /// <summary>
@@ -92,7 +98,7 @@ internal static class TestCaseDiscovery
 
                     var isIgnored = classIgnored || methodIgnored || testCase.IgnoreReason is not null;
                     var reason = classIgnored ? classReason : methodIgnored ? methodReason : testCase.IgnoreReason;
-                    tests.Add(new DiscoveredTestCase(type, method, testCase.FullName, testCase.Arguments, isIgnored, reason, quarantined));
+                    tests.Add(new DiscoveredTestCase(type, method, testCase.FullName, testCase.Arguments, isIgnored, reason, quarantined, testCase.Id));
                 }
             }
         }

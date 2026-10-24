@@ -228,8 +228,17 @@ public static class RunCommand
                 tests, reporter, a11yMode, perfBudget, coverageReporters, retries, retryPolicy,
                 shardIndex, shardTotal);
 
+            // An assembly named on the command line whose tests could not even be listed fails the run,
+            // so that a test host that cannot start never looks like a green run.
+            if (discovery.FailedAssemblies.Count > 0)
+            {
+                Console.Error.WriteLine(
+                    $"Error: {discovery.FailedAssemblies.Count} test assembly(ies) could not be loaded: {string.Join(", ", discovery.FailedAssemblies)}");
+            }
+
             return (runResult.Failed > 0
                 || runResult.CoverageThresholdsFailed
+                || discovery.FailedAssemblies.Count > 0
                 || (failOnFlaky && runResult.Flaky > 0)) ? 1 : 0;
         });
 

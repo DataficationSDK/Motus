@@ -42,9 +42,12 @@ public sealed class TestExecutionService(
             await reporters.FireOnTestRunStartAsync(new TestSuiteInfo(suiteName, tests.Count));
 
         var hosts = new Dictionary<string, ITestAssemblyHost>(StringComparer.Ordinal);
+        var runnable = new List<DiscoveredTest>();
+        var notRun = 0;
         try
         {
-            // Start a test host for each assembly in this batch and run its [AssemblyInitialize]
+            // Start a test host for each assembly in this batch and run its [AssemblyInitialize]. An
+            // assembly that can't start or initialize fails its own tests; the others still run.
             foreach (var group in tests.GroupBy(AssemblyKeyOf))
             {
                 var first = group.First();
@@ -55,14 +58,14 @@ public sealed class TestExecutionService(
                 }
                 catch (TestHostException ex)
                 {
-                    logger.LogError("Could not start a test host for {Assembly}: {Message}", first.AssemblyName, ex.Message);
-                    foreach (var test in group)
-                        onStateChanged(new TestNodeState(test.FullName, TestStatus.Failed, null, ex.Message, null));
-                    return;
+                    logger.LogError("Could not run the tests in {Assembly}: {Message}", first.AssemblyName, ex.Message);
+                    notRun += await FailAllAsync(group, $"Could not run the tests in {first.AssemblyName}: {ex.Message}", null,
+                        suiteName, onStateChanged, reporters);
+                    continue;
                 }
                 catch (OperationCanceledException)
                 {
-                    // Stopped while the test host was starting.
+                    // Stopped while a test host was starting.
                     foreach (var test in tests)
                         onStateChanged(new TestNodeState(test.FullName, TestStatus.Skipped, null, "Cancelled", null));
                     return;
@@ -74,17 +77,17 @@ public sealed class TestExecutionService(
                 if (failure is not null)
                 {
                     logger.LogError("AssemblyInitialize failed for {Assembly}: {Message}", first.AssemblyName, failure.Message);
-                    // Fail all tests in this assembly
-                    foreach (var test in group)
-                    {
-                        onStateChanged(new TestNodeState(test.FullName, TestStatus.Failed, null,
-                            $"AssemblyInitialize failed: {failure.Message}", failure.StackTrace));
-                    }
-                    return;
+                    notRun += await FailAllAsync(group, $"AssemblyInitialize failed: {failure.Message}", failure.StackTrace,
+                        suiteName, onStateChanged, reporters);
+                    hosts.Remove(group.Key);
+                    await host.DisposeAsync();
+                    continue;
                 }
+
+                runnable.AddRange(group);
             }
 
-            await RunTestsAsync(tests, hosts, suiteName, onStateChanged, ct, reporters);
+            await RunTestsAsync(runnable, hosts, suiteName, onStateChanged, ct, reporters, notRun);
 
             // Run [ClassCleanup] / [OneTimeTearDown] for each class that ran a test, then
             // [AssemblyCleanup] to close browsers
@@ -100,17 +103,50 @@ public sealed class TestExecutionService(
         }
     }
 
+    /// <summary>Fails each of <paramref name="tests"/> with <paramref name="message"/>. Returns how many failed.</summary>
+    private static async Task<int> FailAllAsync(
+        IEnumerable<DiscoveredTest> tests,
+        string message,
+        string? stackTrace,
+        string suiteName,
+        Action<TestNodeState> onStateChanged,
+        ReporterCollection? reporters)
+    {
+        var count = 0;
+        foreach (var test in tests)
+        {
+            if (test.IsIgnored)
+            {
+                onStateChanged(new TestNodeState(test.FullName, TestStatus.Skipped, null, test.IgnoreReason ?? "Ignored", null));
+                continue;
+            }
+
+            onStateChanged(new TestNodeState(test.FullName, TestStatus.Failed, null, message, stackTrace));
+            if (reporters is not null)
+            {
+                var info = new TestInfo(test.FullName, suiteName);
+                await reporters.FireOnTestStartAsync(info);
+                await reporters.FireOnTestEndAsync(info, new Abstractions.TestResult(test.FullName, false, 0, message, stackTrace));
+            }
+
+            count++;
+        }
+
+        return count;
+    }
+
     private async Task RunTestsAsync(
         List<DiscoveredTest> tests,
         Dictionary<string, ITestAssemblyHost> hosts,
         string suiteName,
         Action<TestNodeState> onStateChanged,
         CancellationToken ct,
-        ReporterCollection? reporters)
+        ReporterCollection? reporters,
+        int alreadyFailed)
     {
         var sw = reporters is not null ? Stopwatch.StartNew() : null;
         var semaphore = new SemaphoreSlim(MaxWorkers);
-        int passedCount = 0, failedCount = 0, skippedCount = 0;
+        int passedCount = 0, failedCount = alreadyFailed, skippedCount = 0;
         var collectedCoverage = new List<CoverageData>();
         var coverageLock = new object();
 
@@ -133,13 +169,13 @@ public sealed class TestExecutionService(
                 if (reporters is not null)
                     await reporters.FireOnTestStartAsync(new TestInfo(test.FullName, suiteName));
 
-                var report = await hosts[AssemblyKeyOf(test)].RunAsync(test.FullName, ct);
+                var report = await hosts[AssemblyKeyOf(test)].RunAsync(test.TestId ?? test.FullName, test.FullName, ct);
                 var result = report.Passed
                     ? new TestNodeState(test.FullName, TestStatus.Passed, report.Duration, null, null)
                     : new TestNodeState(test.FullName, TestStatus.Failed, report.Duration, report.ErrorMessage, report.StackTrace);
                 onStateChanged(result);
 
-                if (report.Coverage is { } coverage)
+                if (TestCaseReportExtras.Coverage(report) is { } coverage)
                 {
                     lock (coverageLock)
                         collectedCoverage.Add(coverage);
@@ -215,7 +251,7 @@ public sealed class TestExecutionService(
     {
         if (first.TestClass is not null && first.TestMethod is not null)
         {
-            var cases = tests.Select(t => new DiscoveredTestCase(t.TestClass!, t.TestMethod!, t.FullName, t.Arguments, t.IsIgnored, t.IgnoreReason, Quarantined: false));
+            var cases = tests.Select(t => new DiscoveredTestCase(t.TestClass!, t.TestMethod!, t.FullName, t.Arguments, t.IsIgnored, t.IgnoreReason, Quarantined: false, t.TestId));
             return new InProcessTestHost(first.TestClass.Assembly, cases, message => logger.LogWarning("{Message}", message));
         }
 
@@ -226,11 +262,12 @@ public sealed class TestExecutionService(
             OnLog = message => logger.LogWarning("{Message}", message),
             OnFrame = remoteScreencast is null ? null : remoteScreencast.ShowRemoteFrame,
             OnTimelineEntry = timeline is null ? null : entry =>
-                timeline.AddEntry(entry with { Index = timeline.Entries.Count, TestName = timeline.CurrentTestName }),
+                timeline.AddEntry(entry.ToEntry(timeline.Entries.Count, timeline.CurrentTestName)),
             OnStep = stepDebug is null ? null : (action, selector) => stepDebug.WaitIfPausedAsync(action, selector, CancellationToken.None),
         }, ct);
 
-        // A fresh process discovers again; the run names its tests, and one that is gone fails saying so.
+        // A fresh process discovers again. The run asks for each test by its id, which a data row keeps
+        // even when its data source names it differently this time, and one that is gone fails saying so.
         try
         {
             await host.DiscoverAsync(filter: null, ct);

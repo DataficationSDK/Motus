@@ -1,7 +1,5 @@
 using System.Collections.Concurrent;
 using System.Reflection;
-using Motus;
-using Motus.Abstractions;
 
 namespace Motus.Runner.Services.Execution;
 
@@ -26,7 +24,7 @@ internal sealed class InProcessTestHost : ITestAssemblyHost
         if (cases is not null)
         {
             foreach (var testCase in cases)
-                _cases[testCase.FullName] = testCase;
+                _cases[testCase.Id] = testCase;
         }
     }
 
@@ -53,18 +51,40 @@ internal sealed class InProcessTestHost : ITestAssemblyHost
         }
     }
 
-    public Task<TestCaseReport> RunAsync(string fullName, CancellationToken cancellationToken = default)
-        => _cases.TryGetValue(fullName, out var testCase)
-            ? RunAsync(testCase, cancellationToken)
-            : Task.FromResult(TestCaseReport.NotRun(fullName,
-                $"Test {fullName} was not found in {_assembly.GetName().Name}. It may have been renamed or removed."));
+    public Task<TestCaseReport> RunAsync(string testId, string fullName, CancellationToken cancellationToken = default)
+    {
+        if (_cases.TryGetValue(testId, out var testCase))
+            return RunAsync(testCase, cancellationToken);
+
+        // A data row's name can change from one read of its data source to the next, but a test
+        // without data rows, or one whose id predates a rebuild, is still found by its name.
+        testCase = _cases.Values.FirstOrDefault(c => c.FullName == fullName);
+        if (testCase is not null)
+            return RunAsync(testCase, cancellationToken);
+
+        return Task.FromResult(TestCaseReport.NotRun(fullName, DescribeMissing(testId, fullName)));
+    }
+
+    private string DescribeMissing(string testId, string fullName)
+    {
+        if (TestCaseExpander.TryParseRowId(testId, out var methodId, out var sourceIndex, out var rowIndex))
+        {
+            var rows = _cases.Values.Count(c => TestCaseExpander.TryParseRowId(c.Id, out var m, out var s, out _)
+                                                && m == methodId && s == sourceIndex);
+            if (rows > 0 || _cases.Values.Any(c => c.Id.StartsWith(methodId, StringComparison.Ordinal)))
+            {
+                return $"Test {fullName} was not run: it was row {rowIndex + 1} of its data source, "
+                    + $"which now returns {rows} row(s).";
+            }
+        }
+
+        return $"Test {fullName} was not found in {_assembly.GetName().Name}. It may have been renamed or removed.";
+    }
 
     /// <summary>Runs <paramref name="testCase"/> once, collecting what the sinks gathered while it ran.</summary>
     public async Task<TestCaseReport> RunAsync(DiscoveredTestCase testCase, CancellationToken cancellationToken = default)
     {
-        AccessibilityViolationSink.Begin();
-        PerformanceMetricsSink.Begin();
-        CoverageSink.Begin();
+        MotusInterop.BeginCollecting();
 
         var run = await TestCaseInvoker.RunAsync(
             testCase.TestClass,
@@ -83,9 +103,7 @@ internal sealed class InProcessTestHost : ITestAssemblyHost
             onCleanupFailure: ex => _log($"TestCleanup failed for {testCase.FullName}: {ex.Message}"),
             cancellationToken: cancellationToken);
 
-        var violations = AccessibilityViolationSink.End();
-        var metrics = PerformanceMetricsSink.End();
-        var coverage = CoverageSink.End();
+        var (violations, metrics, coverage) = MotusInterop.EndCollecting();
 
         return new TestCaseReport(
             testCase.FullName,
@@ -93,8 +111,8 @@ internal sealed class InProcessTestHost : ITestAssemblyHost
             run.Duration.TotalMilliseconds,
             run.Failure?.Message,
             run.Failure?.StackTrace,
-            IsTransientCdpFailure(run.Failure),
-            violations.Count > 0 ? violations : null,
+            MotusInterop.IsBrowserLost(run.Failure),
+            violations,
             metrics,
             coverage);
     }
@@ -134,27 +152,6 @@ internal sealed class InProcessTestHost : ITestAssemblyHost
     }
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
-
-    /// <summary>
-    /// Returns true when the exception chain contains a transient CDP failure that
-    /// is safe to recover from by re-running the entire test (which rebuilds a fresh
-    /// browser context and WebSocket). Used to drive --retries.
-    /// </summary>
-    internal static bool IsTransientCdpFailure(Exception? ex)
-    {
-        if (BrowserFailure.IsBrowserLost(ex))
-            return true;
-
-        // The transport's own disconnect reaches the runner unwrapped when it escapes from outside
-        // a command, where nothing has turned it into the public failure yet.
-        for (var current = ex; current is not null; current = current.InnerException)
-        {
-            if (current is CdpDisconnectedException)
-                return true;
-        }
-
-        return false;
-    }
 
     /// <summary>The test case's name without its class, such as <c>SignsIn ("owner")</c>.</summary>
     private static string DisplayNameOf(DiscoveredTestCase testCase)
