@@ -390,4 +390,28 @@ public class LocatorTests
         await Assert.ThrowsExceptionAsync<ElementNotFoundException>(
             () => locator.TextContentAsync());
     }
+
+    [TestMethod]
+    public async Task IsVisibleAsync_ReturnsFalse_WhenNoElementFound()
+    {
+        var page = await CreatePageAsync();
+        var locator = page.Locator("#nonexistent");
+
+        _socket.QueueResponse("""{"id": 9, "sessionId": "session-1", "result": {"result": {"type": "object", "objectId": "arr-empty"}}}""");
+        _socket.QueueResponse("""{"id": 10, "sessionId": "session-1", "result": {"result": []}}""");
+
+        Assert.IsFalse(await locator.IsVisibleAsync());
+    }
+
+    [TestMethod]
+    public async Task IsHiddenAsync_ReturnsTrue_WhenNoElementFound()
+    {
+        var page = await CreatePageAsync();
+        var locator = page.Locator("#nonexistent");
+
+        _socket.QueueResponse("""{"id": 9, "sessionId": "session-1", "result": {"result": {"type": "object", "objectId": "arr-empty"}}}""");
+        _socket.QueueResponse("""{"id": 10, "sessionId": "session-1", "result": {"result": []}}""");
+
+        Assert.IsTrue(await locator.IsHiddenAsync());
+    }
 }

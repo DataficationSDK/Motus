@@ -303,15 +303,24 @@ public interface ILocator
     /// <summary>
     /// Returns whether the element is hidden.
     /// </summary>
+    /// <remarks>
+    /// The answer is immediate rather than waited for. A locator that matches nothing counts as
+    /// hidden, so this returns <see langword="true"/> instead of throwing.
+    /// </remarks>
     /// <param name="timeout">Maximum time in milliseconds to wait.</param>
-    /// <returns>True if the element is hidden.</returns>
+    /// <returns>True if the element is hidden or no element matches.</returns>
     Task<bool> IsHiddenAsync(double? timeout = null);
 
     /// <summary>
     /// Returns whether the element is visible.
     /// </summary>
+    /// <remarks>
+    /// The answer is immediate rather than waited for. A locator that matches nothing counts as
+    /// not visible, so this returns <see langword="false"/> instead of throwing. To wait for an
+    /// element to appear, use <see cref="WaitForAsync"/> or a visibility assertion.
+    /// </remarks>
     /// <param name="timeout">Maximum time in milliseconds to wait.</param>
-    /// <returns>True if the element is visible.</returns>
+    /// <returns>True if the element is visible; false if it is hidden or no element matches.</returns>
     Task<bool> IsVisibleAsync(double? timeout = null);
 
     // --- Filtering and chaining ---

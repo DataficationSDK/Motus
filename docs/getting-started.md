@@ -262,7 +262,7 @@ await locator.SelectOptionAsync(["large"], timeout: 2000);
 
 ### Assertions
 
-Assertions re-evaluate until they pass or a timeout is reached, so there is no need to wait for a value the page has not settled on yet. A locator assertion still needs its element to be present: it fails at once when the locator matches nothing, so wait for an element that has still to render with `ToBeAttachedAsync` first. Use `Expect.That()` or import it statically:
+Assertions re-evaluate until they pass or a timeout is reached, so there is no need to wait for a value the page has not settled on yet, or for an element that has still to render: `ToBeVisibleAsync` or `ToHaveTextAsync` straight after a click waits for the element to appear. An assertion that absence answers treats a locator that matches nothing as a result, so `ToBeHiddenAsync` and `Not.ToBeVisibleAsync` pass at once when the element is not there. Use `Expect.That()` or import it statically:
 
 ```csharp
 using static Motus.Assertions.Expect;

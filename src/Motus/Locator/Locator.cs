@@ -1272,7 +1272,24 @@ internal sealed class Locator : ILocator
             """, null, cts.Token).ConfigureAwait(false);
     }
 
+    // A locator that matches nothing answers "not visible" rather than throwing, as Playwright's
+    // does: visibility is a question about what the user can see, and an element that is not in
+    // the document is not seen.
     public async Task<bool> IsVisibleAsync(double? timeout = null)
+    {
+        try
+        {
+            return await IsVisibleCoreAsync(timeout).ConfigureAwait(false);
+        }
+        catch (ElementNotFoundException)
+        {
+            return false;
+        }
+    }
+
+    // The visibility check without the absence mapping, for callers that need to tell an absent
+    // element from a hidden one, such as an assertion reporting what it last saw.
+    internal async Task<bool> IsVisibleCoreAsync(double? timeout = null)
     {
         using var cts = BuildActionCts(timeout);
         var objectId = await ResolveObjectIdCoreAsync(cts.Token).ConfigureAwait(false);
