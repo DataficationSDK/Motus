@@ -22,6 +22,16 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- An MSTest 4 TestContext for the runner tests, which load it by path rather than reference
+         it, the way the runners meet a test assembly built against MSTest 4. -->
+    <PackageDownload Include="MSTest.TestFramework" Version="[4.0.1]" />
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>NuGetPackageRoot</_Parameter1>
+      <_Parameter2>$(NuGetPackageRoot)</_Parameter2>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\Motus\Motus.csproj" />
     <ProjectReference Include="..\..\src\Motus.Abstractions\Motus.Abstractions.csproj" />
     <ProjectReference Include="..\..\src\Motus.Runner\Motus.Runner.csproj" />

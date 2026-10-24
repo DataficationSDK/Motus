@@ -63,6 +63,13 @@ motus run bin/Release/net8.0/MyTests.dll --shard 1/4 --retries 2
 
 The output path for a reporter is part of its value, so it is `--reporter junit:results.xml` rather than a separate flag. Passing `--reporter junit` with no path writes nowhere.
 
+**How tests run.** `motus run` and the visual runner load the test assembly and call its tests by reflection, without going through the MSTest, NUnit or xUnit test adapter. They cover the parts of each framework that suites lean on:
+
+- MSTest tests get a `TestContext`, through their `TestContext` property or a constructor that takes one, and `[AssemblyInitialize]`, `[ClassInitialize]` and the matching cleanup methods receive one when they take it. It carries `TestName`, `FullyQualifiedTestClassName` and a `CancellationTokenSource`, and `CurrentTestOutcome` is the test's own outcome by the time `[TestCleanup]` runs. `WriteLine` goes to the console. Files passed to `AddResultFile` are left where they are rather than attached to a result.
+- `[DataRow]`, `[DynamicData]` and any other MSTest data source run as one test per row, named the way MSTest names them, such as `SignInTests.SignsIn (owner)`. `--filter` matches that name, so it can select a single row.
+- Setup methods (`[TestInitialize]`, NUnit `[SetUp]`) run base class first. Cleanup methods (`[TestCleanup]`, NUnit `[TearDown]`) run derived class first and base class last, and each one runs even when an earlier one throws.
+- Attributes derived from `[TestClass]` or `[TestMethod]`, such as `[DataTestMethod]`, `[MotusTestClass]` and `[MotusTestMethod]`, mark tests as the attributes they derive from do. NUnit `[TestCase]` and xUnit `[Theory]` tests are not run.
+
 **Exit code.** `0` when everything passed. `1` when any test failed, when a coverage threshold was missed, or when `--fail-on-flaky` was given and any test was flaky.
 
 See [Sharding](../guides/sharding.md), [Flaky Tests and Quarantine](../guides/flaky-tests-and-quarantine.md), and [Configuration](../guides/configuration.md) for the settings behind these.

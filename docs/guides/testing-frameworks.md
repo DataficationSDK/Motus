@@ -27,7 +27,7 @@ Inherit from `MotusTestBase` to receive a fully managed `IBrowserContext` and `I
 |---|---|
 | `protected IBrowserContext Context` | The context for the current test. Available after `[TestInitialize]`. |
 | `protected IPage Page` | The page for the current test. Available after `[TestInitialize]`. |
-| `public TestContext TestContext` | Set by the MSTest runner. Used internally to detect test outcome for failure tracing. |
+| `public TestContext TestContext` | Set by MSTest, and by `motus run` and the visual runner. Used internally to detect test outcome for failure tracing. |
 
 ### Browser lifecycle
 
