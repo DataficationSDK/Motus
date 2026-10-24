@@ -32,7 +32,7 @@ public static class Fixtures
 
     /// <summary>
     /// A fully functional todo app with add, complete, clear-completed, and active count.
-    /// Buttons carry explicit role/aria-label so GetByRole selectors resolve correctly.
+    /// The markup is plain HTML: GetByRole finds the Add button by its implicit role and text.
     /// </summary>
     public const string TodoApp = """
         <!DOCTYPE html>
@@ -42,7 +42,7 @@ public static class Fixtures
             <h1>Todo App</h1>
             <div>
                 <input id="new-todo" placeholder="What needs to be done?" aria-label="New Todo" data-testid="new-todo-input" />
-                <button id="add-btn" role="button" aria-label="Add" onclick="addTodo()">Add</button>
+                <button id="add-btn" onclick="addTodo()">Add</button>
             </div>
             <ul id="todo-list"></ul>
             <div>
@@ -86,6 +86,7 @@ public static class Fixtures
 
     /// <summary>
     /// A login form with email, password, remember-me checkbox, role select, and validation feedback.
+    /// Each control is labelled by a label-for element only, which is what GetByLabel matches.
     /// The checkbox is a standalone element (not wrapped in a label) so CheckAsync can click its center.
     /// Form submission is wired via both onsubmit and an explicit Enter-key handler for reliability.
     /// </summary>
@@ -98,11 +99,11 @@ public static class Fixtures
             <form id="login-form" onsubmit="handleSubmit(event)">
                 <div>
                     <label for="email">Email</label>
-                    <input id="email" type="email" placeholder="you@example.com" aria-label="Email" />
+                    <input id="email" type="email" placeholder="you@example.com" />
                 </div>
                 <div>
                     <label for="password">Password</label>
-                    <input id="password" type="password" placeholder="Enter password" aria-label="Password" />
+                    <input id="password" type="password" placeholder="Enter password" />
                 </div>
                 <div>
                     <input id="remember" type="checkbox" style="width:20px; height:20px;" />
@@ -110,7 +111,7 @@ public static class Fixtures
                 </div>
                 <div>
                     <label for="role">Role</label>
-                    <select id="role" aria-label="Role">
+                    <select id="role">
                         <option value="">-- Select --</option>
                         <option value="admin">Admin</option>
                         <option value="user">User</option>

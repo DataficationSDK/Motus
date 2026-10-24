@@ -19,15 +19,39 @@ Key behaviors:
 
 ### Built-in Strategies
 
-Five strategies are registered at startup. The prefix is the string that appears before `=` in a selector expression (for example, `role=button`).
+These strategies are registered at startup. The prefix is the string that appears before `=` in a selector expression (for example, `role=button`).
 
 | Strategy | Prefix | Priority | Resolution mechanism |
 |---|---|---|---|
+| Backend node ID | `_node` | 100 | CDP `DOM.resolveNode` for a node ID read from an accessibility snapshot |
 | TestId | `data-testid` (configurable) | 40 | CSS attribute selector via recursive shadow DOM traversal |
 | Role | `role` | 30 | CDP `Accessibility.queryAXTree` with optional name filter |
 | Text | `text` | 20 | JavaScript `textContent` match with optional shadow-piercing tree walk |
 | CSS | `css` | 10 | `querySelectorAll` with optional recursive shadow DOM traversal |
 | XPath | `xpath` | 10 | `document.evaluate` with `ORDERED_NODE_SNAPSHOT_TYPE`; no shadow piercing |
+| GetBy text, label, attribute | `_text`, `_label`, `_attr` | 0 | JavaScript text, label and attribute matching behind the `GetBy*` factories; see below |
+
+The prefixes that start with an underscore are reserved for selectors Motus builds itself. They resolve like any other prefix but never generate a selector for the recorder.
+
+### Locator factories
+
+The `GetBy*` methods on `IPage` and `IFrame` build a selector for one of the strategies above:
+
+| Factory | Selector it builds | Matches |
+|---|---|---|
+| `GetByRole(role, name)` | `role=button[name="Save"]` | The accessibility tree: implicit roles and computed accessible names |
+| `GetByText(text, exact)` | `_text="Save"i` | The innermost element whose text matches; `input` buttons by their value |
+| `GetByLabel(text, exact)` | `_label="Email"i` | Elements labelled by `aria-labelledby`, `aria-label`, or an associated `<label>` |
+| `GetByPlaceholder(text, exact)` | `_attr=placeholder="Search"i` | The `placeholder` attribute |
+| `GetByTitle(text, exact)` | `_attr=title="Close"i` | The `title` attribute |
+| `GetByAltText(text, exact)` | `_attr=alt="Logo"i` | The `alt` attribute |
+| `GetByTestId(id)` | `[data-testid="submit"]` | The `data-testid` attribute, through the CSS strategy |
+
+The text-based factories write their text as a JSON string literal followed by a flag. `i`, used when `exact` is omitted or false, matches a case-insensitive substring. `s`, used when `exact` is true, matches the whole string case-sensitively. Both collapse runs of whitespace and trim the ends before comparing, so indentation in the markup never decides a match. Quoting the text as JSON keeps any quote, bracket or backslash in it from ending the selector early.
+
+`GetByLabel` reads an element's labels in the same order of precedence a browser computes a name from: the elements named by `aria-labelledby` when it resolves to any, otherwise a non-empty `aria-label`, otherwise the `<label>` elements associated with a form control through `for` or by wrapping it.
+
+`GetByRole` matches the accessible name exactly, as `Accessibility.queryAXTree` does. Elements the accessibility tree ignores, such as one inside `display: none` or `aria-hidden="true"`, never match.
 
 ### Resolution scope: the page, or one frame
 
@@ -59,7 +83,9 @@ Selector syntax supports an optional name filter using bracket notation:
 role=button[name="Submit"]
 ```
 
-Parsing is implemented in `ParseRoleSelector(ReadOnlySpan<char>)` without regular expressions. It strips the `role=` prefix, slices at the first `[`, then checks for a `name=` attribute. Quoted names are extracted by skipping the leading `"` and the trailing `"]` pair. Unquoted names are extracted by slicing to the first `]`. Nodes with `Ignored: true` or no `BackendDOMNodeId` are skipped. Each matching node is resolved to an `ElementHandle` via `DOM.resolveNode`.
+Parsing is implemented in `ParseRoleSelector(ReadOnlySpan<char>)` without regular expressions. It strips the `role=` prefix, slices at the first `[`, then checks for a `name=` attribute. Quoted names are extracted by skipping the leading `"` and the trailing `"]` pair, so a quoted name may itself contain quotes and brackets. Unquoted names are extracted by slicing to the first `]`. Nodes with `Ignored: true` or no `BackendDOMNodeId` are skipped. Each matching node is resolved to an `ElementHandle` via `DOM.resolveNode`.
+
+The query matches the browser's own spelling of a role. Chromium spells the ARIA `img` role as `image`, so the strategy queries `image` first for either spelling and falls back to `img` when that finds nothing.
 
 `GenerateSelector` evaluates an inline JavaScript function that checks the explicit `role` attribute first, then infers semantic roles from tag name and `type` attribute (for example, `<button>` maps to `button`, `<a href>` maps to `link`, `<input type="checkbox">` maps to `checkbox`). If a role is found it appends the accessible name using `aria-label` or trimmed `textContent`, formatted as `role=button[name="Submit"]`.
 
