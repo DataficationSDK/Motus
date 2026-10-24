@@ -55,7 +55,7 @@ public class ActionabilityTests
 
     /// <summary>
     /// Queues the standard actionability responses for a full click:
-    /// visible (1) + enabled (1) + stable (1) + receivesEvents (1) + boundingBox (1) + mouse (3)
+    /// visible (1) + enabled (1) + scrollIntoView (1) + stable (1) + receivesEvents (1) + boundingBox (1) + mouse (3)
     /// </summary>
     private void QueueClickResponses(ref int id, double x, double y, double w, double h)
     {
@@ -63,6 +63,8 @@ public class ActionabilityTests
         _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""boolean"", ""value"": true}}}}}}");
         // enabled -> true
         _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""boolean"", ""value"": true}}}}}}");
+        // scroll into view -> false (already in view, nothing scrolled)
+        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""boolean"", ""value"": false}}}}}}");
         // stable -> true
         _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""boolean"", ""value"": true}}}}}}");
         // receives-events -> true (pure JS elementFromPoint check)
@@ -177,7 +179,9 @@ public class ActionabilityTests
         QueueStrategyResolve(ref id, "hov-1");
         // visible -> true
         _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""boolean"", ""value"": true}}}}}}");
-        // stable -> true (no enabled check for hover)
+        // scroll into view -> false (no enabled check for hover)
+        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""boolean"", ""value"": false}}}}}}");
+        // stable -> true
         _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""boolean"", ""value"": true}}}}}}");
         // receives-events -> true (pure JS elementFromPoint check)
         _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""boolean"", ""value"": true}}}}}}");
@@ -193,6 +197,152 @@ public class ActionabilityTests
             .ToList();
 
         Assert.IsTrue(allSent.Any(s => s.Contains("mouseMoved")));
+    }
+
+    [TestMethod]
+    public async Task ClickAsync_ScrollsIntoViewBeforeTheStabilityAndHitTests()
+    {
+        var page = await CreatePageAsync();
+        var locator = page.Locator("#below");
+
+        var id = 9;
+        QueueStrategyResolve(ref id, "below-1");
+        QueueClickResponses(ref id, 10, 20, 100, 50);
+
+        await locator.ClickAsync();
+
+        var allSent = Enumerable.Range(0, _socket.SentMessages.Count)
+            .Select(i => _socket.GetSentJson(i))
+            .ToList();
+
+        var scroll = allSent.FindIndex(s => s.Contains("scrollIntoView"));
+        var stable = allSent.FindIndex(s => s.Contains("setTimeout"));
+        var hitTest = allSent.FindIndex(s => s.Contains("elementFromPoint"));
+
+        Assert.IsTrue(scroll >= 0, "The click never asked for the element to be scrolled into view.");
+        Assert.IsTrue(scroll < stable && scroll < hitTest,
+            "The element has to be scrolled into view before it is measured and hit-tested.");
+    }
+
+    // A check reads the state first, then runs the pointer checks a second time before clicking.
+    private void QueueCheckResponses(ref int id, string objectId, string stateBefore, string stateAfter)
+    {
+        QueueStrategyResolve(ref id, objectId);
+        // visible, enabled
+        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""boolean"", ""value"": true}}}}}}");
+        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""boolean"", ""value"": true}}}}}}");
+        // checked state before the click
+        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""string"", ""value"": ""{stateBefore}""}}}}}}");
+        QueueStrategyResolve(ref id, objectId);
+        QueueClickResponses(ref id, 0, 0, 20, 20);
+        // checked state after the click
+        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""string"", ""value"": ""{stateAfter}""}}}}}}");
+    }
+
+    [TestMethod]
+    public async Task CheckAsync_WhenTheClickChangesTheState_Succeeds()
+    {
+        var page = await CreatePageAsync();
+        var id = 9;
+        QueueCheckResponses(ref id, "cb-1", "checkbox:false", "checkbox:true");
+
+        await page.Locator("#cb").CheckAsync();
+
+        Assert.IsTrue(Enumerable.Range(0, _socket.SentMessages.Count)
+            .Any(i => _socket.GetSentJson(i).Contains("mousePressed")));
+    }
+
+    [TestMethod]
+    public async Task CheckAsync_WhenTheClickLeavesTheStateUnchanged_Throws()
+    {
+        var page = await CreatePageAsync();
+        var id = 9;
+        QueueCheckResponses(ref id, "cb-1", "checkbox:false", "checkbox:false");
+
+        var ex = await Assert.ThrowsExceptionAsync<MotusException>(() => page.Locator("#cb").CheckAsync());
+
+        StringAssert.Contains(ex.Message, "#cb");
+        StringAssert.Contains(ex.Message, "still unchecked");
+    }
+
+    [TestMethod]
+    public async Task CheckAsync_WhenTheClickTakesTheDocumentAway_Succeeds()
+    {
+        var page = await CreatePageAsync();
+        var id = 9;
+        QueueStrategyResolve(ref id, "cb-1");
+        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""boolean"", ""value"": true}}}}}}");
+        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""boolean"", ""value"": true}}}}}}");
+        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""string"", ""value"": ""checkbox:false""}}}}}}");
+        QueueStrategyResolve(ref id, "cb-1");
+        QueueClickResponses(ref id, 0, 0, 20, 20);
+        // The box submitted its form, so the element it was read through is gone.
+        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""error"": {{""code"": -32000, ""message"": ""Cannot find context with specified id""}}}}");
+
+        await page.Locator("#cb").CheckAsync();
+    }
+
+    [TestMethod]
+    public async Task UncheckAsync_WhenTheClickLeavesTheStateUnchanged_Throws()
+    {
+        var page = await CreatePageAsync();
+        var id = 9;
+        QueueCheckResponses(ref id, "cb-1", "checkbox:true", "checkbox:true");
+
+        var ex = await Assert.ThrowsExceptionAsync<MotusException>(() => page.Locator("#cb").UncheckAsync());
+
+        StringAssert.Contains(ex.Message, "still checked");
+    }
+
+    [TestMethod]
+    public async Task CheckAsync_WhenAlreadyChecked_DoesNotClick()
+    {
+        var page = await CreatePageAsync();
+        var id = 9;
+        QueueStrategyResolve(ref id, "cb-1");
+        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""boolean"", ""value"": true}}}}}}");
+        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""boolean"", ""value"": true}}}}}}");
+        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""string"", ""value"": ""checkbox:true""}}}}}}");
+
+        await page.Locator("#cb").CheckAsync();
+
+        var allSent = Enumerable.Range(0, _socket.SentMessages.Count)
+            .Select(i => _socket.GetSentJson(i))
+            .ToList();
+        Assert.IsFalse(allSent.Any(s => s.Contains("mousePressed")), "An already checked box was clicked.");
+        Assert.IsFalse(allSent.Any(s => s.Contains("scrollIntoView")), "An already checked box was scrolled to.");
+    }
+
+    [TestMethod]
+    public async Task CheckAsync_OnAnElementWithNoCheckedState_Throws()
+    {
+        var page = await CreatePageAsync();
+        var id = 9;
+        QueueStrategyResolve(ref id, "btn-1");
+        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""boolean"", ""value"": true}}}}}}");
+        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""boolean"", ""value"": true}}}}}}");
+        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""object"", ""subtype"": ""null"", ""value"": null}}}}}}");
+
+        var ex = await Assert.ThrowsExceptionAsync<MotusException>(() => page.Locator("#btn").CheckAsync());
+
+        StringAssert.Contains(ex.Message, "not a checkbox");
+    }
+
+    [TestMethod]
+    public async Task UncheckAsync_OnACheckedRadioButton_ThrowsWithoutClicking()
+    {
+        var page = await CreatePageAsync();
+        var id = 9;
+        QueueStrategyResolve(ref id, "r-1");
+        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""boolean"", ""value"": true}}}}}}");
+        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""boolean"", ""value"": true}}}}}}");
+        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""string"", ""value"": ""radio:true""}}}}}}");
+
+        var ex = await Assert.ThrowsExceptionAsync<MotusException>(() => page.Locator("#r").UncheckAsync());
+
+        StringAssert.Contains(ex.Message, "radio button");
+        Assert.IsFalse(Enumerable.Range(0, _socket.SentMessages.Count)
+            .Any(i => _socket.GetSentJson(i).Contains("mousePressed")));
     }
 
     [TestMethod]

@@ -466,6 +466,8 @@ page.GetByRole(AriaRole.Button, new() { Name = "Submit" })
 page.GetByRole("button", "Submit")
 ```
 
+Both match implicit roles and the computed accessible name. Playwright matches the name as a case-insensitive substring unless `Exact` is set; Motus always compares the whole name, case-sensitively, which is Playwright's `Exact = true`. The other text-based factories (`GetByText`, `GetByLabel`, `GetByPlaceholder`, `GetByTitle`, `GetByAltText`) follow Playwright: a case-insensitive substring by default, the whole text when `exact` is true.
+
 ### 8. Migrate configuration
 
 If you relied on `playwright.config.ts` for default timeout, viewport, or base URL, create a `motus.config.json` in your project output directory with the equivalent values (see the Configuration section above). Remove any Playwright config file from the project.

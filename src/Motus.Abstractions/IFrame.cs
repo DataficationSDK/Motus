@@ -53,34 +53,66 @@ public interface IFrame
     ILocator Locator(string selector, LocatorOptions? options = null);
 
     /// <summary>
-    /// Creates a locator for the element matching the specified role.
+    /// Creates a locator for the elements with the specified ARIA role, and the specified
+    /// accessible name when one is given.
     /// </summary>
-    /// <param name="role">The ARIA role to match.</param>
-    /// <param name="name">Optional accessible name to filter by.</param>
+    /// <param name="role">The ARIA role to match, such as <c>button</c>, <c>link</c> or <c>textbox</c>.</param>
+    /// <param name="name">Optional accessible name to filter by. It must equal the computed name exactly.</param>
     /// <returns>A locator for the matching elements.</returns>
+    /// <remarks>
+    /// Matching runs over the browser's accessibility tree, the same as a <c>role=</c> selector, so
+    /// an element's implicit role counts (a <c>&lt;button&gt;</c> is a button, an
+    /// <c>&lt;input&gt;</c> a textbox) and the name is the computed accessible name, whether it
+    /// comes from text content, a label, <c>aria-labelledby</c> or <c>aria-label</c>. Elements
+    /// hidden from the accessibility tree, such as one styled <c>display: none</c> or inside
+    /// <c>aria-hidden="true"</c>, do not match. Matching covers this frame's document only. Reading the accessibility tree needs
+    /// a Chromium-based browser.
+    /// </remarks>
     ILocator GetByRole(string role, string? name = null);
 
     /// <summary>
-    /// Creates a locator for the element matching the specified text.
+    /// Creates a locator for the elements whose text matches the specified text.
     /// </summary>
     /// <param name="text">The text to match.</param>
-    /// <param name="exact">Whether to match the text exactly.</param>
+    /// <param name="exact">
+    /// Whether the text must match the element's whole text, case-sensitively. Omitted or false,
+    /// a case-insensitive substring is enough. Either way whitespace is collapsed and trimmed
+    /// before comparing.
+    /// </param>
     /// <returns>A locator for the matching elements.</returns>
+    /// <remarks>
+    /// Only the innermost element holding the text matches, not every ancestor that contains it.
+    /// An <c>&lt;input&gt;</c> of type <c>button</c>, <c>submit</c> or <c>reset</c> is matched by its
+    /// value. Text in the document head, scripts and styles is ignored. Matching covers this frame's document and its open shadow roots.
+    /// </remarks>
     ILocator GetByText(string text, bool? exact = null);
 
     /// <summary>
-    /// Creates a locator for the element matching the specified label.
+    /// Creates a locator for the elements labelled by the specified text.
     /// </summary>
     /// <param name="text">The label text to match.</param>
-    /// <param name="exact">Whether to match the text exactly.</param>
+    /// <param name="exact">
+    /// Whether the text must match the whole label, case-sensitively. Omitted or false, a
+    /// case-insensitive substring is enough. Either way whitespace is collapsed and trimmed
+    /// before comparing.
+    /// </param>
     /// <returns>A locator for the matching elements.</returns>
+    /// <remarks>
+    /// An element's labels are, in order of precedence, the elements its <c>aria-labelledby</c>
+    /// names, its <c>aria-label</c>, and the <c>&lt;label&gt;</c> elements associated with a form
+    /// control, either through <c>for</c> or by wrapping it. Matching covers this frame's document and its open shadow roots.
+    /// </remarks>
     ILocator GetByLabel(string text, bool? exact = null);
 
     /// <summary>
-    /// Creates a locator for the element matching the specified placeholder.
+    /// Creates a locator for the elements whose <c>placeholder</c> attribute matches the specified text.
     /// </summary>
     /// <param name="text">The placeholder text to match.</param>
-    /// <param name="exact">Whether to match the text exactly.</param>
+    /// <param name="exact">
+    /// Whether the text must match the whole attribute value, case-sensitively. Omitted or false, a
+    /// case-insensitive substring is enough. Either way whitespace is collapsed and trimmed
+    /// before comparing.
+    /// </param>
     /// <returns>A locator for the matching elements.</returns>
     ILocator GetByPlaceholder(string text, bool? exact = null);
 
@@ -92,18 +124,26 @@ public interface IFrame
     ILocator GetByTestId(string testId);
 
     /// <summary>
-    /// Creates a locator for the element matching the specified title.
+    /// Creates a locator for the elements whose <c>title</c> attribute matches the specified text.
     /// </summary>
     /// <param name="text">The title text to match.</param>
-    /// <param name="exact">Whether to match the text exactly.</param>
+    /// <param name="exact">
+    /// Whether the text must match the whole attribute value, case-sensitively. Omitted or false, a
+    /// case-insensitive substring is enough. Either way whitespace is collapsed and trimmed
+    /// before comparing.
+    /// </param>
     /// <returns>A locator for the matching elements.</returns>
     ILocator GetByTitle(string text, bool? exact = null);
 
     /// <summary>
-    /// Creates a locator for the element matching the specified alt text.
+    /// Creates a locator for the elements whose <c>alt</c> attribute matches the specified text.
     /// </summary>
     /// <param name="text">The alt text to match.</param>
-    /// <param name="exact">Whether to match the text exactly.</param>
+    /// <param name="exact">
+    /// Whether the text must match the whole attribute value, case-sensitively. Omitted or false, a
+    /// case-insensitive substring is enough. Either way whitespace is collapsed and trimmed
+    /// before comparing.
+    /// </param>
     /// <returns>A locator for the matching elements.</returns>
     ILocator GetByAltText(string text, bool? exact = null);
 
