@@ -92,17 +92,19 @@ internal sealed record BiDiScriptEvaluateResult(
     [property: JsonPropertyName("result")] BiDiScriptRemoteValue? Result = null,
     [property: JsonPropertyName("exceptionDetails")] BiDiScriptExceptionDetails? ExceptionDetails = null);
 
-internal sealed record BiDiScriptLocalValue(
-    [property: JsonPropertyName("type")] string Type,
-    [property: JsonPropertyName("value")] JsonElement? Value = null);
+internal sealed record BiDiScriptSerializationOptions(
+    [property: JsonPropertyName("maxObjectDepth")] int? MaxObjectDepth = null);
 
+// Arguments and this are local values or remote references, whose shape depends on what they
+// carry, so they are built as JSON by BiDiScriptValues rather than modelled here.
 internal sealed record BiDiScriptCallFunctionParams(
     [property: JsonPropertyName("functionDeclaration")] string FunctionDeclaration,
     [property: JsonPropertyName("awaitPromise")] bool AwaitPromise,
     [property: JsonPropertyName("target")] BiDiScriptTarget Target,
-    [property: JsonPropertyName("arguments")] BiDiScriptLocalValue[]? Arguments = null,
+    [property: JsonPropertyName("arguments")] JsonElement[]? Arguments = null,
     [property: JsonPropertyName("resultOwnership")] string? ResultOwnership = null,
-    [property: JsonPropertyName("this")] BiDiScriptLocalValue? This = null);
+    [property: JsonPropertyName("this")] JsonElement? This = null,
+    [property: JsonPropertyName("serializationOptions")] BiDiScriptSerializationOptions? SerializationOptions = null);
 
 internal sealed record BiDiScriptCallFunctionResult(
     [property: JsonPropertyName("type")] string Type,
@@ -118,6 +120,11 @@ internal sealed record BiDiInputPerformActionsParams(
     [property: JsonPropertyName("actions")] BiDiInputActionSequence[] Actions);
 
 internal sealed record BiDiInputPerformActionsResult;
+
+internal sealed record BiDiInputSetFilesParams(
+    [property: JsonPropertyName("context")] string Context,
+    [property: JsonPropertyName("element")] JsonElement Element,
+    [property: JsonPropertyName("files")] string[] Files);
 
 internal sealed record BiDiInputActionSequence(
     [property: JsonPropertyName("type")] string Type,
@@ -213,12 +220,13 @@ internal sealed record BiDiNetworkHeader(
 [JsonSerializable(typeof(BiDiScriptExceptionDetails))]
 [JsonSerializable(typeof(BiDiScriptEvaluateParams))]
 [JsonSerializable(typeof(BiDiScriptEvaluateResult))]
-[JsonSerializable(typeof(BiDiScriptLocalValue))]
+[JsonSerializable(typeof(BiDiScriptSerializationOptions))]
 [JsonSerializable(typeof(BiDiScriptCallFunctionParams))]
 [JsonSerializable(typeof(BiDiScriptCallFunctionResult))]
 // Input domain
 [JsonSerializable(typeof(BiDiInputPerformActionsParams))]
 [JsonSerializable(typeof(BiDiInputPerformActionsResult))]
+[JsonSerializable(typeof(BiDiInputSetFilesParams))]
 [JsonSerializable(typeof(BiDiInputActionSequence))]
 [JsonSerializable(typeof(BiDiInputSourceParameters))]
 [JsonSerializable(typeof(BiDiInputAction))]

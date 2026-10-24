@@ -178,7 +178,7 @@ Page.GetByPlaceholder("Search...")
 Page.GetByTestId("login-form")
 ```
 
-`GetByRole` matches implicit roles and computed accessible names, so a plain `<button>Submit</button>` is found without a `role` or `aria-label` attribute, and the name must match exactly. `GetByLabel` finds a control through its `<label for>`, a wrapping `<label>`, `aria-labelledby` or `aria-label`. `GetByText`, `GetByLabel`, `GetByPlaceholder`, `GetByTitle` and `GetByAltText` match a case-insensitive substring by default; pass `exact: true` to require the whole text, case-sensitively:
+`GetByRole` matches implicit roles and computed accessible names, so a plain `<button>Submit</button>` is found without a `role` or `aria-label` attribute, and the name must match exactly. `GetByLabel` finds a control through its `<label for>`, a wrapping `<label>`, `aria-labelledby` or `aria-label`. `GetByText`, `GetByLabel`, `GetByPlaceholder`, `GetByTitle` and `GetByAltText` match a case-insensitive substring by default; pass `exact: true` to require the whole text, case-sensitively. `GetByRole` reads the browser's accessibility tree, which only Chromium-based browsers expose, so on Firefox it throws a `NotSupportedException` and `GetByLabel`, `GetByText` or `GetByTestId` is the one to use; every other locator works on both:
 
 ```csharp
 Page.GetByText("welcome")               // matches "Welcome back, Ada"

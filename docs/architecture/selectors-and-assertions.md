@@ -51,7 +51,7 @@ The text-based factories write their text as a JSON string literal followed by a
 
 `GetByLabel` reads an element's labels in the same order of precedence a browser computes a name from: the elements named by `aria-labelledby` when it resolves to any, otherwise a non-empty `aria-label`, otherwise the `<label>` elements associated with a form control through `for` or by wrapping it.
 
-`GetByRole` matches the accessible name exactly, as `Accessibility.queryAXTree` does. Elements the accessibility tree ignores, such as one inside `display: none` or `aria-hidden="true"`, never match.
+`GetByRole` matches the accessible name exactly, as `Accessibility.queryAXTree` does. Elements the accessibility tree ignores, such as one inside `display: none` or `aria-hidden="true"`, never match. It needs a Chromium-based browser; see [On Firefox](#on-firefox).
 
 ### Resolution scope: the page, or one frame
 
@@ -64,6 +64,14 @@ One consequence is worth stating because it is easy to assume otherwise. A backe
 Measurement follows the same root. `ILocator.BoundingBoxAsync` reports page coordinates for a frame-rooted locator, so a box can be handed to `page.Mouse` directly, which is where input is dispatched.
 
 See [Frames and iframes](../guides/frames-and-iframes.md) for the caller-facing view.
+
+### On Firefox
+
+Every strategy that runs a query in the page (CSS, XPath, text, test id, and the `GetBy*` factories other than `GetByRole`) resolves on Firefox the same as on Chromium, and so do chained, parent and filtered locators, the locator actions and queries, and the assertions. Two actions are the exception, for reasons outside the locator: `ScreenshotAsync` captures through a page screenshot, which has no WebDriver BiDi translation yet, and `DblClickAsync` reaches the page as two single clicks. The element handles the strategies return are named by WebDriver BiDi shared ids; see [Transport and Protocol](transport-and-protocol.md) for how the CDP-shaped calls are translated.
+
+Three things need the accessibility tree, which WebDriver BiDi does not expose: `GetByRole` and `role=` selectors, the `_node` selector behind `LocatorByBackendNodeId`, and the `ToHaveAccessibleNameAsync` and `ToHaveRoleAsync` assertions. On Firefox each throws a `NotSupportedException` straight away that says so, rather than waiting out its timeout.
+
+A Firefox page does not report the frames inside it yet, so `page.Frames` holds only the main frame and there is no `IFrame` to build a locator on for an `<iframe>`.
 
 ### TestId Strategy
 
