@@ -137,4 +137,51 @@ public class FirefoxIntegrationTests
         Assert.AreEqual("T", await page.TitleAsync());
         Assert.AreEqual(2, await page.MainFrame.EvaluateAsync<int>("1 + 1"));
     }
+
+    /// <summary>
+    /// Pointer actions scroll their target into view with a script that runs in the page rather
+    /// than with a Chromium-only command, so the script has to behave the same under Firefox. It is
+    /// run directly here because locator resolution is not yet translated for WebDriver BiDi.
+    /// </summary>
+    [TestMethod]
+    public async Task Firefox_ScrollIntoViewScript_ScrollsOnlyWhenNeeded()
+    {
+        if (!FirefoxAvailable())
+        {
+            Assert.Inconclusive("Firefox not found on this machine.");
+            return;
+        }
+
+        await using var browser = await MotusLauncher.LaunchAsync(
+            new LaunchOptions { Headless = true, Channel = BrowserChannel.Firefox });
+
+        var context = await browser.NewContextAsync();
+        var page = await context.NewPageAsync();
+
+        // BiDi has no viewport emulation, so the spacer is taller than any default window instead.
+        await page.SetContentAsync(
+            "<style>html{scroll-behavior:smooth}</style>"
+            + "<div style='height:5000px'></div><button id=b>Go</button>"
+            + "<div id=box style='height:100px;overflow:auto'><div style='height:1000px'></div><button id=inner>In</button></div>"
+            + "<div style='height:5000px'></div>");
+
+        var script = ActionabilityChecker.ScrollIntoViewIfNeededJs;
+        string Run(string id) => $"({script}).call(document.getElementById('{id}'))";
+        const string InView = """
+            (() => {
+                const r = document.getElementById('b').getBoundingClientRect();
+                return r.top >= 0 && r.bottom <= window.innerHeight;
+            })()
+            """;
+
+        Assert.IsTrue(await page.EvaluateAsync<bool>(Run("b")), "The script did not scroll to an element below the fold.");
+        Assert.IsTrue(await page.EvaluateAsync<bool>(InView), "The element is still outside the viewport.");
+
+        var scrollY = await page.EvaluateAsync<double>("window.scrollY");
+        Assert.IsFalse(await page.EvaluateAsync<bool>(Run("b")), "The script scrolled an element that was already in view.");
+        Assert.AreEqual(scrollY, await page.EvaluateAsync<double>("window.scrollY"));
+
+        Assert.IsTrue(await page.EvaluateAsync<bool>(Run("inner")), "The script did not scroll inside the container.");
+        Assert.IsTrue(await page.EvaluateAsync<double>("document.getElementById('box').scrollTop") > 0);
+    }
 }

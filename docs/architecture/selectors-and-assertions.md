@@ -151,8 +151,29 @@ Behavior:
 - **Default timeout**: resolved by `ResolveTimeout(int?)`. A per-call timeout from `AssertionOptions.Timeout` takes precedence. If no per-call timeout is supplied, it falls back to the value at `MotusConfigLoader.Config.Assertions?.Timeout`, and if that is also absent, uses 10,000 ms.
 - A linked `CancellationTokenSource` is created from the caller's token and cancelled after the timeout via `CancelAfter`.
 - On each iteration, if the condition delegate returns `(passed: true, actual)`, the assertion returns successfully.
-- **Transient error handling**: the following exception types are caught and retried rather than propagated: `InvalidOperationException` (evaluation failures, element not found), `MotusProtocolException` (CDP command errors such as stale context), `MotusTargetClosedException` (target navigated away), and `TimeoutException` (inner operation timeouts). `OperationCanceledException` is not caught here and rethrows to the outer handler.
+- **Transient error handling**: the following exception types are caught and retried rather than propagated: `InvalidOperationException` (evaluation failures), `MotusProtocolException` (CDP command errors such as stale context), `MotusTargetClosedException` (target navigated away), and `TimeoutException` (inner operation timeouts). `OperationCanceledException` is not caught here and rethrows to the outer handler.
 - When the timeout elapses, `OperationCanceledException` is caught and rethrown as `MotusAssertionException` with full diagnostic context.
+
+### Element absence
+
+`LocatorAssertions` decides what a locator that matches nothing means before the helper sees a result. Each assertion passes a `whenAbsent` value to its private `RetryAsync`, which catches `ElementNotFoundException` from the condition and turns it into a poll result with `<element not found>` as the received value:
+
+- `whenAbsent: false` (`ToBeVisibleAsync`): absence means the condition does not hold. The assertion keeps polling for the element to appear, and `Not.ToBeVisibleAsync` passes at once.
+- `whenAbsent: true` (`ToBeHiddenAsync`): absence means the condition holds. The assertion passes at once, and `Not.ToBeHiddenAsync` keeps polling for a visible element.
+- `whenAbsent: null` (every other element assertion): absence answers nothing. The result reported is the assertion's own polarity, so the helper's negation comes out unsatisfied for both forms and the poll repeats until the element appears or the timeout elapses. This follows Playwright: `Not.ToHaveTextAsync("x")` on a missing element fails rather than passing.
+- `ToBeAttachedAsync`, `ToBeDetachedAsync`, and `ToHaveCountAsync` count matches instead of resolving one element, so a missing element is simply a count of zero.
+
+| Assertion | Nothing matches | `Not` form, nothing matches |
+|---|---|---|
+| `ToBeVisibleAsync` | waits | passes |
+| `ToBeHiddenAsync` | passes | waits |
+| `ToBeAttachedAsync` | waits | passes |
+| `ToBeDetachedAsync` | passes | waits |
+| `ToHaveCountAsync(0)` | passes | waits |
+| `ToHaveCountAsync(n > 0)` | waits | passes |
+| All other locator assertions | waits | waits |
+
+A wait that runs out fails with `MotusAssertionException` whose `Actual` is `<element not found>`.
 
 ### .Not Negation
 
@@ -168,8 +189,8 @@ All methods accept an optional `AssertionOptions? options` parameter and return 
 
 | Method | Condition checked |
 |---|---|
-| `ToBeVisibleAsync` | Element is visible (`IsVisibleAsync`) |
-| `ToBeHiddenAsync` | Element is hidden (`IsHiddenAsync`) |
+| `ToBeVisibleAsync` | Element is visible (`IsVisibleAsync`); a missing element is not visible |
+| `ToBeHiddenAsync` | Element is hidden (`IsHiddenAsync`); a missing element is hidden |
 | `ToBeEnabledAsync` | Element is enabled (`IsEnabledAsync`) |
 | `ToBeDisabledAsync` | Element is disabled (`IsDisabledAsync`) |
 | `ToBeCheckedAsync` | Checkbox or radio is checked (`IsCheckedAsync`) |

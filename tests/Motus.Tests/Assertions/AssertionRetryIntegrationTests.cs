@@ -1,10 +1,12 @@
+using System.Diagnostics;
 using Motus.Abstractions;
 using Motus.Assertions;
 
 namespace Motus.Tests.Assertions;
 
 /// <summary>
-/// Pins what a retrying assertion does when the thing it is polling stops answering.
+/// Pins what a retrying assertion does when the thing it is polling stops answering, or is not
+/// there yet.
 /// </summary>
 /// <remarks>
 /// A retrying assertion polls through a target that has gone away, because a navigation destroys
@@ -14,6 +16,11 @@ namespace Motus.Tests.Assertions;
 /// Getting that wrong in either direction is silent: report loss too eagerly and an assertion that
 /// merely spanned a navigation is retried as infrastructure, report it too late and a dead browser
 /// is recorded as a verdict the test never reached.
+///
+/// An element that has not rendered yet is the other thing a poll can run into, and the reason a
+/// retrying assertion exists: most assertions wait for it, while the few that absence answers
+/// outright (hidden, not visible, detached) pass on the first poll instead of running out the
+/// clock.
 ///
 /// These run against a real browser because the distinction only exists there. The rest of the
 /// assertion tests drive the comparison logic and never open one.
@@ -25,6 +32,17 @@ public class AssertionRetryIntegrationTests
     private const string PageWithInput = "data:text/html,<html><body><p>first</p><input placeholder='target'></body></html>";
 
     private const string PageWithDisabledInput = "data:text/html,<html><body><input placeholder='target' disabled></body></html>";
+
+    // Renders its content a second after load, the way a page does after a form submit or a click
+    // that fetches something, so an assertion made straight after navigating starts before the
+    // elements exist.
+    private const string PageThatRendersLater =
+        "data:text/html,<html><body><p>start</p><script>setTimeout(() => {"
+        + "const h = document.createElement('h1'); h.id = 'done'; h.textContent = 'Saved'; h.title = 'status';"
+        + "const i = document.createElement('input'); i.id = 'field'; i.value = 'ready';"
+        + "document.body.append(h, i); }, 1000)</script></body></html>";
+
+    private const string PageWithNothingToFind = "data:text/html,<html><body><p>start</p></body></html>";
 
     private IBrowser? _browser;
 
@@ -116,5 +134,115 @@ public class AssertionRetryIntegrationTests
                 BrowserFailure.IsBrowserLost(ex),
                 "A failing assertion must not be reported as a lost browser.");
         }
+    }
+
+    [TestMethod]
+    [DataRow("ToBeVisible")]
+    [DataRow("ToHaveText")]
+    [DataRow("ToContainText")]
+    [DataRow("ToHaveAttribute")]
+    [DataRow("ToBeEnabled")]
+    [DataRow("ToBeEditable")]
+    [DataRow("ToHaveValue")]
+    [DataRow("Not.ToBeHidden")]
+    public async Task AssertionWaitsForAnElementThatRendersLater(string assertion)
+    {
+        var page = await _browser!.NewPageAsync();
+        await page.GotoAsync(PageThatRendersLater);
+
+        // Checked first so the test cannot pass by starting after the element arrived, which would
+        // leave the retry loop untested.
+        Assert.AreEqual(0, await page.Locator("#done, #field").CountAsync(),
+            "The elements rendered before the assertion started.");
+
+        var options = new AssertionOptions { Timeout = 10_000 };
+        var heading = Expect.That(page.Locator("#done"));
+        var field = Expect.That(page.Locator("#field"));
+
+        await (assertion switch
+        {
+            "ToBeVisible" => heading.ToBeVisibleAsync(options),
+            "ToHaveText" => heading.ToHaveTextAsync("Saved", options),
+            "ToContainText" => heading.ToContainTextAsync("Sav", options),
+            "ToHaveAttribute" => heading.ToHaveAttributeAsync("title", "status", options),
+            "ToBeEnabled" => field.ToBeEnabledAsync(options),
+            "ToBeEditable" => field.ToBeEditableAsync(options),
+            "ToHaveValue" => field.ToHaveValueAsync("ready", options),
+            "Not.ToBeHidden" => heading.Not.ToBeHiddenAsync(options),
+            _ => throw new ArgumentOutOfRangeException(nameof(assertion), assertion, null),
+        });
+    }
+
+    [TestMethod]
+    [DataRow("ToBeHidden")]
+    [DataRow("Not.ToBeVisible")]
+    [DataRow("ToBeDetached")]
+    [DataRow("Not.ToBeAttached")]
+    [DataRow("ToHaveCount(0)")]
+    public async Task AssertionThatAbsenceAnswersPassesAtOnce(string assertion)
+    {
+        var page = await _browser!.NewPageAsync();
+        await page.GotoAsync(PageWithNothingToFind);
+
+        var options = new AssertionOptions { Timeout = 10_000 };
+        var missing = Expect.That(page.Locator("#nope"));
+
+        var elapsed = Stopwatch.StartNew();
+        await (assertion switch
+        {
+            "ToBeHidden" => missing.ToBeHiddenAsync(options),
+            "Not.ToBeVisible" => missing.Not.ToBeVisibleAsync(options),
+            "ToBeDetached" => missing.ToBeDetachedAsync(options),
+            "Not.ToBeAttached" => missing.Not.ToBeAttachedAsync(options),
+            "ToHaveCount(0)" => missing.ToHaveCountAsync(0, options),
+            _ => throw new ArgumentOutOfRangeException(nameof(assertion), assertion, null),
+        });
+        elapsed.Stop();
+
+        // Passing is not enough: an assertion that polled to its timeout and then passed would be
+        // just as green and ten seconds slower. Absence is the answer here, so the first poll is.
+        Assert.IsTrue(elapsed.ElapsedMilliseconds < 2_000,
+            $"{assertion} took {elapsed.ElapsedMilliseconds}ms against a 10000ms timeout.");
+    }
+
+    [TestMethod]
+    public async Task AssertionOnAnElementThatNeverRendersFailsAtTheTimeout()
+    {
+        var page = await _browser!.NewPageAsync();
+        await page.GotoAsync(PageWithNothingToFind);
+
+        var elapsed = Stopwatch.StartNew();
+        try
+        {
+            await Expect.That(page.Locator("#nope"))
+                .ToHaveTextAsync("Saved", new AssertionOptions { Timeout = 1_500 });
+
+            Assert.Fail("Expected the assertion to fail against an element that never renders.");
+        }
+        catch (MotusAssertionException ex)
+        {
+            elapsed.Stop();
+
+            // It waited the whole timeout for the element rather than giving up on the first poll,
+            // and the failure says the element was missing rather than naming a value it never had.
+            Assert.IsTrue(elapsed.ElapsedMilliseconds >= 1_400,
+                $"Failed after {elapsed.ElapsedMilliseconds}ms, before the 1500ms timeout.");
+            Assert.AreEqual("<element not found>", ex.Actual);
+            StringAssert.Contains(ex.Message, "Received: <element not found>");
+            StringAssert.Contains(ex.Message, "Selector: #nope");
+            Assert.IsFalse(BrowserFailure.IsBrowserLost(ex));
+        }
+    }
+
+    [TestMethod]
+    public async Task VisibilityQueriesAnswerForAnElementThatIsNotThere()
+    {
+        var page = await _browser!.NewPageAsync();
+        await page.GotoAsync(PageWithNothingToFind);
+
+        var missing = page.Locator("#nope");
+
+        Assert.IsFalse(await missing.IsVisibleAsync());
+        Assert.IsTrue(await missing.IsHiddenAsync());
     }
 }
