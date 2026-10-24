@@ -1,22 +1,16 @@
 name: Motus CI
 
+# Every event runs the workflow, and the `changes` job below decides whether the code paths were
+# touched. A trigger-level `paths` filter cannot do that job once checks are required: a pull request
+# that touches only docs would never get the checks, so it could never merge or enter the merge
+# queue, and `merge_group` takes no path filter at all.
 on:
   push:
     branches: [main]
-    paths:
-      - "src/**"
-      - "tests/**"
-      - "samples/**"
-      - "Motus.sln"
-      - ".github/workflows/motus-ci.yml"
   pull_request:
     branches: [main]
-    paths:
-      - "src/**"
-      - "tests/**"
-      - "samples/**"
-      - "Motus.sln"
-      - ".github/workflows/motus-ci.yml"
+  merge_group:
+    types: [checks_requested]
 
 env:
   # The browser every leg tests against. Raise it deliberately, the way a dependency is raised, so a
@@ -24,8 +18,82 @@ env:
   CHROME_VERSION: 149.0.7827.156
 
 jobs:
+  # Decides from the changed files whether the jobs that build and test need to run. Each event
+  # carries its own range: a pull request is compared from where it left its base, a merge group
+  # from the tip of main it was built on, and a push from the commit main pointed at before it.
+  # Anything that cannot be decided runs everything, since a needless run costs minutes and a
+  # skipped one could let a broken change through.
+  changes:
+    name: Changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.diff.outputs.code }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          # Only the commits and trees are needed to list changed paths, so file contents stay on
+          # the server.
+          filter: blob:none
+
+      - name: Diff the changed paths
+        id: diff
+        shell: bash
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          GROUP_BASE: ${{ github.event.merge_group.base_sha }}
+          GROUP_HEAD: ${{ github.event.merge_group.head_sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PUSH_AFTER: ${{ github.event.after }}
+        run: |
+          # The same paths the trigger filters named before this job replaced them.
+          code_paths=(src tests samples Motus.sln .github/workflows/motus-ci.yml)
+
+          case "$EVENT" in
+            pull_request) base="$PR_BASE";     head="$PR_HEAD" ;;
+            merge_group)  base="$GROUP_BASE";  head="$GROUP_HEAD" ;;
+            push)         base="$PUSH_BEFORE"; head="$PUSH_AFTER" ;;
+            *)            base="";             head="" ;;
+          esac
+
+          # A push that creates the branch reports an all-zero `before`, which has nothing to
+          # compare against. One that is no longer reachable after a force push fails the diff below
+          # and lands in the same place.
+          if [ -z "$base" ] || [ -z "$head" ] || [[ "$base" =~ ^0+$ ]]; then
+            echo "No range to compare for '$EVENT', so everything runs."
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Three dots compare the head with the commit it shares with the base, so commits that
+          # landed on main meanwhile are not counted as this change's own.
+          range="$base...$head"
+
+          # No rename detection: a file moved out of a code path changes that path as surely as one
+          # moved into it, and listing both sides says so.
+          if ! changed="$(git diff --name-only --no-renames "$range" -- "${code_paths[@]}")"; then
+            echo "Could not diff $range, so everything runs."
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ -n "$changed" ]; then
+            echo "Code paths changed in $range:"
+            echo "$changed"
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No code paths changed in $range, so the build and test jobs are skipped."
+            echo "code=false" >> "$GITHUB_OUTPUT"
+          fi
+
   dotnet:
     name: .NET (${{ matrix.os }})
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ${{ matrix.os }}
     # A backstop above the step timeouts below. Without it a stalled run holds a runner for the
     # six-hour default, and the log of a job that never ends cannot be read until it does.
@@ -378,3 +446,35 @@ jobs:
           name: firefox-integration-test-results
           path: TestResults/**/*.trx
           retention-days: 14
+
+  # The one check to require. A matrix job skipped at the job level reports a single check under its
+  # unexpanded name, `.NET (${{ matrix.os }})`, so requiring the per-OS names would block every
+  # change that skips them. This job runs on every event, whatever the others did, and passes only
+  # when each of them succeeded or was skipped on purpose. A failure or a cancellation anywhere,
+  # including in `changes`, fails it.
+  ci:
+    name: CI
+    if: always()
+    needs: [changes, dotnet, integration, integration-firefox]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Check the jobs it needs
+        shell: bash
+        env:
+          CHANGES: ${{ needs.changes.result }}
+          DOTNET: ${{ needs.dotnet.result }}
+          INTEGRATION: ${{ needs.integration.result }}
+          INTEGRATION_FIREFOX: ${{ needs.integration-firefox.result }}
+        run: |
+          status=0
+          for job in CHANGES DOTNET INTEGRATION INTEGRATION_FIREFOX; do
+            result="${!job}"
+            echo "$job: $result"
+            case "$result" in
+              success|skipped) ;;
+              *) status=1 ;;
+            esac
+          done
+          exit $status
