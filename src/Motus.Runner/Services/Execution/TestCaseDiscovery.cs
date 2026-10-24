@@ -19,7 +19,8 @@ internal sealed record DiscoveredTestCase(
     bool IsIgnored,
     string? IgnoreReason,
     bool Quarantined,
-    string? Id = null)
+    string? Id = null,
+    bool ConstantName = true)
 {
     /// <summary>The case's identity, which the runner asks for it by.</summary>
     public string Id { get; init; } = Id ?? FullName;
@@ -82,23 +83,29 @@ internal static class TestCaseDiscovery
             var (classIgnored, classReason) = GetIgnoreInfo(classAttributes);
             var classQuarantined = classAttributes.Any(a => QuarantineAttributes.Contains(a.GetType().Name));
 
-            foreach (var method in type.GetMethods(BindingFlags.Public | BindingFlags.Instance))
+            var testMethods = type.GetMethods(BindingFlags.Public | BindingFlags.Instance).Where(IsTestMethod).ToList();
+            var overloaded = testMethods.GroupBy(m => m.Name).Where(g => g.Count() > 1).Select(g => g.Key).ToHashSet(StringComparer.Ordinal);
+
+            foreach (var method in testMethods)
             {
-                if (!IsTestMethod(method))
-                    continue;
 
                 var methodAttributes = method.GetCustomAttributes(true);
                 var (methodIgnored, methodReason) = GetIgnoreInfo(methodAttributes);
                 var quarantined = classQuarantined || methodAttributes.Any(a => QuarantineAttributes.Contains(a.GetType().Name));
 
-                foreach (var testCase in TestCaseExpander.Expand(type, method, onWarning))
+                foreach (var expanded in TestCaseExpander.Expand(type, method, onWarning))
                 {
+                    // Overloads without data rows would share a name, which reporters and results key on.
+                    var testCase = overloaded.Contains(method.Name) && expanded.Arguments is null
+                        ? expanded with { FullName = $"{type.FullName}.{method.Name}({string.Join(", ", method.GetParameters().Select(p => p.ParameterType.Name))})" }
+                        : expanded;
+
                     if (filter is not null && !testCase.FullName.Contains(filter, StringComparison.OrdinalIgnoreCase))
                         continue;
 
                     var isIgnored = classIgnored || methodIgnored || testCase.IgnoreReason is not null;
                     var reason = classIgnored ? classReason : methodIgnored ? methodReason : testCase.IgnoreReason;
-                    tests.Add(new DiscoveredTestCase(type, method, testCase.FullName, testCase.Arguments, isIgnored, reason, quarantined, testCase.Id));
+                    tests.Add(new DiscoveredTestCase(type, method, testCase.FullName, testCase.Arguments, isIgnored, reason, quarantined, testCase.Id, testCase.ConstantName));
                 }
             }
         }

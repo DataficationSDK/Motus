@@ -165,6 +165,10 @@ public class TestHostIsolationTests
         var result = await new TestRunner(1).RunAsync(tests, reporter);
 
         Assert.AreEqual(2, tests.Select(t => t.TestId).Distinct().Count(), string.Join(" | ", tests.Select(t => t.TestId)));
+        CollectionAssert.AreEquivalent(
+            new[] { $"{typeof(OverloadFixture).FullName}.Overloaded()", $"{typeof(OverloadFixture).FullName}.Overloaded(Int32)" },
+            tests.Select(t => t.FullName).ToArray(),
+            "overloads get names of their own, which reporters and results key on");
         Assert.AreEqual(1, result.Passed, "the overload without parameters passes");
         Assert.AreEqual(1, result.Failed, "the overload with one fails");
     }
@@ -188,6 +192,38 @@ public class TestHostIsolationTests
         CollectionAssert.AreEqual(
             ShardSelector.Select(once, 1, 2).Select(t => t.TestId).ToList(),
             ShardSelector.Select(again, 1, 2).Select(t => t.TestId).ToList());
+    }
+
+    /// <summary>
+    /// Tests run by several workers finish on different threads, and the file reporters keep plain
+    /// lists. Every result has to reach them: with the callbacks unsynchronized, a quick suite
+    /// under --workers auto lost most of its results from the JUnit and TRX files.
+    /// </summary>
+    [TestMethod]
+    public async Task ManyQuickTestsOnSeveralWorkers_AllReachTheFileReporters()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"motus-reporters-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var junit = Path.Combine(directory, "results.xml");
+            var trx = Path.Combine(directory, "results.trx");
+            await using var discovery = new TestDiscovery();
+            var tests = await discovery.DiscoverAsync([typeof(ManyQuickTestsFixture).Assembly.Location], nameof(ManyQuickTestsFixture));
+
+            var result = await new TestRunner(8).RunAsync(
+                tests, new Motus.Cli.Services.Reporters.CompositeReporter([new Motus.Cli.Services.Reporters.JUnitReporter(junit), new Motus.Cli.Services.Reporters.TrxReporter(trx)]));
+
+            Assert.AreEqual(ManyQuickTestsFixture.RowCount, result.Passed);
+            var junitCases = System.Xml.Linq.XDocument.Load(junit).Descendants("testcase").Count();
+            var trxResults = System.Xml.Linq.XDocument.Load(trx).Descendants().Count(e => e.Name.LocalName == "UnitTestResult");
+            Assert.AreEqual(ManyQuickTestsFixture.RowCount, junitCases, "JUnit test cases");
+            Assert.AreEqual(ManyQuickTestsFixture.RowCount, trxResults, "TRX results");
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
     }
 
     private static string CurrentFramework => $"net{Environment.Version.Major}.0";
@@ -297,4 +333,21 @@ public class OverloadFixture
 
     [Test]
     public void Overloaded(int value = 1) => throw new InvalidOperationException($"the overload with a parameter ran ({value})");
+}
+
+/// <summary>Many tests that finish at once, for the reporter test above.</summary>
+[TestClass]
+public class ManyQuickTestsFixture
+{
+    public const int RowCount = 60;
+
+    public static IEnumerable<object[]> Rows => Enumerable.Range(0, RowCount).Select(i => new object[] { i });
+
+    [TestMethod]
+    [DynamicData(nameof(Rows))]
+    public async Task FinishesQuickly(int index)
+    {
+        await Task.Yield();
+        Assert.IsTrue(index < RowCount);
+    }
 }

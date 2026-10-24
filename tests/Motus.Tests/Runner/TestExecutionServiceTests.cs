@@ -179,6 +179,31 @@ public class TestExecutionServiceTests
     }
 
     /// <summary>
+    /// After a rebuild that removed a [DataRow], the row's old id belongs to the row that moved up.
+    /// A row is found by its name when the name is there, and a [DataRow]'s name never changes, so
+    /// the moved row is not run in its place under the old name.
+    /// </summary>
+    [TestMethod]
+    public async Task DataRowAfterARebuild_IsFoundByName_NotByItsOldPlace()
+    {
+        var assembly = typeof(RunnerReorderedRowsFixture).Assembly;
+        var cases = Motus.Runner.Services.Execution.TestCaseDiscovery.Discover(assembly, nameof(RunnerReorderedRowsFixture));
+        var host = new Motus.Runner.Services.Execution.InProcessTestHost(assembly, cases);
+        var firstRowId = cases.Single(c => c.Id.EndsWith("#0:0", StringComparison.Ordinal)).Id;
+        var className = typeof(RunnerReorderedRowsFixture).FullName;
+
+        // As listed before the rebuild, the first row was "removed", which is gone now.
+        var removed = await host.RunAsync(firstRowId, $"{className}.Runs (\"removed\")");
+        // And "kept" was the second row; now it is the first, and it is still found by its name.
+        var kept = await host.RunAsync($"{firstRowId[..^3]}1:0", cases.Single(c => c.Id == firstRowId).FullName);
+
+        Assert.IsFalse(removed.Passed, "the row that moved up must not run under the removed row's name");
+        StringAssert.Contains(removed.ErrorMessage, "data rows have changed");
+        Assert.IsTrue(kept.Passed, kept.ErrorMessage);
+        Assert.AreEqual(cases.Single(c => c.Id == firstRowId).FullName, kept.FullName);
+    }
+
+    /// <summary>
     /// An assembly whose test host cannot start fails its own tests, and the other assemblies in the
     /// run still run, rather than the whole run stopping with the rest left as they were.
     /// </summary>
@@ -228,6 +253,16 @@ public class TestExecutionServiceTests
         Assert.AreEqual(6, finished.Count);
         Assert.AreEqual(6, finished.Count(s => s.Status == TestStatus.Passed), string.Join(" | ", finished.Select(s => $"{s.FullName}: {s.ErrorMessage}")));
     }
+}
+
+/// <summary>[DataRow]s, standing for what is left after a rebuild removed one, for the test above.</summary>
+[TestClass]
+public class RunnerReorderedRowsFixture
+{
+    [TestMethod]
+    [DataRow("kept")]
+    [DataRow("other")]
+    public void Runs(string value) => Assert.IsTrue(value is "kept" or "other");
 }
 
 /// <summary>Rows whose names change on every read of the data source, run by the visual runner above.</summary>

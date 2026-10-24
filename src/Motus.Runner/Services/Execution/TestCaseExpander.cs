@@ -14,7 +14,9 @@ namespace Motus.Runner.Services.Execution;
 /// method with its parameter types, and for a data row, which data source on the method and which
 /// row of it. A data source can name its rows differently each time it is read (a Guid or a time in
 /// the row), so this is what a runner that discovers again in a new process looks the case up by.</param>
-internal sealed record ExpandedTestCase(string FullName, object?[]? Arguments, string? IgnoreReason, string Id);
+/// <param name="ConstantName">True when the name is the same on every read: a test without data
+/// rows, or a <c>[DataRow]</c>, whose values are constants. Such a case is found by its name only.</param>
+internal sealed record ExpandedTestCase(string FullName, object?[]? Arguments, string? IgnoreReason, string Id, bool ConstantName = true);
 
 /// <summary>
 /// Turns a test method into its test cases, one per <c>[DataRow]</c>, <c>[DynamicData]</c> row or
@@ -23,6 +25,8 @@ internal sealed record ExpandedTestCase(string FullName, object?[]? Arguments, s
 internal static class TestCaseExpander
 {
     private const string TestDataSourceInterfaceName = "Microsoft.VisualStudio.TestTools.UnitTesting.ITestDataSource";
+
+    private static readonly HashSet<string> DataRowAttributeNames = new(StringComparer.Ordinal) { "DataRowAttribute" };
 
     /// <summary>
     /// True when <paramref name="attribute"/>'s type, or a type it derives from, is named in
@@ -58,6 +62,7 @@ internal static class TestCaseExpander
         foreach (var attribute in method.GetCustomAttributes(true))
         {
             var dataSource = attribute.GetType().GetInterfaces().FirstOrDefault(i => i.FullName == TestDataSourceInterfaceName);
+            var constantRows = IsOrDerivesFrom(attribute, DataRowAttributeNames);
             if (dataSource is null)
                 continue;
 
@@ -96,7 +101,7 @@ internal static class TestCaseExpander
                 for (var n = 2; !seen.Add(unique); n++)
                     unique = $"{fullName} #{n}";
 
-                cases.Add(new ExpandedTestCase(unique, row, ignoreReason, RowId(methodId, sourceIndex, rowIndex)));
+                cases.Add(new ExpandedTestCase(unique, row, ignoreReason, RowId(methodId, sourceIndex, rowIndex), constantRows));
             }
         }
 

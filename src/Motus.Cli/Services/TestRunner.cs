@@ -81,6 +81,22 @@ public sealed class TestRunner(int maxWorkers)
         var collectedCoverage = new List<CoverageData>();
         var lockObj = new object();
 
+        // Tests finish on whichever worker gets there, and the reporters keep plain lists, so their
+        // per-test callbacks are made one at a time.
+        var reporterGate = new SemaphoreSlim(1, 1);
+        async Task ReportAsync(Func<Task> callback)
+        {
+            await reporterGate.WaitAsync();
+            try
+            {
+                await callback();
+            }
+            finally
+            {
+                reporterGate.Release();
+            }
+        }
+
         var tasks = tests.Select(async test =>
         {
             // Skip ignored tests entirely, without firing reporter events
@@ -91,7 +107,7 @@ public sealed class TestRunner(int maxWorkers)
             try
             {
                 var testInfo = new TestInfo(test.FullName, suiteName);
-                await reporter.OnTestStartAsync(testInfo);
+                await ReportAsync(() => reporter.OnTestStartAsync(testInfo));
 
                 CliTestResult result;
                 var attempts = 1;
@@ -136,30 +152,36 @@ public sealed class TestRunner(int maxWorkers)
                         collectedCoverage.Add(coverage);
                     }
 
-                    if (coverageReporters is not null)
+                    await ReportAsync(async () =>
                     {
-                        foreach (var cr in coverageReporters)
+                        if (coverageReporters is not null)
                         {
-                            try { await cr.OnCoverageCollectedAsync(coverage, testInfo); }
+                            foreach (var cr in coverageReporters)
+                            {
+                                try { await cr.OnCoverageCollectedAsync(coverage, testInfo); }
+                                catch { }
+                            }
+                        }
+
+                        if (reporter is ICoverageReporter testReporterCoverage)
+                        {
+                            try { await testReporterCoverage.OnCoverageCollectedAsync(coverage, testInfo); }
                             catch { }
                         }
-                    }
-
-                    if (reporter is ICoverageReporter testReporterCoverage)
-                    {
-                        try { await testReporterCoverage.OnCoverageCollectedAsync(coverage, testInfo); }
-                        catch { }
-                    }
+                    });
                 }
 
                 // Dispatch violations to IAccessibilityReporter reporters
                 if (violations.Count > 0 && reporter is IAccessibilityReporter a11yReporter)
                 {
-                    foreach (var violation in violations)
+                    await ReportAsync(async () =>
                     {
-                        try { await a11yReporter.OnAccessibilityViolationAsync(violation, testInfo); }
-                        catch { }
-                    }
+                        foreach (var violation in violations)
+                        {
+                            try { await a11yReporter.OnAccessibilityViolationAsync(violation, testInfo); }
+                            catch { }
+                        }
+                    });
                 }
 
                 // Dispatch performance metrics to IPerformanceReporter reporters
@@ -170,8 +192,11 @@ public sealed class TestRunner(int maxWorkers)
 
                     if (reporter is IPerformanceReporter perfReporter)
                     {
-                        try { await perfReporter.OnPerformanceMetricsCollectedAsync(perfMetrics, budgetResult, testInfo); }
-                        catch { }
+                        await ReportAsync(async () =>
+                        {
+                            try { await perfReporter.OnPerformanceMetricsCollectedAsync(perfMetrics, budgetResult, testInfo); }
+                            catch { }
+                        });
                     }
 
                     // In enforce mode, override a passing test to failed when budget is exceeded
@@ -218,7 +243,7 @@ public sealed class TestRunner(int maxWorkers)
                     result.FullName, result.Passed, result.Duration.TotalMilliseconds,
                     result.ErrorMessage, result.StackTrace,
                     Flaky: result.Flaky, Quarantined: result.Quarantined, Attempts: result.Attempts);
-                await reporter.OnTestEndAsync(testInfo, absResult);
+                await ReportAsync(() => reporter.OnTestEndAsync(testInfo, absResult));
             }
             finally
             {

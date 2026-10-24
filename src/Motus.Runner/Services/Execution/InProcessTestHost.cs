@@ -53,14 +53,24 @@ internal sealed class InProcessTestHost : ITestAssemblyHost
 
     public Task<TestCaseReport> RunAsync(string testId, string fullName, CancellationToken cancellationToken = default)
     {
-        if (_cases.TryGetValue(testId, out var testCase))
-            return RunAsync(testCase, cancellationToken);
+        // By name first: after a rebuild that removed or reordered a [DataRow], an old row id can
+        // point at a different row, while a name that matches one case is that case. The id settles
+        // what the name can't: rows whose names change on every read of their data source.
+        var named = _cases.Values.Where(c => c.FullName == fullName).Take(2).ToList();
+        if (named.Count == 1)
+            return RunAsync(named[0], cancellationToken);
 
-        // A data row's name can change from one read of its data source to the next, but a test
-        // without data rows, or one whose id predates a rebuild, is still found by its name.
-        testCase = _cases.Values.FirstOrDefault(c => c.FullName == fullName);
-        if (testCase is not null)
-            return RunAsync(testCase, cancellationToken);
+        // A case whose name never changes but no longer matches is not the case that was listed:
+        // a [DataRow] that moved up after one before it was removed, say.
+        if (_cases.TryGetValue(testId, out var testCase))
+        {
+            if (!testCase.ConstantName || testCase.FullName == fullName)
+                return RunAsync(testCase, cancellationToken);
+
+            return Task.FromResult(TestCaseReport.NotRun(fullName,
+                $"Test {fullName} is no longer in {_assembly.GetName().Name}: its data rows have changed since the tests were listed. "
+                + "Load the tests again to run the current ones."));
+        }
 
         return Task.FromResult(TestCaseReport.NotRun(fullName, DescribeMissing(testId, fullName)));
     }
