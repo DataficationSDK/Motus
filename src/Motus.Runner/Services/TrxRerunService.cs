@@ -36,7 +36,7 @@ public sealed class TrxRerunService(
         DiscoveredTest? reflected;
         try
         {
-            var candidates = discovery.Discover([codeBase], fullName);
+            var candidates = await discovery.DiscoverAsync([codeBase], fullName, ct);
             reflected = candidates.FirstOrDefault(t => t.FullName == fullName);
         }
         catch (Exception ex)
@@ -50,7 +50,7 @@ public sealed class TrxRerunService(
             return;
         }
 
-        if (reflected?.TestClass is null || reflected.TestMethod is null)
+        if (reflected is null)
         {
             session.SetTestState(new TestNodeState(
                 fullName,

@@ -7,130 +7,90 @@ namespace Motus.Cli.Services;
 /// A test case found in a test assembly. <paramref name="Arguments"/> is the data row of one case of a
 /// data-driven test, or null for a test without one.
 /// </summary>
-public sealed record DiscoveredTest(Type TestClass, MethodInfo TestMethod, string FullName, bool IsIgnored, bool Quarantined = false, object?[]? Arguments = null);
-
-public sealed class TestDiscovery
+/// <remarks>
+/// A test found by <see cref="TestDiscovery"/> lives in a test host process of its own assembly, so
+/// <paramref name="TestClass"/>, <paramref name="TestMethod"/> and <paramref name="Arguments"/> are
+/// null and the test is known by its names. One built from reflection metadata runs in this process.
+/// </remarks>
+public sealed record DiscoveredTest(Type? TestClass, MethodInfo? TestMethod, string FullName, bool IsIgnored, bool Quarantined = false, object?[]? Arguments = null)
 {
-    private static readonly HashSet<string> ClassAttributes = new(StringComparer.Ordinal)
-    {
-        "TestClassAttribute",
-        "TestFixtureAttribute",
-    };
+    /// <summary>The full name of the test class.</summary>
+    public string ClassName { get; init; } = TestClass?.FullName ?? string.Empty;
 
-    private static readonly HashSet<string> MethodAttributes = new(StringComparer.Ordinal)
-    {
-        "TestMethodAttribute",
-        "TestAttribute",
-        "FactAttribute",
-    };
+    /// <summary>The test method's name, without a data row.</summary>
+    public string MethodName { get; init; } = TestMethod?.Name ?? string.Empty;
 
-    // xUnit's [Theory] derives from [Fact] but needs data the runners don't supply.
-    private static readonly HashSet<string> ExcludedMethodAttributes = new(StringComparer.Ordinal)
-    {
-        "TheoryAttribute",
-    };
+    /// <summary>The full path of the test assembly.</summary>
+    public string AssemblyPath { get; init; } = TestClass?.Assembly.Location ?? string.Empty;
 
-    private static readonly HashSet<string> IgnoreAttributes = new(StringComparer.Ordinal)
-    {
-        "IgnoreAttribute",  // MSTest + NUnit
-    };
+    /// <summary>The test assembly's name, which reporters use as the suite name.</summary>
+    public string AssemblyName { get; init; } = TestClass?.Assembly.GetName().Name ?? string.Empty;
 
-    private static readonly HashSet<string> QuarantineAttributes = new(StringComparer.Ordinal)
-    {
-        "QuarantineAttribute",
-    };
+    /// <summary>The test host that discovered this test and runs it, or null to run it in this process.</summary>
+    internal ITestAssemblyHost? Host { get; init; }
+}
 
-    public List<DiscoveredTest> Discover(string[] assemblyPaths, string? filter)
+/// <summary>
+/// Finds the tests in test assemblies. Each assembly is loaded by a test host process of its own,
+/// started from the assembly's output folder with its own dependencies, which stays up to run the
+/// tests and is shut down when this is disposed.
+/// </summary>
+public sealed class TestDiscovery : IAsyncDisposable
+{
+    private readonly List<TestHostClient> _hosts = [];
+
+    /// <summary>
+    /// The tests in <paramref name="assemblyPaths"/> whose full name contains <paramref name="filter"/>,
+    /// ignoring case. An assembly that cannot be loaded is reported on standard error and skipped.
+    /// </summary>
+    public async Task<List<DiscoveredTest>> DiscoverAsync(string[] assemblyPaths, string? filter, CancellationToken cancellationToken = default)
     {
         var tests = new List<DiscoveredTest>();
 
         foreach (var path in assemblyPaths)
         {
             var fullPath = Path.GetFullPath(path);
-            Assembly assembly;
+            TestHostClient? host = null;
             try
             {
-                assembly = Assembly.LoadFrom(fullPath);
+                host = await TestHostClient.StartAsync(fullPath, new TestHostOptions { OnLog = Console.Error.WriteLine }, cancellationToken);
+                var discovery = await host.DiscoverAsync(filter, cancellationToken);
+
+                if (discovery.Tests.Count == 0)
+                {
+                    await host.DisposeAsync();
+                    continue;
+                }
+
+                _hosts.Add(host);
+                foreach (var test in discovery.Tests)
+                {
+                    tests.Add(new DiscoveredTest(null, null, test.FullName, test.IsIgnored, test.Quarantined)
+                    {
+                        ClassName = test.ClassName,
+                        MethodName = test.MethodName,
+                        AssemblyPath = fullPath,
+                        AssemblyName = discovery.AssemblyName,
+                        Host = host,
+                    });
+                }
             }
-            catch (Exception ex)
+            catch (TestHostException ex)
             {
                 Console.Error.WriteLine($"Failed to load assembly {fullPath}: {ex.Message}");
-                continue;
-            }
-
-            foreach (var type in assembly.GetExportedTypes())
-            {
-                if (!IsTestClass(type))
-                    continue;
-
-                var classIgnored = type.GetCustomAttributes(true)
-                    .Any(a => IgnoreAttributes.Contains(a.GetType().Name));
-
-                var classQuarantined = type.GetCustomAttributes(true)
-                    .Any(a => QuarantineAttributes.Contains(a.GetType().Name));
-
-                foreach (var method in type.GetMethods(BindingFlags.Public | BindingFlags.Instance))
-                {
-                    if (!IsTestMethod(method))
-                        continue;
-
-                    var methodIgnored = classIgnored || IsIgnoredMethod(method);
-                    var quarantined = classQuarantined || IsQuarantinedMethod(method);
-
-                    foreach (var testCase in TestCaseExpander.Expand(type, method, message => Console.Error.WriteLine(message)))
-                    {
-                        if (filter is not null && !testCase.FullName.Contains(filter, StringComparison.OrdinalIgnoreCase))
-                            continue;
-
-                        var isIgnored = methodIgnored || testCase.IgnoreReason is not null;
-                        tests.Add(new DiscoveredTest(type, method, testCase.FullName, isIgnored, quarantined, testCase.Arguments));
-                    }
-                }
+                if (host is not null)
+                    await host.DisposeAsync();
             }
         }
 
         return tests;
     }
 
-    private static bool IsTestClass(Type type)
+    /// <summary>Shuts down the test host processes.</summary>
+    public async ValueTask DisposeAsync()
     {
-        if (type.IsAbstract || !type.IsClass)
-            return false;
-
-        return type.GetCustomAttributes(true)
-            .Any(a => TestCaseExpander.IsOrDerivesFrom(a, ClassAttributes));
-    }
-
-    private static bool IsTestMethod(MethodInfo method)
-    {
-        return method.GetCustomAttributes(true)
-            .Any(a => TestCaseExpander.IsOrDerivesFrom(a, MethodAttributes)
-                      && !TestCaseExpander.IsOrDerivesFrom(a, ExcludedMethodAttributes));
-    }
-
-    private static bool IsIgnoredMethod(MethodInfo method)
-    {
-        var attrs = method.GetCustomAttributes(true);
-
-        // MSTest [Ignore] / NUnit [Ignore]
-        if (attrs.Any(a => IgnoreAttributes.Contains(a.GetType().Name)))
-            return true;
-
-        // xUnit [Fact(Skip = "reason")] -- check for non-null Skip property on FactAttribute
-        var factAttr = attrs.FirstOrDefault(a => a.GetType().Name == "FactAttribute");
-        if (factAttr is not null)
-        {
-            var skipProp = factAttr.GetType().GetProperty("Skip");
-            if (skipProp?.GetValue(factAttr) is string)
-                return true;
-        }
-
-        return false;
-    }
-
-    private static bool IsQuarantinedMethod(MethodInfo method)
-    {
-        return method.GetCustomAttributes(true)
-            .Any(a => QuarantineAttributes.Contains(a.GetType().Name));
+        foreach (var host in _hosts)
+            await host.DisposeAsync();
+        _hosts.Clear();
     }
 }

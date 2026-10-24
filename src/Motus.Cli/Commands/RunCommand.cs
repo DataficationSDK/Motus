@@ -191,8 +191,10 @@ public static class RunCommand
                 }
             }
 
-            var discovery = new TestDiscovery();
-            var tests = discovery.Discover(assemblies, filter);
+            // Each assembly gets a test host process of its own, which discovery starts and which
+            // runs its tests; disposing the discovery shuts them down.
+            await using var discovery = new TestDiscovery();
+            var tests = await discovery.DiscoverAsync(assemblies, filter, ct);
 
             if (quarantinePath is not null)
             {
@@ -256,7 +258,7 @@ public static class RunCommand
     /// </summary>
     internal static bool IsListed(DiscoveredTest test, IReadOnlySet<string> quarantineList)
         => quarantineList.Contains(test.FullName)
-           || quarantineList.Contains($"{test.TestClass.FullName}.{test.TestMethod.Name}");
+           || quarantineList.Contains($"{test.ClassName}.{test.MethodName}");
 
     private static HashSet<string> LoadQuarantineList(string path)
     {

@@ -6,65 +6,70 @@ namespace Motus.Cli.Tests.Services;
 public class TestDiscoveryTests
 {
     [TestMethod]
-    public void Discover_SelfAssembly_FindsTests()
+    public async Task Discover_SelfAssembly_FindsTests()
     {
-        var discovery = new TestDiscovery();
+        await using var discovery = new TestDiscovery();
         var assemblyPath = typeof(TestDiscoveryTests).Assembly.Location;
 
-        var tests = discovery.Discover([assemblyPath], null);
+        var tests = await discovery.DiscoverAsync([assemblyPath], null);
 
         Assert.IsTrue(tests.Count > 0, "Should discover tests from own assembly");
     }
 
     [TestMethod]
-    public void Discover_SelfAssembly_ContainsThisTest()
+    public async Task Discover_SelfAssembly_ContainsThisTest()
     {
-        var discovery = new TestDiscovery();
+        await using var discovery = new TestDiscovery();
         var assemblyPath = typeof(TestDiscoveryTests).Assembly.Location;
 
-        var tests = discovery.Discover([assemblyPath], null);
+        var tests = await discovery.DiscoverAsync([assemblyPath], null);
 
-        Assert.IsTrue(tests.Any(t => t.FullName.Contains(nameof(Discover_SelfAssembly_ContainsThisTest))));
+        var test = tests.Single(t => t.FullName.EndsWith("." + nameof(Discover_SelfAssembly_ContainsThisTest), StringComparison.Ordinal));
+        Assert.AreEqual(typeof(TestDiscoveryTests).FullName, test.ClassName);
+        Assert.AreEqual(nameof(Discover_SelfAssembly_ContainsThisTest), test.MethodName);
+        Assert.AreEqual(assemblyPath, test.AssemblyPath);
+        Assert.AreEqual(typeof(TestDiscoveryTests).Assembly.GetName().Name, test.AssemblyName);
+        Assert.IsNull(test.TestClass, "a discovered test lives in its test host, not in this process");
     }
 
     [TestMethod]
-    public void Discover_FilterSubstring_FiltersCorrectly()
+    public async Task Discover_FilterSubstring_FiltersCorrectly()
     {
-        var discovery = new TestDiscovery();
+        await using var discovery = new TestDiscovery();
         var assemblyPath = typeof(TestDiscoveryTests).Assembly.Location;
 
-        var tests = discovery.Discover([assemblyPath], "ProtocolDiffer");
+        var tests = await discovery.DiscoverAsync([assemblyPath], "ProtocolDiffer");
 
         Assert.IsTrue(tests.Count > 0);
         Assert.IsTrue(tests.All(t => t.FullName.Contains("ProtocolDiffer")));
     }
 
     [TestMethod]
-    public void Discover_FilterNoMatch_ReturnsEmpty()
+    public async Task Discover_FilterNoMatch_ReturnsEmpty()
     {
-        var discovery = new TestDiscovery();
+        await using var discovery = new TestDiscovery();
         var assemblyPath = typeof(TestDiscoveryTests).Assembly.Location;
 
-        var tests = discovery.Discover([assemblyPath], "ThisTestDoesNotExist_XYZ_123");
+        var tests = await discovery.DiscoverAsync([assemblyPath], "ThisTestDoesNotExist_XYZ_123");
 
         Assert.AreEqual(0, tests.Count);
     }
 
     [TestMethod]
-    public void Discover_NonexistentAssembly_PrintsError()
+    public async Task Discover_NonexistentAssembly_PrintsError()
     {
-        var discovery = new TestDiscovery();
-        var tests = discovery.Discover(["/nonexistent/path.dll"], null);
+        await using var discovery = new TestDiscovery();
+        var tests = await discovery.DiscoverAsync(["/nonexistent/path.dll"], null);
         Assert.AreEqual(0, tests.Count);
     }
 
     [TestMethod]
-    public void Discover_IgnoredMethod_MarkedAsIgnored()
+    public async Task Discover_IgnoredMethod_MarkedAsIgnored()
     {
-        var discovery = new TestDiscovery();
+        await using var discovery = new TestDiscovery();
         var assemblyPath = typeof(TestDiscoveryTests).Assembly.Location;
 
-        var tests = discovery.Discover([assemblyPath], nameof(IgnoredFixture));
+        var tests = await discovery.DiscoverAsync([assemblyPath], nameof(IgnoredFixture));
 
         var ignored = tests.FirstOrDefault(t => t.FullName.Contains(nameof(IgnoredFixture.SkippedTest)));
         Assert.IsNotNull(ignored, "Should discover the ignored test");
@@ -76,24 +81,24 @@ public class TestDiscoveryTests
     }
 
     [TestMethod]
-    public void Discover_IgnoredClass_AllTestsMarkedAsIgnored()
+    public async Task Discover_IgnoredClass_AllTestsMarkedAsIgnored()
     {
-        var discovery = new TestDiscovery();
+        await using var discovery = new TestDiscovery();
         var assemblyPath = typeof(TestDiscoveryTests).Assembly.Location;
 
-        var tests = discovery.Discover([assemblyPath], nameof(IgnoredClassFixture));
+        var tests = await discovery.DiscoverAsync([assemblyPath], nameof(IgnoredClassFixture));
 
         Assert.IsTrue(tests.Count > 0, "Should discover tests from ignored class");
         Assert.IsTrue(tests.All(t => t.IsIgnored), "All tests from [Ignore] class should be ignored");
     }
 
     [TestMethod]
-    public void Discover_QuarantinedMethod_MarkedAsQuarantined()
+    public async Task Discover_QuarantinedMethod_MarkedAsQuarantined()
     {
-        var discovery = new TestDiscovery();
+        await using var discovery = new TestDiscovery();
         var assemblyPath = typeof(TestDiscoveryTests).Assembly.Location;
 
-        var tests = discovery.Discover([assemblyPath], nameof(QuarantinedFixture));
+        var tests = await discovery.DiscoverAsync([assemblyPath], nameof(QuarantinedFixture));
 
         var quarantined = tests.FirstOrDefault(t => t.FullName.Contains(nameof(QuarantinedFixture.QuarantinedTest)));
         Assert.IsNotNull(quarantined, "Should discover the quarantined test");
@@ -105,12 +110,12 @@ public class TestDiscoveryTests
     }
 
     [TestMethod]
-    public void Discover_QuarantinedClass_AllTestsMarkedAsQuarantined()
+    public async Task Discover_QuarantinedClass_AllTestsMarkedAsQuarantined()
     {
-        var discovery = new TestDiscovery();
+        await using var discovery = new TestDiscovery();
         var assemblyPath = typeof(TestDiscoveryTests).Assembly.Location;
 
-        var tests = discovery.Discover([assemblyPath], nameof(QuarantinedClassFixture));
+        var tests = await discovery.DiscoverAsync([assemblyPath], nameof(QuarantinedClassFixture));
 
         Assert.IsTrue(tests.Count > 0, "Should discover tests from quarantined class");
         Assert.IsTrue(tests.All(t => t.Quarantined), "All tests from [Quarantine] class should be quarantined");

@@ -2,6 +2,13 @@ using System.Reflection;
 
 namespace Motus.Runner.Services.Models;
 
+/// <summary>
+/// A test the visual runner lists. A test found by discovery runs in a test host process of its
+/// assembly (at <paramref name="CodeBase"/>), so <paramref name="TestClass"/>,
+/// <paramref name="TestMethod"/> and <paramref name="Arguments"/> are null and it is known by
+/// <paramref name="ClassFullName"/> and <paramref name="MethodName"/>. One built from reflection
+/// metadata runs in this process.
+/// </summary>
 public sealed record DiscoveredTest(
     Type? TestClass,
     MethodInfo? TestMethod,
@@ -12,4 +19,5 @@ public sealed record DiscoveredTest(
     string? CodeBase = null,
     IReadOnlyList<string>? Categories = null,
     string? ClassFullName = null,
-    object?[]? Arguments = null);
+    object?[]? Arguments = null,
+    string? MethodName = null);

@@ -113,11 +113,11 @@ public class TestExecutionServiceTests
     }
 
     [TestMethod]
-    public void Discovery_ExpandsDataRows()
+    public async Task Discovery_ExpandsDataRows()
     {
         var discovery = new TestDiscovery(NullLogger<TestDiscovery>.Instance);
 
-        var tests = discovery.Discover([typeof(RunnerDataRowFixture).Assembly.Location], nameof(RunnerDataRowFixture));
+        var tests = await discovery.DiscoverAsync([typeof(RunnerDataRowFixture).Assembly.Location], nameof(RunnerDataRowFixture));
 
         CollectionAssert.AreEquivalent(
             new[]
@@ -126,7 +126,22 @@ public class TestExecutionServiceTests
                 $"{typeof(RunnerDataRowFixture).FullName}.Doubles (2,4)",
             },
             tests.Select(t => t.FullName).ToArray());
-        Assert.IsTrue(tests.All(t => t.Arguments is { Length: 2 }));
+        Assert.IsTrue(tests.All(t => t.ClassFullName == typeof(RunnerDataRowFixture).FullName && t.MethodName == nameof(RunnerDataRowFixture.Doubles)));
+        Assert.IsTrue(tests.All(t => t.CodeBase == typeof(RunnerDataRowFixture).Assembly.Location));
+    }
+
+    [TestMethod]
+    public async Task DiscoveredDataRows_RunInATestHost_WithTheirArguments()
+    {
+        var discovery = new TestDiscovery(NullLogger<TestDiscovery>.Instance);
+        var tests = await discovery.DiscoverAsync([typeof(RunnerDataRowFixture).Assembly.Location], nameof(RunnerDataRowFixture));
+
+        var states = new List<TestNodeState>();
+        await CreateService().ExecuteAsync(tests, s => { lock (states) states.Add(s); }, CancellationToken.None);
+
+        var finished = states.Where(s => s.Status != TestStatus.Running).ToList();
+        Assert.AreEqual(2, finished.Count);
+        Assert.IsTrue(finished.All(s => s.Status == TestStatus.Passed), string.Join(" | ", finished.Select(s => s.ErrorMessage)));
     }
 }
 

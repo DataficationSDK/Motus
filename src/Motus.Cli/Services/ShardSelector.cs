@@ -76,5 +76,5 @@ public static class ShardSelector
     }
 
     private static string SortKey(DiscoveredTest test) =>
-        $"{test.TestClass.Assembly.Location}::{test.FullName}";
+        $"{test.AssemblyPath}::{test.FullName}";
 }

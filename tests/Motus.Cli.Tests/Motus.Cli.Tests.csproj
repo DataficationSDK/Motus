@@ -26,4 +26,14 @@
     <ProjectReference Include="..\..\src\Motus.Testing.MSTest\Motus.Testing.MSTest.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- A suite that hosts an ASP.NET Core app, built alongside these tests and run by motus run
+         from its own output folder rather than referenced. Its paths reach the tests as metadata. -->
+    <ProjectReference Include="..\Fixtures\Motus.Fixtures.WebApp.Tests\Motus.Fixtures.WebApp.Tests.csproj" ReferenceOutputAssembly="false" />
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>WebAppFixtureOutput</_Parameter1>
+      <_Parameter2>$(MSBuildThisFileDirectory)..\Fixtures\Motus.Fixtures.WebApp.Tests\bin\$(Configuration)\</_Parameter2>
+    </AssemblyAttribute>
+  </ItemGroup>
+
 </Project>
