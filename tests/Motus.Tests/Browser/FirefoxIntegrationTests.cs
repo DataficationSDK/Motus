@@ -209,7 +209,20 @@ public class FirefoxIntegrationTests
         Assert.IsTrue(await page.EvaluateAsync<bool>(Run("b")), "The script did not scroll to an element below the fold.");
         Assert.IsTrue(await page.EvaluateAsync<bool>(InView), "The element is still outside the viewport.");
 
-        var scrollY = await page.EvaluateAsync<double>("window.scrollY");
+        // Centering lands on a half pixel whenever the viewport's height is odd, and Firefox can
+        // round a half-pixel scroll position to a whole one after the scroll has finished, so a
+        // position read straight after centering can move by a pixel with nothing scrolling it.
+        // The element is put at a whole-pixel position off center instead: still in view, so the
+        // script must leave it alone, and far enough from center that a script that scrolled
+        // anyway would visibly move it, which re-centering an already centered element would not.
+        var scrollY = await page.EvaluateAsync<double>("""
+            (() => {
+                const top = document.getElementById('b').getBoundingClientRect().top + window.scrollY;
+                window.scrollTo({ top: Math.round(top) - 100, behavior: 'instant' });
+                return window.scrollY;
+            })()
+            """);
+        Assert.IsTrue(await page.EvaluateAsync<bool>(InView), "The element left the viewport when it was moved off center.");
         Assert.IsFalse(await page.EvaluateAsync<bool>(Run("b")), "The script scrolled an element that was already in view.");
         Assert.AreEqual(scrollY, await page.EvaluateAsync<double>("window.scrollY"));
 
