@@ -296,15 +296,26 @@ public class TracingTests
         await Task.Delay(50);
         Assert.IsFalse(secondStartTask.IsCompleted, "Second StartAsync should be gated until the first stops.");
 
-        // Now stop the first and let the second proceed.
+        // Now stop the first and let the second proceed. The second start's answer is queued
+        // here, before the stop, because the stop releases the gate on its way out and the
+        // second start sends Tracing.start from that moment on another thread. Queued after
+        // awaiting the stop, the answer could arrive after the command it was meant for, which
+        // then waits out the transport's command timeout. The gate is what keeps the two
+        // answers in order: nothing can send Tracing.start until Tracing.end has been answered.
         _socket.QueueResponse("""{"id":2,"result":{}}"""); // first end
+        _socket.QueueResponse("""{"id":3,"result":{}}"""); // second start, once the gate opens
         var firstStopTask = first.StopAsync();
         await Task.Delay(50);
         _socket.Enqueue("""{"method":"Tracing.tracingComplete","params":{"dataLossOccurred":false}}""");
         await firstStopTask;
 
-        _socket.QueueResponse("""{"id":3,"result":{}}"""); // second start (now unblocked)
         await secondStartTask;
+
+        var sent = _socket.SentMessages.Select(bytes => System.Text.Encoding.UTF8.GetString(bytes)).ToList();
+        var firstEnd = sent.FindIndex(json => json.Contains("\"Tracing.end\""));
+        var secondStart = sent.FindLastIndex(json => json.Contains("\"Tracing.start\""));
+        Assert.IsTrue(firstEnd >= 0 && secondStart > firstEnd,
+            "The second Tracing.start went out before the first trace had ended.");
 
         // Cleanly stop the second so the gate is released for any teardown.
         _socket.QueueResponse("""{"id":4,"result":{}}""");
