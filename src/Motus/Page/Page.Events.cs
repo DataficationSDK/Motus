@@ -126,7 +126,11 @@ internal sealed partial class Page
 
     private async Task PumpFrameTreeEventsAsync(IMotusSession session, bool isPageSession, CancellationToken ct)
     {
-        string[] events = ["Page.frameNavigated", "Page.frameAttached", "Page.frameDetached"];
+        string[] events =
+        [
+            "Page.frameNavigated", "Page.frameAttached", "Page.frameDetached",
+            "Page.navigatedWithinDocument"
+        ];
 
         try
         {
@@ -147,6 +151,10 @@ internal sealed partial class Page
                         case "Page.frameDetached":
                             if (JsonSerializer.Deserialize(raw.Params, CdpJsonContext.Default.PageFrameDetachedEvent) is { } detached)
                                 OnFrameDetached(detached, session);
+                            break;
+                        case "Page.navigatedWithinDocument":
+                            if (JsonSerializer.Deserialize(raw.Params, CdpJsonContext.Default.PageNavigatedWithinDocumentEvent) is { } within)
+                                OnNavigatedWithinDocument(within);
                             break;
                     }
                 }
@@ -220,6 +228,27 @@ internal sealed partial class Page
         // Notify internal subscribers (e.g. Recorder)
         if (isPageSession && info.ParentId is null)
             MainFrameNavigated?.Invoke(info.Url);
+    }
+
+    /// <summary>
+    /// Records a URL change that kept the frame's document: a history API call or a fragment
+    /// navigation.
+    /// </summary>
+    /// <remarks>
+    /// The browser does not report these as <c>Page.frameNavigated</c>, so without this a frame's
+    /// URL stayed at whatever its last document loaded with, and a single-page application that
+    /// routes through <c>history.pushState</c> never appeared to move. The document, its child
+    /// frames and its execution contexts are all unchanged, so none of the cleanup a full
+    /// navigation does applies here; only the URL is updated, and
+    /// <see cref="FrameNavigated"/> is raised so a wait on the URL can see the change.
+    /// </remarks>
+    private void OnNavigatedWithinDocument(PageNavigatedWithinDocumentEvent evt)
+    {
+        if (!_frames.TryGetValue(evt.FrameId, out var frame))
+            return;
+
+        frame.Url = evt.Url;
+        FrameNavigated?.Invoke(this, frame);
     }
 
     private void OnFrameAttached(PageFrameAttachedEvent evt, IMotusSession source)

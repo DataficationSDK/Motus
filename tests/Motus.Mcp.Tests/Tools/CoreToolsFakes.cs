@@ -334,6 +334,8 @@ internal sealed class FakeToolPage(AccessibilitySnapshot snapshot) : IPage
     public Task WaitForLoadStateAsync(LoadState? state = null, double? timeout = null) => throw new NotImplementedException();
     public Task<IResponse?> WaitForNavigationAsync(NavigationOptions? options = null) => throw new NotImplementedException();
     public Task WaitForURLAsync(string urlPattern, NavigationOptions? options = null) => throw new NotImplementedException();
+    public Task WaitForURLAsync(System.Text.RegularExpressions.Regex urlPattern, NavigationOptions? options = null) => throw new NotImplementedException();
+    public Task WaitForURLAsync(Func<string, bool> predicate, NavigationOptions? options = null) => throw new NotImplementedException();
     public Task<IRequest> WaitForRequestAsync(string urlPattern, double? timeout = null) => throw new NotImplementedException();
     public Task<IResponse> WaitForResponseAsync(string urlPattern, double? timeout = null) => throw new NotImplementedException();
     public Task<IRequest> WaitForRequestAsync(Func<IRequest, bool> predicate, double? timeout = null) => throw new NotImplementedException();
@@ -1059,6 +1061,8 @@ internal sealed class FakeToolFrame(FakeToolPage page, string url, FakeToolFrame
     public Task<string> TitleAsync() => throw new NotImplementedException();
     public Task WaitForLoadStateAsync(LoadState? state = null, double? timeout = null) => throw new NotImplementedException();
     public Task WaitForURLAsync(string urlPattern, NavigationOptions? options = null) => throw new NotImplementedException();
+    public Task WaitForURLAsync(System.Text.RegularExpressions.Regex urlPattern, NavigationOptions? options = null) => throw new NotImplementedException();
+    public Task WaitForURLAsync(Func<string, bool> predicate, NavigationOptions? options = null) => throw new NotImplementedException();
     public Task<IElementHandle> AddScriptTagAsync(string? url = null, string? content = null) => throw new NotImplementedException();
     public Task<IElementHandle> AddStyleTagAsync(string? url = null, string? content = null) => throw new NotImplementedException();
 }

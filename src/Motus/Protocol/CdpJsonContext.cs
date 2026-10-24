@@ -56,6 +56,7 @@ namespace Motus;
 [JsonSerializable(typeof(PageFrameNavigatedEvent))]
 [JsonSerializable(typeof(PageFrameAttachedEvent))]
 [JsonSerializable(typeof(PageFrameDetachedEvent))]
+[JsonSerializable(typeof(PageNavigatedWithinDocumentEvent))]
 [JsonSerializable(typeof(JsonElement))]
 [JsonSerializable(typeof(PageFrameStoppedLoadingEvent))]
 [JsonSerializable(typeof(PageJavascriptDialogOpeningEvent))]
@@ -443,6 +444,14 @@ internal sealed record PageFrameNavigatedEvent(PageFrameInfo Frame);
 internal sealed record PageFrameAttachedEvent(string FrameId, string ParentFrameId);
 
 internal sealed record PageFrameDetachedEvent(string FrameId, string? Reason = null);
+
+/// <remarks>
+/// <c>navigationType</c> is <c>fragment</c>, <c>historyApi</c> or <c>other</c>.
+/// </remarks>
+internal sealed record PageNavigatedWithinDocumentEvent(
+    string FrameId,
+    string Url,
+    string? NavigationType = null);
 
 internal sealed record PageFrameStoppedLoadingEvent(string FrameId);
 

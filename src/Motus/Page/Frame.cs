@@ -77,8 +77,25 @@ internal sealed class Frame : IFrame
     public Task WaitForLoadStateAsync(LoadState? state = null, double? timeout = null) =>
         _page.WaitForLoadStateAsync(state, timeout);
 
-    public Task WaitForURLAsync(string urlPattern, NavigationOptions? options = null) =>
-        _page.WaitForURLAsync(urlPattern, options);
+    public Task WaitForURLAsync(string urlPattern, NavigationOptions? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(urlPattern);
+        var expected = _page.ResolveAgainstBaseUrl(urlPattern);
+        return _page.WaitForFrameUrlAsync(
+            this, url => Motus.Page.UrlMatchesWhole(url, expected), $"'{expected}'", options);
+    }
+
+    public Task WaitForURLAsync(System.Text.RegularExpressions.Regex urlPattern, NavigationOptions? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(urlPattern);
+        return _page.WaitForFrameUrlAsync(this, urlPattern.IsMatch, $"/{urlPattern}/", options);
+    }
+
+    public Task WaitForURLAsync(Func<string, bool> predicate, NavigationOptions? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(predicate);
+        return _page.WaitForFrameUrlAsync(this, predicate, "a predicate", options);
+    }
 
     // --- Locator methods ---
 

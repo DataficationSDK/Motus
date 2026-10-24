@@ -111,6 +111,14 @@ internal sealed class BiDiSession : IMotusSession
         JsonTypeInfo<TEvent> eventTypeInfo,
         [EnumeratorCancellation] CancellationToken ct)
     {
+        var translations = BiDiEventMap.GetEventTranslations(eventKey);
+        if (translations.Count > 1)
+        {
+            await foreach (var merged in SubscribeMergedAsync(translations, eventTypeInfo, ct).ConfigureAwait(false))
+                yield return merged;
+            yield break;
+        }
+
         var eventTranslation = BiDiEventMap.GetEventTranslation(eventKey);
         var biDiEventName = eventTranslation?.BiDiEventName ?? eventKey;
 
@@ -129,6 +137,67 @@ internal sealed class BiDiSession : IMotusSession
             var deserialized = JsonSerializer.Deserialize(cdpParams, eventTypeInfo);
             if (deserialized is not null)
                 yield return deserialized;
+        }
+    }
+
+    /// <summary>
+    /// Subscribes to every BiDi event that translates to one CDP event, and hands back what any of
+    /// them reports, translated.
+    /// </summary>
+    /// <remarks>
+    /// A browser that does not know one of the BiDi events refuses the subscription to it, and the
+    /// others are still delivered rather than the whole subscription failing over it.
+    /// </remarks>
+    private async IAsyncEnumerable<TEvent> SubscribeMergedAsync<TEvent>(
+        IReadOnlyList<IBiDiEventTranslation> translations,
+        JsonTypeInfo<TEvent> eventTypeInfo,
+        [EnumeratorCancellation] CancellationToken ct)
+    {
+        var contextId = SessionId ?? string.Empty;
+        var merged = Channel.CreateUnbounded<JsonElement>();
+        var pumps = new List<Task>(translations.Count);
+
+        foreach (var translation in translations)
+        {
+            try
+            {
+                await EnsureSubscribedAsync(
+                    translation.BiDiEventName, ct, translation.SubscribeToAllContexts).ConfigureAwait(false);
+            }
+            catch (BiDiProtocolException)
+            {
+                continue;
+            }
+
+            var channel = _transport.GetOrCreateEventChannel($"{translation.BiDiEventName}|{contextId}");
+            pumps.Add(PumpAsync(translation, channel.Reader));
+        }
+
+        _ = Task.WhenAll(pumps).ContinueWith(
+            _ => merged.Writer.TryComplete(), CancellationToken.None,
+            TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+
+        await foreach (var cdpParams in merged.Reader.ReadAllAsync(ct).ConfigureAwait(false))
+        {
+            var deserialized = JsonSerializer.Deserialize(cdpParams, eventTypeInfo);
+            if (deserialized is not null)
+                yield return deserialized;
+        }
+
+        async Task PumpAsync(IBiDiEventTranslation translation, ChannelReader<RawBiDiEvent> reader)
+        {
+            try
+            {
+                await foreach (var raw in reader.ReadAllAsync(ct).ConfigureAwait(false))
+                {
+                    await merged.Writer.WriteAsync(translation.TranslateEvent(raw.Params), ct)
+                        .ConfigureAwait(false);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // The subscriber has gone; the merged channel completes with the rest.
+            }
         }
     }
 
@@ -151,7 +220,13 @@ internal sealed class BiDiSession : IMotusSession
         return translation.TranslateResult(bidiResult);
     }
 
-    private async Task EnsureSubscribedAsync(string biDiEventName, CancellationToken ct)
+    /// <param name="biDiEventName">The BiDi event to subscribe to.</param>
+    /// <param name="ct">Cancels the subscribe command.</param>
+    /// <param name="allContexts">
+    /// Subscribes for every browsing context instead of this session's own. Events are still
+    /// routed by the context they name, so this session only ever reads its own.
+    /// </param>
+    private async Task EnsureSubscribedAsync(string biDiEventName, CancellationToken ct, bool allContexts = false)
     {
         bool needsSubscribe;
         lock (_subscribeLock)
@@ -164,7 +239,7 @@ internal sealed class BiDiSession : IMotusSession
 
         var subscribeParams = new BiDiSessionSubscribeParams(
             Events: [biDiEventName],
-            Contexts: SessionId is not null ? [SessionId] : null);
+            Contexts: SessionId is not null && !allContexts ? [SessionId] : null);
 
         var paramsElement = JsonSerializer.SerializeToElement(
             subscribeParams, BiDiJsonContext.Default.BiDiSessionSubscribeParams);

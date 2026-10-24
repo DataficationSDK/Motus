@@ -108,8 +108,12 @@ See [Attaching to a Running Browser](../guides/attaching-to-a-running-browser.md
 | `page.GoForwardAsync(options)` | `page.GoForwardAsync(options)` |
 | `page.ReloadAsync(options)` | `page.ReloadAsync(options)` |
 | `page.WaitForURLAsync(pattern, options)` | `page.WaitForURLAsync(pattern, options)` |
+| `page.WaitForURLAsync(regex, options)` | `page.WaitForURLAsync(regex, options)` |
+| `page.WaitForURLAsync(predicate, options)` | `page.WaitForURLAsync(predicate, options)` |
 | `page.WaitForLoadStateAsync(state, timeout)` | `page.WaitForLoadStateAsync(state, timeout)` |
 | `page.Url` | `page.Url` |
+
+A URL string is matched as Playwright matches it: a string with no wildcard has to equal the whole URL, and a glob has to cover the whole URL. The glob syntax is simpler, though. Each `*` matches any run of characters including `/`, so `*` and `**` are the same, and brace lists such as `{png,jpg}` are matched literally. A pattern written with `**` behaves the same in both; a single `*` that relied on stopping at a `/`, or a brace list, is better written as a `Regex`.
 
 ### Page - locators
 

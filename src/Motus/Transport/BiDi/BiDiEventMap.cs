@@ -10,28 +10,50 @@ internal interface IBiDiEventTranslation
     string CdpEventName { get; }
     string BiDiEventName { get; }
     JsonElement TranslateEvent(JsonElement bidiParams);
+
+    /// <summary>
+    /// Whether the event has to be subscribed for every browsing context rather than for the
+    /// session's own, because a browser does not deliver it to a subscription scoped to one.
+    /// </summary>
+    bool SubscribeToAllContexts => false;
 }
 
 /// <summary>
 /// Static lookup from CDP event names to BiDi event names and their payload translations.
 /// </summary>
+/// <remarks>
+/// Most CDP events have exactly one BiDi counterpart. A few are reported by BiDi as several events
+/// where CDP has one, and those CDP names carry one translation per BiDi event, all of which a
+/// subscriber to the CDP name receives.
+/// </remarks>
 internal static class BiDiEventMap
 {
-    private static readonly Dictionary<string, IBiDiEventTranslation> s_byCdpName = BuildMap();
+    private static readonly Dictionary<string, IBiDiEventTranslation[]> s_byCdpName = BuildMap();
 
     internal static string? ToBiDiEventName(string cdpEventName)
-        => s_byCdpName.TryGetValue(cdpEventName, out var t) ? t.BiDiEventName : null;
+        => GetEventTranslation(cdpEventName)?.BiDiEventName;
 
+    /// <summary>
+    /// The first translation registered for a CDP event, or <see langword="null"/> when it has none.
+    /// </summary>
     internal static IBiDiEventTranslation? GetEventTranslation(string cdpEventName)
-        => s_byCdpName.TryGetValue(cdpEventName, out var t) ? t : null;
+        => s_byCdpName.TryGetValue(cdpEventName, out var t) ? t[0] : null;
 
-    private static Dictionary<string, IBiDiEventTranslation> BuildMap()
+    /// <summary>
+    /// Every translation registered for a CDP event, one per BiDi event it is reported as.
+    /// </summary>
+    internal static IReadOnlyList<IBiDiEventTranslation> GetEventTranslations(string cdpEventName)
+        => s_byCdpName.TryGetValue(cdpEventName, out var t) ? t : [];
+
+    private static Dictionary<string, IBiDiEventTranslation[]> BuildMap()
     {
         IBiDiEventTranslation[] all =
         [
             new LoadEventFiredTranslation(),
             new DomContentLoadedTranslation(),
             new FrameNavigatedTranslation(),
+            new FragmentNavigatedTranslation(),
+            new HistoryUpdatedTranslation(),
             new DialogOpeningTranslation(),
             new DialogClosedTranslation(),
             new RequestPausedTranslation(),
@@ -42,7 +64,9 @@ internal static class BiDiEventMap
             new ConsoleApiCalledTranslation(),
         ];
 
-        return all.ToDictionary(t => t.CdpEventName);
+        return all
+            .GroupBy(t => t.CdpEventName)
+            .ToDictionary(g => g.Key, g => g.ToArray());
     }
 }
 
@@ -108,6 +132,52 @@ internal sealed class FrameNavigatedTranslation : IBiDiEventTranslation
             }
         });
     }
+}
+
+/// <summary>
+/// Page.navigatedWithinDocument -> browsingContext.fragmentNavigated
+/// BiDi params: { context, navigation, timestamp, url }
+/// CDP params: { frameId, url, navigationType }
+/// </summary>
+internal sealed class FragmentNavigatedTranslation : IBiDiEventTranslation
+{
+    public string CdpEventName => "Page.navigatedWithinDocument";
+    public string BiDiEventName => "browsingContext.fragmentNavigated";
+
+    // Firefox accepts a subscription to this event scoped to one browsing context and then never
+    // delivers it, while a subscription with no contexts listed is delivered as expected.
+    public bool SubscribeToAllContexts => true;
+
+    public JsonElement TranslateEvent(JsonElement bidiParams) =>
+        JsonBuilder.FromObject(new
+        {
+            frameId = bidiParams.GetStringOrNull("context") ?? string.Empty,
+            url = bidiParams.GetStringOrNull("url") ?? string.Empty,
+            navigationType = "fragment"
+        });
+}
+
+/// <summary>
+/// Page.navigatedWithinDocument -> browsingContext.historyUpdated
+/// BiDi params: { context, timestamp, url }
+/// CDP params: { frameId, url, navigationType }
+/// </summary>
+/// <remarks>
+/// BiDi reports a <c>history.pushState</c> or <c>history.replaceState</c> separately from a
+/// fragment navigation, where CDP reports both as the one event.
+/// </remarks>
+internal sealed class HistoryUpdatedTranslation : IBiDiEventTranslation
+{
+    public string CdpEventName => "Page.navigatedWithinDocument";
+    public string BiDiEventName => "browsingContext.historyUpdated";
+
+    public JsonElement TranslateEvent(JsonElement bidiParams) =>
+        JsonBuilder.FromObject(new
+        {
+            frameId = bidiParams.GetStringOrNull("context") ?? string.Empty,
+            url = bidiParams.GetStringOrNull("url") ?? string.Empty,
+            navigationType = "historyApi"
+        });
 }
 
 // ──────────────────────────────────────────────
