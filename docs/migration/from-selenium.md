@@ -246,7 +246,7 @@ var page = await context.NewPageAsync();
 
 **1. Remove WebDriver NuGet packages.**
 
-Remove `Selenium.WebDriver`, `Selenium.WebDriver.ChromeDriver`, and any related packages. Add `Motus` and, if using MSTest, `Motus.Testing.MSTest`.
+Remove `Selenium.WebDriver`, `Selenium.WebDriver.ChromeDriver`, and any related packages. Add `Motus` and, if using MSTest, `Motus.Testing.MSTest` (MSTest 3) or `Motus.Testing.MSTest.v4` (MSTest 4).
 
 **2. Replace driver initialization.**
 

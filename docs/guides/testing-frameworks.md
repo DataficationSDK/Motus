@@ -6,7 +6,18 @@ Motus ships first-class test helpers for MSTest, NUnit, and xUnit. Each package 
 
 ## MSTest
 
-Package: `Motus.Testing.MSTest`
+Package: `Motus.Testing.MSTest` for MSTest 3, `Motus.Testing.MSTest.v4` for MSTest 4
+
+### MSTest 3 and MSTest 4
+
+MSTest 4 renamed the assemblies its types live in, and MSTest recognizes an inherited `[TestInitialize]` or `[TestCleanup]` only by the exact identity of its own attribute types. A base class built against one major is invisible to a test project on the other: its setup and cleanup never run, and a test that touches `TestContext` does not compile. Motus therefore ships the MSTest integration twice, built from the same source:
+
+| Your test project uses | Reference |
+|---|---|
+| MSTest 4.x, which `dotnet new mstest` creates | `Motus.Testing.MSTest.v4` |
+| MSTest 3.x | `Motus.Testing.MSTest` |
+
+Both packages use the namespace `Motus.Testing.MSTest` and contain the same types, so moving a suite from MSTest 3 to 4 changes the package reference and nothing in the tests. Reference one or the other, not both. `Motus.Testing.MSTest` accepts MSTest 3 only, so a project on MSTest 4 that references it gets a `NU1608` warning at restore rather than tests that quietly never get a page.
 
 ### MotusTestBase
 

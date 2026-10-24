@@ -11,7 +11,7 @@
     <IsPackable>true</IsPackable>
     <PackageId>Motus.Testing.MSTest</PackageId>
     <Title>Motus.Testing.MSTest</Title>
-    <Description>MSTest integration for Motus browser automation. Provides a base test class with per-test browser context isolation.</Description>
+    <Description>MSTest 3 integration for Motus browser automation. Provides a base test class with per-test browser context isolation. For MSTest 4, use Motus.Testing.MSTest.v4.</Description>
     <IsTestProject>false</IsTestProject>
   </PropertyGroup>
 
@@ -28,8 +28,11 @@
     <ProjectReference Include="..\Motus.Abstractions\Motus.Abstractions.csproj" />
   </ItemGroup>
 
+  <!-- Capped below 4: a base class built against MSTest 3 has its setup and cleanup ignored by
+       MSTest 4, so a project on 4 that picks this package up is told at restore (NU1608) rather
+       than by tests that never get a page. Motus.Testing.MSTest.v4 builds this source for 4. -->
   <ItemGroup>
-    <PackageReference Include="MSTest.TestFramework" Version="3.5.2" />
+    <PackageReference Include="MSTest.TestFramework" Version="[3.5.2, 4.0.0)" />
   </ItemGroup>
 
 </Project>

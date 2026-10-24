@@ -44,7 +44,8 @@ await page.Locator("a").ClickAsync();
 | [Motus.Analyzers](https://www.nuget.org/packages/Motus.Analyzers) | Roslyn analyzers for common automation mistakes |
 | [Motus.Recorder](https://www.nuget.org/packages/Motus.Recorder) | Record browser interactions and emit test code |
 | [Motus.Testing](https://www.nuget.org/packages/Motus.Testing) | Shared browser fixture for test frameworks |
-| [Motus.Testing.MSTest](https://www.nuget.org/packages/Motus.Testing.MSTest) | MSTest integration |
+| [Motus.Testing.MSTest](https://www.nuget.org/packages/Motus.Testing.MSTest) | MSTest 3 integration |
+| [Motus.Testing.MSTest.v4](https://www.nuget.org/packages/Motus.Testing.MSTest.v4) | MSTest 4 integration |
 | [Motus.Testing.xUnit](https://www.nuget.org/packages/Motus.Testing.xUnit) | xUnit integration |
 | [Motus.Testing.NUnit](https://www.nuget.org/packages/Motus.Testing.NUnit) | NUnit integration |
 | [Motus.Cli](https://www.nuget.org/packages/Motus.Cli) | CLI for test execution, recording, and browser management |
