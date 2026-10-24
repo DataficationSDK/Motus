@@ -54,6 +54,16 @@ public class LocatorAssertionsTests
         _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {valueJson}}}}}");
     }
 
+    // One poll that finds nothing: the query runs and returns an empty list.
+    private void QueueNothingMatches(int polls = 1)
+    {
+        for (var i = 0; i < polls; i++)
+        {
+            _socket.QueueResponse("""{"id": 0, "sessionId": "session-1", "result": {"result": {"type": "object", "objectId": "arr-empty"}}}""");
+            _socket.QueueResponse("""{"id": 0, "sessionId": "session-1", "result": {"result": []}}""");
+        }
+    }
+
     // --- ToBeVisibleAsync ---
 
     [TestMethod]
@@ -387,5 +397,139 @@ public class LocatorAssertionsTests
 
         // Should timeout around 150ms, not 30s
         Assert.IsTrue(sw.ElapsedMilliseconds < 2000, $"Took {sw.ElapsedMilliseconds}ms, expected ~150ms");
+    }
+
+    // --- Element absence ---
+    //
+    // A locator that matches nothing is the normal state just before a page renders what the test
+    // is waiting for, so most assertions wait through it. Only the assertions that absence answers
+    // outright (visible, hidden, attached, detached, count) treat it as a result.
+
+    [TestMethod]
+    public async Task ToBeVisibleAsync_WaitsForElementToAppear()
+    {
+        var page = await CreatePageAsync();
+        var locator = page.Locator("#done");
+
+        QueueNothingMatches(polls: 2);
+        var id = 0;
+        QueueResolveAndEval(ref id, "done-1", """{"type": "boolean", "value": true}""");
+
+        await Expect.That(locator).ToBeVisibleAsync(new() { Timeout = 5_000 });
+    }
+
+    [TestMethod]
+    public async Task ToHaveTextAsync_WaitsForElementToAppear()
+    {
+        var page = await CreatePageAsync();
+        var locator = page.Locator("#done");
+
+        QueueNothingMatches(polls: 2);
+        var id = 0;
+        QueueResolveAndEval(ref id, "done-1", """{"type": "string", "value": "Saved"}""");
+
+        await Expect.That(locator).ToHaveTextAsync("Saved", new() { Timeout = 5_000 });
+    }
+
+    [TestMethod]
+    public async Task ToBeEnabledAsync_WaitsForElementToAppear()
+    {
+        var page = await CreatePageAsync();
+        var locator = page.Locator("#done");
+
+        QueueNothingMatches(polls: 2);
+        var id = 0;
+        QueueResolveAndEval(ref id, "done-1", """{"type": "boolean", "value": true}""");
+
+        await Expect.That(locator).ToBeEnabledAsync(new() { Timeout = 5_000 });
+    }
+
+    [TestMethod]
+    public async Task ToBeHiddenAsync_Passes_WhenNothingMatches()
+    {
+        var page = await CreatePageAsync();
+        var locator = page.Locator("#nope");
+
+        QueueNothingMatches();
+
+        await Expect.That(locator).ToBeHiddenAsync(new() { Timeout = 5_000 });
+    }
+
+    [TestMethod]
+    public async Task Not_ToBeVisibleAsync_Passes_WhenNothingMatches()
+    {
+        var page = await CreatePageAsync();
+        var locator = page.Locator("#nope");
+
+        QueueNothingMatches();
+
+        await Expect.That(locator).Not.ToBeVisibleAsync(new() { Timeout = 5_000 });
+    }
+
+    [TestMethod]
+    public async Task ToBeVisibleAsync_Throws_WhenNothingEverMatches()
+    {
+        var page = await CreatePageAsync();
+        var locator = page.Locator("#nope");
+
+        QueueNothingMatches(polls: 20);
+
+        var ex = await Assert.ThrowsExceptionAsync<MotusAssertionException>(
+            () => Expect.That(locator).ToBeVisibleAsync(new() { Timeout = 300 }));
+        StringAssert.Contains(ex.Message, "Received: <element not found>");
+    }
+
+    [TestMethod]
+    public async Task Not_ToBeHiddenAsync_Throws_WhenNothingEverMatches()
+    {
+        var page = await CreatePageAsync();
+        var locator = page.Locator("#nope");
+
+        QueueNothingMatches(polls: 20);
+
+        var ex = await Assert.ThrowsExceptionAsync<MotusAssertionException>(
+            () => Expect.That(locator).Not.ToBeHiddenAsync(new() { Timeout = 300 }));
+        StringAssert.Contains(ex.Message, "Received: <element not found>");
+    }
+
+    [TestMethod]
+    public async Task ToHaveTextAsync_Throws_WhenNothingEverMatches()
+    {
+        var page = await CreatePageAsync();
+        var locator = page.Locator("#nope");
+
+        QueueNothingMatches(polls: 20);
+
+        var ex = await Assert.ThrowsExceptionAsync<MotusAssertionException>(
+            () => Expect.That(locator).ToHaveTextAsync("Saved", new() { Timeout = 300 }));
+        StringAssert.Contains(ex.Message, "Received: <element not found>");
+        Assert.AreEqual("<element not found>", ex.Actual);
+    }
+
+    [TestMethod]
+    public async Task Not_ToHaveTextAsync_Throws_WhenNothingEverMatches()
+    {
+        // An element that is not there has no text to differ from the expected text, so the
+        // negated form does not pass on absence either; it waits for an element whose text
+        // differs, as Playwright does. Not.ToBeAttachedAsync is the assertion for absence.
+        var page = await CreatePageAsync();
+        var locator = page.Locator("#nope");
+
+        QueueNothingMatches(polls: 20);
+
+        var ex = await Assert.ThrowsExceptionAsync<MotusAssertionException>(
+            () => Expect.That(locator).Not.ToHaveTextAsync("Saved", new() { Timeout = 300 }));
+        StringAssert.Contains(ex.Message, "Received: <element not found>");
+    }
+
+    [TestMethod]
+    public async Task ToHaveCountAsync_Zero_Passes_WhenNothingMatches()
+    {
+        var page = await CreatePageAsync();
+        var locator = page.Locator("li.item");
+
+        QueueNothingMatches();
+
+        await Expect.That(locator).ToHaveCountAsync(0, new() { Timeout = 5_000 });
     }
 }

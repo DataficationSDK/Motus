@@ -56,6 +56,7 @@ namespace Motus;
 [JsonSerializable(typeof(PageFrameNavigatedEvent))]
 [JsonSerializable(typeof(PageFrameAttachedEvent))]
 [JsonSerializable(typeof(PageFrameDetachedEvent))]
+[JsonSerializable(typeof(PageNavigatedWithinDocumentEvent))]
 [JsonSerializable(typeof(JsonElement))]
 [JsonSerializable(typeof(PageFrameStoppedLoadingEvent))]
 [JsonSerializable(typeof(PageJavascriptDialogOpeningEvent))]
@@ -78,6 +79,7 @@ namespace Motus;
 [JsonSerializable(typeof(RuntimeExceptionThrownEvent))]
 [JsonSerializable(typeof(RuntimeBindingCalledEvent))]
 [JsonSerializable(typeof(RuntimeExecutionContextCreatedEvent))]
+[JsonSerializable(typeof(RuntimeExecutionContextDestroyedEvent))]
 // --- Emulation domain ---
 [JsonSerializable(typeof(EmulationSetDeviceMetricsOverrideParams))]
 [JsonSerializable(typeof(EmulationSetDeviceMetricsOverrideResult))]
@@ -446,6 +448,14 @@ internal sealed record PageFrameAttachedEvent(string FrameId, string ParentFrame
 
 internal sealed record PageFrameDetachedEvent(string FrameId, string? Reason = null);
 
+/// <remarks>
+/// <c>navigationType</c> is <c>fragment</c>, <c>historyApi</c> or <c>other</c>.
+/// </remarks>
+internal sealed record PageNavigatedWithinDocumentEvent(
+    string FrameId,
+    string Url,
+    string? NavigationType = null);
+
 internal sealed record PageFrameStoppedLoadingEvent(string FrameId);
 
 internal sealed record PageJavascriptDialogOpeningEvent(
@@ -557,6 +567,9 @@ internal sealed record RuntimeExecutionContextDescription(
 
 internal sealed record RuntimeExecutionContextCreatedEvent(
     RuntimeExecutionContextDescription Context);
+
+internal sealed record RuntimeExecutionContextDestroyedEvent(
+    int ExecutionContextId);
 
 internal sealed record RuntimeConsoleApiCalledEvent(
     string Type,

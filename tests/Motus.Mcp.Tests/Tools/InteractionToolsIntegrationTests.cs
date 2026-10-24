@@ -105,6 +105,41 @@ public class InteractionToolsIntegrationTests
         AssertOk(await InteractionTools.PressKeyAsync("Escape", service, ct), "press_key");
     }
 
+    /// <summary>
+    /// The tools act through the same locator path as the library, so an element below the fold is
+    /// scrolled to rather than timed out on. The drag starts at the top of the page and drops far
+    /// below it, so the drop target is only reachable once the pointer is already down.
+    /// </summary>
+    [TestMethod]
+    public async Task ClickSetCheckedAndDrag_ReachElementsBelowTheFold()
+    {
+        var service = _pages!;
+        var ct = CancellationToken.None;
+
+        const string Page =
+            "data:text/html,<div id=src onmousedown=\"window.down='src'\" style='width:80px;height:40px'>drag</div>"
+            + "<div style='height:3000px'></div>"
+            + "<button id=b onclick=\"this.textContent='clicked'\">Go</button>"
+            + "<input type=checkbox id=c>"
+            + "<div id=dst onmouseup=\"window.up='dst'\" style='width:80px;height:40px'>drop</div>";
+
+        AssertOk(await CoreTools.NavigateAsync(Page, service, ct), "navigate");
+
+        AssertOk(await CoreTools.ClickAsync("#b", service, ct), "click");
+        AssertOk(await InteractionTools.SetCheckedAsync("#c", true, service, ct), "set_checked");
+        AssertOk(await CoordinateTools.DragAsync(
+            pageService: service,
+            cancellationToken: ct,
+            start_ref: "#src",
+            end_ref: "#dst"), "drag");
+
+        var page = await service.GetOrCreateActivePageAsync(ct);
+        Assert.AreEqual("clicked", await page.EvaluateAsync<string>("document.getElementById('b').textContent"));
+        Assert.IsTrue(await page.EvaluateAsync<bool>("document.getElementById('c').checked"));
+        Assert.AreEqual("src", await page.EvaluateAsync<string>("window.down || ''"));
+        Assert.AreEqual("dst", await page.EvaluateAsync<string>("window.up || ''"));
+    }
+
     private static void AssertOk(CallToolResult result, string label)
         => Assert.IsFalse(result.IsError ?? false, $"{label} should succeed: {TextOf(result)}");
 

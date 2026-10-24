@@ -54,7 +54,7 @@ internal static class AssertionRetryHelper
                     throw;
                 }
                 catch (Exception ex) when (
-                    ex is InvalidOperationException   // evaluation failures, element not found
+                    ex is InvalidOperationException   // evaluation failures
                     or Abstractions.MotusProtocolException  // CDP command errors (stale context, etc.)
                     or Abstractions.MotusTargetClosedException  // target navigated away
                     or TimeoutException)               // inner operation timeouts

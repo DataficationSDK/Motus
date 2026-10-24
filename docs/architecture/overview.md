@@ -14,7 +14,8 @@ Motus is a .NET browser automation framework that communicates directly with Chr
 | `Motus.Runner` | Blazor visual test runner with live screencast and action timeline |
 | `Motus.Cli` | `motus` CLI tool (`run`, `record`, `codegen`, `screenshot`, `pdf`, `trace`, `install`) |
 | `Motus.Testing` | Shared base types for test framework integrations |
-| `Motus.Testing.MSTest` | MSTest integration (`MotusTestBase`, lifecycle management) |
+| `Motus.Testing.MSTest` | MSTest 3 integration (`MotusTestBase`, lifecycle management) |
+| `Motus.Testing.MSTest.v4` | The same source built for MSTest 4 |
 | `Motus.Testing.xUnit` | xUnit integration |
 | `Motus.Testing.NUnit` | NUnit integration |
 | `Motus.Samples` | Runnable usage examples |
@@ -54,7 +55,7 @@ The stack has four layers. Test code at the top calls high-level abstractions; t
 The following describes how a single test action, for example `page.Locator("button").ClickAsync()`, moves through the layers.
 
 1. **Locator resolution** - The `Locator` type holds the selector string. When an action is invoked, the registered `ISelectorStrategy` implementations are consulted to resolve the element in the DOM.
-2. **Auto-wait** - Before dispatching the action, the engine polls actionability conditions (visible, enabled, stable, receives events) using `IWaitCondition`. Registered `ILifecycleHook` implementations are notified at the start of the action.
+2. **Auto-wait** - Before dispatching the action, the engine polls actionability conditions (visible, enabled, stable, receives events) using `IWaitCondition`, scrolling the element into view before the stability and hit tests of any action that points at it. Registered `ILifecycleHook` implementations are notified at the start of the action.
 3. **Command dispatch** - The resolved command (for example a CDP `Input.dispatchMouseEvent` sequence) is serialized to JSON using `System.Text.Json` source generators and handed to `CdpTransport` or `BiDiTransport`.
 4. **Transport** - The transport writes the message to the one connection it holds open for the life of the browser and awaits the response carrying the same command ID. `SlowMo` delay, if configured, is applied here before sending.
 5. **Protocol response** - The browser's response is deserialized by the source-generated `JsonSerializerContext` and returned up the call stack.

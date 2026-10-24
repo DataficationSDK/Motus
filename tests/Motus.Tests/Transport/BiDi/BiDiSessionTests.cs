@@ -152,6 +152,90 @@ public class BiDiSessionTests
         await enumerator.DisposeAsync();
     }
 
+    /// <summary>
+    /// A CDP event BiDi reports as two events is subscribed as both, and a subscriber to the CDP
+    /// name receives either one translated.
+    /// </summary>
+    [TestMethod]
+    public async Task SubscribeAsync_EventWithTwoBiDiSources_DeliversBoth()
+    {
+        var socket = new FakeCdpSocket();
+        var transport = new BiDiTransport(socket);
+        await transport.ConnectAsync(new Uri("ws://localhost:1234"), CancellationToken.None);
+        var session = new BiDiSession(transport, "ctx-1");
+
+        socket.QueueResponse("""{"type":"success","id":1,"result":{}}""");
+        socket.QueueResponse("""{"type":"success","id":2,"result":{}}""");
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var enumerator = session.SubscribeAsync<JsonElement>(
+            "Page.navigatedWithinDocument",
+            BiDiJsonContext.Default.JsonElement,
+            cts.Token).GetAsyncEnumerator(cts.Token);
+
+        var first = enumerator.MoveNextAsync();
+        await Task.Delay(100);
+
+        socket.Enqueue("""{"type":"event","method":"browsingContext.historyUpdated","params":{"context":"ctx-1","url":"https://example.com/a","timestamp":1}}""");
+        Assert.IsTrue(await first);
+        Assert.AreEqual("https://example.com/a", enumerator.Current.GetProperty("url").GetString());
+
+        socket.Enqueue("""{"type":"event","method":"browsingContext.fragmentNavigated","params":{"context":"ctx-1","navigation":"n","url":"https://example.com/a#b","timestamp":2}}""");
+        Assert.IsTrue(await enumerator.MoveNextAsync());
+        Assert.AreEqual("https://example.com/a#b", enumerator.Current.GetProperty("url").GetString());
+
+        var subscribes = Enumerable.Range(0, socket.SentMessages.Count)
+            .Select(i => JsonDocument.Parse(socket.GetSentJson(i)).RootElement)
+            .Where(m => m.GetProperty("method").GetString() == "session.subscribe")
+            .ToDictionary(
+                m => m.GetProperty("params").GetProperty("events")[0].GetString()!,
+                m => m.GetProperty("params"));
+        CollectionAssert.AreEquivalent(
+            new[] { "browsingContext.fragmentNavigated", "browsingContext.historyUpdated" },
+            subscribes.Keys.ToArray());
+
+        // Firefox never delivers a fragment navigation to a subscription scoped to one context, so
+        // that one is subscribed for all of them; the history update stays scoped.
+        Assert.IsFalse(HasContexts(subscribes["browsingContext.fragmentNavigated"]));
+        Assert.IsTrue(HasContexts(subscribes["browsingContext.historyUpdated"]));
+
+        static bool HasContexts(JsonElement p) =>
+            p.TryGetProperty("contexts", out var c) && c.ValueKind == JsonValueKind.Array;
+
+        await enumerator.DisposeAsync();
+    }
+
+    /// <summary>
+    /// A browser that does not know one of the two events refuses that subscription, and the
+    /// other is still delivered.
+    /// </summary>
+    [TestMethod]
+    public async Task SubscribeAsync_EventWithTwoBiDiSources_SurvivesOneBeingRefused()
+    {
+        var socket = new FakeCdpSocket();
+        var transport = new BiDiTransport(socket);
+        await transport.ConnectAsync(new Uri("ws://localhost:1234"), CancellationToken.None);
+        var session = new BiDiSession(transport, "ctx-1");
+
+        socket.QueueResponse("""{"type":"error","id":1,"error":"invalid argument","message":"Unknown event"}""");
+        socket.QueueResponse("""{"type":"success","id":2,"result":{}}""");
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var enumerator = session.SubscribeAsync<JsonElement>(
+            "Page.navigatedWithinDocument",
+            BiDiJsonContext.Default.JsonElement,
+            cts.Token).GetAsyncEnumerator(cts.Token);
+
+        var next = enumerator.MoveNextAsync();
+        await Task.Delay(100);
+
+        socket.Enqueue("""{"type":"event","method":"browsingContext.historyUpdated","params":{"context":"ctx-1","url":"https://example.com/a","timestamp":1}}""");
+        Assert.IsTrue(await next);
+        Assert.AreEqual("https://example.com/a", enumerator.Current.GetProperty("url").GetString());
+
+        await enumerator.DisposeAsync();
+    }
+
     [TestMethod]
     public void CleanupChannels_Removes_Context_Channels()
     {

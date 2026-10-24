@@ -334,6 +334,8 @@ internal sealed class FakeToolPage(AccessibilitySnapshot snapshot) : IPage
     public Task WaitForLoadStateAsync(LoadState? state = null, double? timeout = null) => throw new NotImplementedException();
     public Task<IResponse?> WaitForNavigationAsync(NavigationOptions? options = null) => throw new NotImplementedException();
     public Task WaitForURLAsync(string urlPattern, NavigationOptions? options = null) => throw new NotImplementedException();
+    public Task WaitForURLAsync(System.Text.RegularExpressions.Regex urlPattern, NavigationOptions? options = null) => throw new NotImplementedException();
+    public Task WaitForURLAsync(Func<string, bool> predicate, NavigationOptions? options = null) => throw new NotImplementedException();
     public Task<IRequest> WaitForRequestAsync(string urlPattern, double? timeout = null) => throw new NotImplementedException();
     public Task<IResponse> WaitForResponseAsync(string urlPattern, double? timeout = null) => throw new NotImplementedException();
     public Task<IRequest> WaitForRequestAsync(Func<IRequest, bool> predicate, double? timeout = null) => throw new NotImplementedException();
@@ -1016,10 +1018,18 @@ internal sealed class FakeToolFrame(FakeToolPage page, string url, FakeToolFrame
         return page.RecordingLocator;
     }
 
+    /// <summary>
+    /// When set, <see cref="EvaluateAsync{T}"/> never completes, like a frame that has no document
+    /// to evaluate in yet.
+    /// </summary>
+    public bool EvaluateNeverCompletes { get; set; }
+
     public Task<T> EvaluateAsync<T>(string expression, object? arg = null)
     {
         Evaluated.Add(expression);
-        return Task.FromResult(default(T)!);
+        return EvaluateNeverCompletes
+            ? new TaskCompletionSource<T>().Task
+            : Task.FromResult(default(T)!);
     }
 
     public Task<T> EvaluateAsync<T>(string expression, object? arg, EvaluateOptions options)
@@ -1051,6 +1061,8 @@ internal sealed class FakeToolFrame(FakeToolPage page, string url, FakeToolFrame
     public Task<string> TitleAsync() => throw new NotImplementedException();
     public Task WaitForLoadStateAsync(LoadState? state = null, double? timeout = null) => throw new NotImplementedException();
     public Task WaitForURLAsync(string urlPattern, NavigationOptions? options = null) => throw new NotImplementedException();
+    public Task WaitForURLAsync(System.Text.RegularExpressions.Regex urlPattern, NavigationOptions? options = null) => throw new NotImplementedException();
+    public Task WaitForURLAsync(Func<string, bool> predicate, NavigationOptions? options = null) => throw new NotImplementedException();
     public Task<IElementHandle> AddScriptTagAsync(string? url = null, string? content = null) => throw new NotImplementedException();
     public Task<IElementHandle> AddStyleTagAsync(string? url = null, string? content = null) => throw new NotImplementedException();
 }

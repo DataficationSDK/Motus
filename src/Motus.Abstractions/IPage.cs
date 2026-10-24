@@ -1,3 +1,5 @@
+using System.Text.RegularExpressions;
+
 namespace Motus.Abstractions;
 
 /// <summary>
@@ -138,6 +140,10 @@ public interface IPage : IAsyncDisposable
     /// <summary>
     /// Raised when a frame in the page navigates.
     /// </summary>
+    /// <remarks>
+    /// This includes a navigation that keeps the frame's document, through the history API or to a
+    /// fragment, in which case only the frame's URL has changed.
+    /// </remarks>
     event EventHandler<IFrame>? FrameNavigated;
 
     /// <summary>
@@ -291,39 +297,66 @@ public interface IPage : IAsyncDisposable
     ILocator LocatorByBackendNodeId(long backendNodeId);
 
     /// <summary>
-    /// Creates a locator for the element matching the specified role.
+    /// Creates a locator for the elements with the specified ARIA role, and the specified
+    /// accessible name when one is given.
     /// </summary>
-    /// <param name="role">The ARIA role to match.</param>
-    /// <param name="name">Optional accessible name to filter by.</param>
+    /// <param name="role">The ARIA role to match, such as <c>button</c>, <c>link</c> or <c>textbox</c>.</param>
+    /// <param name="name">Optional accessible name to filter by. It must equal the computed name exactly.</param>
     /// <returns>A locator for the matching elements.</returns>
     /// <remarks>
-    /// Role matching runs over the accessibility tree, which spans the page's frames. This is the
-    /// one page-level locator that can match an element inside a frame; the others are confined to
-    /// the main document. Use <see cref="IFrame.GetByRole"/> to confine a role match to one frame.
+    /// Matching runs over the browser's accessibility tree, the same as a <c>role=</c> selector, so
+    /// an element's implicit role counts (a <c>&lt;button&gt;</c> is a button, an
+    /// <c>&lt;input&gt;</c> a textbox) and the name is the computed accessible name, whether it
+    /// comes from text content, a label, <c>aria-labelledby</c> or <c>aria-label</c>. Elements
+    /// hidden from the accessibility tree, such as one styled <c>display: none</c> or inside
+    /// <c>aria-hidden="true"</c>, do not match. Matching covers the main document only; use <see cref="IFrame.GetByRole"/> to match inside a frame. Reading the accessibility tree needs
+    /// a Chromium-based browser.
     /// </remarks>
     ILocator GetByRole(string role, string? name = null);
 
     /// <summary>
-    /// Creates a locator for the element matching the specified text.
+    /// Creates a locator for the elements whose text matches the specified text.
     /// </summary>
     /// <param name="text">The text to match.</param>
-    /// <param name="exact">Whether to match the text exactly.</param>
+    /// <param name="exact">
+    /// Whether the text must match the element's whole text, case-sensitively. Omitted or false,
+    /// a case-insensitive substring is enough. Either way whitespace is collapsed and trimmed
+    /// before comparing.
+    /// </param>
     /// <returns>A locator for the matching elements.</returns>
+    /// <remarks>
+    /// Only the innermost element holding the text matches, not every ancestor that contains it.
+    /// An <c>&lt;input&gt;</c> of type <c>button</c>, <c>submit</c> or <c>reset</c> is matched by its
+    /// value. Text in the document head, scripts and styles is ignored. Matching covers the main document and its open shadow roots.
+    /// </remarks>
     ILocator GetByText(string text, bool? exact = null);
 
     /// <summary>
-    /// Creates a locator for the element matching the specified label.
+    /// Creates a locator for the elements labelled by the specified text.
     /// </summary>
     /// <param name="text">The label text to match.</param>
-    /// <param name="exact">Whether to match the text exactly.</param>
+    /// <param name="exact">
+    /// Whether the text must match the whole label, case-sensitively. Omitted or false, a
+    /// case-insensitive substring is enough. Either way whitespace is collapsed and trimmed
+    /// before comparing.
+    /// </param>
     /// <returns>A locator for the matching elements.</returns>
+    /// <remarks>
+    /// An element's labels are, in order of precedence, the elements its <c>aria-labelledby</c>
+    /// names, its <c>aria-label</c>, and the <c>&lt;label&gt;</c> elements associated with a form
+    /// control, either through <c>for</c> or by wrapping it. Matching covers the main document and its open shadow roots.
+    /// </remarks>
     ILocator GetByLabel(string text, bool? exact = null);
 
     /// <summary>
-    /// Creates a locator for the element matching the specified placeholder.
+    /// Creates a locator for the elements whose <c>placeholder</c> attribute matches the specified text.
     /// </summary>
     /// <param name="text">The placeholder text to match.</param>
-    /// <param name="exact">Whether to match the text exactly.</param>
+    /// <param name="exact">
+    /// Whether the text must match the whole attribute value, case-sensitively. Omitted or false, a
+    /// case-insensitive substring is enough. Either way whitespace is collapsed and trimmed
+    /// before comparing.
+    /// </param>
     /// <returns>A locator for the matching elements.</returns>
     ILocator GetByPlaceholder(string text, bool? exact = null);
 
@@ -335,18 +368,26 @@ public interface IPage : IAsyncDisposable
     ILocator GetByTestId(string testId);
 
     /// <summary>
-    /// Creates a locator for the element matching the specified title.
+    /// Creates a locator for the elements whose <c>title</c> attribute matches the specified text.
     /// </summary>
     /// <param name="text">The title text to match.</param>
-    /// <param name="exact">Whether to match the text exactly.</param>
+    /// <param name="exact">
+    /// Whether the text must match the whole attribute value, case-sensitively. Omitted or false, a
+    /// case-insensitive substring is enough. Either way whitespace is collapsed and trimmed
+    /// before comparing.
+    /// </param>
     /// <returns>A locator for the matching elements.</returns>
     ILocator GetByTitle(string text, bool? exact = null);
 
     /// <summary>
-    /// Creates a locator for the element matching the specified alt text.
+    /// Creates a locator for the elements whose <c>alt</c> attribute matches the specified text.
     /// </summary>
     /// <param name="text">The alt text to match.</param>
-    /// <param name="exact">Whether to match the text exactly.</param>
+    /// <param name="exact">
+    /// Whether the text must match the whole attribute value, case-sensitively. Omitted or false, a
+    /// case-insensitive substring is enough. Either way whitespace is collapsed and trimmed
+    /// before comparing.
+    /// </param>
     /// <returns>A locator for the matching elements.</returns>
     ILocator GetByAltText(string text, bool? exact = null);
 
@@ -389,11 +430,60 @@ public interface IPage : IAsyncDisposable
     Task WaitForLoadStateAsync(LoadState? state = null, double? timeout = null);
 
     /// <summary>
-    /// Waits for a matching URL navigation.
+    /// Waits until the page's URL matches <paramref name="urlPattern"/>, returning at once when it
+    /// already does.
     /// </summary>
-    /// <param name="urlPattern">The URL pattern to match.</param>
-    /// <param name="options">Navigation options.</param>
+    /// <param name="urlPattern">
+    /// The URL to wait for. A string containing <c>*</c> is a glob that has to cover the whole URL,
+    /// where each <c>*</c> stands for any run of characters, path separators included. Any other
+    /// string has to equal the URL exactly. A string without a scheme, such as <c>/dashboard</c>, is
+    /// resolved against <see cref="ContextOptions.BaseURL"/> first when one is set.
+    /// </param>
+    /// <param name="options">The timeout in milliseconds. The other navigation options are unused.</param>
+    /// <remarks>
+    /// A URL that only starts with or contains the string is not a match:
+    /// <c>https://example.com/</c> is not satisfied by <c>https://example.com/account</c>, and
+    /// <c>https://example.com/orders?page=1</c> is not satisfied by
+    /// <c>https://example.com/orders?page=10</c>. To match part of a URL, use a glob such as
+    /// <c>**/orders**</c>, or one of the overloads taking a <see cref="Regex"/> or a predicate.
+    /// A navigation that keeps the same document, through the history API or to a fragment,
+    /// changes the URL as well and is waited for the same way.
+    /// </remarks>
+    /// <exception cref="WaitTimeoutException">The URL did not match within the timeout.</exception>
     Task WaitForURLAsync(string urlPattern, NavigationOptions? options = null);
+
+    /// <summary>
+    /// Waits until the page's URL matches a regular expression, returning at once when it already
+    /// does.
+    /// </summary>
+    /// <param name="urlPattern">
+    /// The expression the URL has to match. It is searched for anywhere in the URL, as
+    /// <see cref="Regex.IsMatch(string)"/> does, so anchor it with <c>^</c> and <c>$</c> to match
+    /// the whole URL.
+    /// </param>
+    /// <param name="options">The timeout in milliseconds. The other navigation options are unused.</param>
+    /// <remarks>
+    /// Navigations that keep the same document, through the history API or to a fragment, are
+    /// waited for as well.
+    /// </remarks>
+    /// <exception cref="WaitTimeoutException">The URL did not match within the timeout.</exception>
+    Task WaitForURLAsync(Regex urlPattern, NavigationOptions? options = null);
+
+    /// <summary>
+    /// Waits until the page's URL satisfies a predicate, returning at once when it already does.
+    /// </summary>
+    /// <param name="predicate">
+    /// Called with the full URL, and returns <see langword="true"/> for the URL being waited for.
+    /// It is called for the current URL and for each URL the page navigates to, from one thread at a
+    /// time. An exception it throws ends the wait and propagates to the caller.
+    /// </param>
+    /// <param name="options">The timeout in milliseconds. The other navigation options are unused.</param>
+    /// <remarks>
+    /// Navigations that keep the same document, through the history API or to a fragment, are
+    /// waited for as well.
+    /// </remarks>
+    /// <exception cref="WaitTimeoutException">The URL did not match within the timeout.</exception>
+    Task WaitForURLAsync(Func<string, bool> predicate, NavigationOptions? options = null);
 
     /// <summary>
     /// Waits for a network request matching the URL pattern.

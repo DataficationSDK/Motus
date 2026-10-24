@@ -15,20 +15,27 @@ internal sealed partial class Page
 
     public async Task<IJSHandle> EvaluateHandleAsync(string expression, object? arg = null)
     {
-        var contextId = _mainFrameId is not null
-            ? GetExecutionContextId(_mainFrameId)
-            : null;
+        var wrapped = WrapExpression(expression, arg);
 
-        var result = await _session.SendAsync(
-            "Runtime.evaluate",
-            new RuntimeEvaluateParams(
-                Expression: WrapExpression(expression, arg),
-                ReturnByValue: false,
-                AwaitPromise: true,
-                ContextId: contextId),
-            CdpJsonContext.Default.RuntimeEvaluateParams,
-            CdpJsonContext.Default.RuntimeEvaluateResult,
-            CancellationToken.None).ConfigureAwait(false);
+        async Task<(IMotusSession Session, RuntimeEvaluateResult Result)> Evaluate(ExecutionTarget target)
+        {
+            var evaluated = await target.Session.SendAsync(
+                "Runtime.evaluate",
+                new RuntimeEvaluateParams(
+                    Expression: wrapped,
+                    ReturnByValue: false,
+                    AwaitPromise: true,
+                    ContextId: target.ContextId),
+                CdpJsonContext.Default.RuntimeEvaluateParams,
+                CdpJsonContext.Default.RuntimeEvaluateResult,
+                CancellationToken.None).ConfigureAwait(false);
+
+            return (target.Session, evaluated);
+        }
+
+        var (session, result) = _mainFrameId is not null
+            ? await RunInFrameAsync(_mainFrameId, Evaluate).ConfigureAwait(false)
+            : await Evaluate(new ExecutionTarget(_session, null)).ConfigureAwait(false);
 
         if (result.ExceptionDetails is not null)
             throw new InvalidOperationException(
@@ -38,7 +45,7 @@ internal sealed partial class Page
             throw new InvalidOperationException(
                 "Expression did not return an object. Use EvaluateAsync<T> for primitive values.");
 
-        return new JsHandle(_session, result.Result.ObjectId);
+        return new JsHandle(session, result.Result.ObjectId);
     }
 
     public async Task<T> WaitForFunctionAsync<T>(string expression, object? arg = null, double? timeout = null)

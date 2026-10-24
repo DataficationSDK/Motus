@@ -1,8 +1,13 @@
 using System.Reflection;
+using Motus.Runner.Services.Execution;
 
 namespace Motus.Cli.Services;
 
-public sealed record DiscoveredTest(Type TestClass, MethodInfo TestMethod, string FullName, bool IsIgnored, bool Quarantined = false);
+/// <summary>
+/// A test case found in a test assembly. <paramref name="Arguments"/> is the data row of one case of a
+/// data-driven test, or null for a test without one.
+/// </summary>
+public sealed record DiscoveredTest(Type TestClass, MethodInfo TestMethod, string FullName, bool IsIgnored, bool Quarantined = false, object?[]? Arguments = null);
 
 public sealed class TestDiscovery
 {
@@ -17,6 +22,12 @@ public sealed class TestDiscovery
         "TestMethodAttribute",
         "TestAttribute",
         "FactAttribute",
+    };
+
+    // xUnit's [Theory] derives from [Fact] but needs data the runners don't supply.
+    private static readonly HashSet<string> ExcludedMethodAttributes = new(StringComparer.Ordinal)
+    {
+        "TheoryAttribute",
     };
 
     private static readonly HashSet<string> IgnoreAttributes = new(StringComparer.Ordinal)
@@ -63,14 +74,17 @@ public sealed class TestDiscovery
                     if (!IsTestMethod(method))
                         continue;
 
-                    var fullName = $"{type.FullName}.{method.Name}";
-
-                    if (filter is not null && !fullName.Contains(filter, StringComparison.OrdinalIgnoreCase))
-                        continue;
-
-                    var isIgnored = classIgnored || IsIgnoredMethod(method);
+                    var methodIgnored = classIgnored || IsIgnoredMethod(method);
                     var quarantined = classQuarantined || IsQuarantinedMethod(method);
-                    tests.Add(new DiscoveredTest(type, method, fullName, isIgnored, quarantined));
+
+                    foreach (var testCase in TestCaseExpander.Expand(type, method, message => Console.Error.WriteLine(message)))
+                    {
+                        if (filter is not null && !testCase.FullName.Contains(filter, StringComparison.OrdinalIgnoreCase))
+                            continue;
+
+                        var isIgnored = methodIgnored || testCase.IgnoreReason is not null;
+                        tests.Add(new DiscoveredTest(type, method, testCase.FullName, isIgnored, quarantined, testCase.Arguments));
+                    }
                 }
             }
         }
@@ -84,13 +98,14 @@ public sealed class TestDiscovery
             return false;
 
         return type.GetCustomAttributes(true)
-            .Any(a => ClassAttributes.Contains(a.GetType().Name));
+            .Any(a => TestCaseExpander.IsOrDerivesFrom(a, ClassAttributes));
     }
 
     private static bool IsTestMethod(MethodInfo method)
     {
         return method.GetCustomAttributes(true)
-            .Any(a => MethodAttributes.Contains(a.GetType().Name));
+            .Any(a => TestCaseExpander.IsOrDerivesFrom(a, MethodAttributes)
+                      && !TestCaseExpander.IsOrDerivesFrom(a, ExcludedMethodAttributes));
     }
 
     private static bool IsIgnoredMethod(MethodInfo method)

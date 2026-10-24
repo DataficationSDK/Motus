@@ -108,19 +108,44 @@ For an attached browser, a dropped connection says nothing about whether the bro
 
 `BrowserFinder.Resolve` determines the executable path using the following precedence:
 
-1. **Explicit path.** If `options.ExecutablePath` is set, it is validated with `File.Exists` and returned directly. A `FileNotFoundException` is thrown if the file does not exist.
+1. **Explicit path.** If `options.ExecutablePath` is set, it is validated with `File.Exists` and returned directly. A `FileNotFoundException` is thrown if the file does not exist. `launch.executablePath` in `motus.json` and `MOTUS_EXECUTABLE_PATH` both arrive here, through the config merge.
 
-2. **Channel-specific candidates.** If `options.Channel` is set, `CandidatesForChannel` builds an ordered list of paths for the current platform and returns the first one that exists.
+2. **Channel set.** If `options.Channel` is set, a browser `motus install` downloaded for that same channel is used first, then `CandidatesForChannel` builds an ordered list of system paths for the current platform and the first one that exists is returned.
 
-3. **Auto-detect.** If neither option is set, `Resolve` iterates over `Chrome`, `Edge`, and `Chromium` in that order, returning the first match found.
+3. **Auto-detect.** If neither option is set, the Chromium download is used first, then the system `Chrome`, `Edge`, and `Chromium` are tried in that order, returning the first match found.
 
-### `InstalledBinariesPath`
+### Browsers downloaded by `motus install`
 
-When the Motus install system downloads a browser, it sets `BrowserFinder.InstalledBinariesPath`. This path is prepended to every channel's candidate list, ahead of system-installed locations.
+`motus install` unpacks each build into a versioned folder under `~/.motus/browsers`, laid out as the archive ships it:
+
+| Platform | Executable |
+|---|---|
+| Linux | `chromium-{version}/chrome-linux64/chrome` |
+| Windows | `chromium-{version}/chrome-win64/chrome.exe` (`chrome-win32` on 32-bit Windows) |
+| macOS | `chromium-{version}/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing` (`chrome-mac-x64` on Intel) |
+| Windows, Firefox | `firefox-{version}/firefox.exe` |
+
+Several versions can sit side by side, so the folder is not searched. The installer records the executable it just installed in a marker file, `.installed.chromium` or `.installed.firefox`, and `BrowserFinder` reads that marker. A marker that names a file that no longer exists, because the cache was cleaned by hand, is ignored and resolution carries on to the system locations. The CLI commands and the MCP server read the same markers, so a test run and the `motus` tool agree on which browser was installed.
+
+The download comes before a system browser because it is the one the user chose to install, usually pinned to a version. On a machine that also has Chrome installed, a launch with no channel and no path runs the download rather than that Chrome.
+
+A named channel is binding. Only a download recorded for that same channel answers it:
+
+| `Channel` | Resolves to |
+|---|---|
+| not set | the Chromium download, then system Chrome, Edge, Chromium |
+| `Chromium` | the Chromium download, then a system Chromium |
+| `Chrome` | a system Chrome only |
+| `Edge` | a system Edge only |
+| `Firefox` | the Firefox download, then a system Firefox |
+
+`motus install` downloads Chromium (a Chrome for Testing build) and, on Windows, Firefox. Chrome and Edge are branded browsers it leaves to their own installers, so asking for either by name still means the branded browser, and a missing one is reported as missing rather than replaced by the download. Auto-detect never picks Firefox, downloaded or not.
+
+Only the default cache is read. A browser installed with `motus install --path` is not found this way; point `launch.executablePath` or `MOTUS_EXECUTABLE_PATH` at it instead.
 
 ### Pinning a specific binary
 
-Steps 2 and 3 above resolve to whichever build is installed, which is why a CI run can change behavior without a commit: the channel moved. Step 1 is the escape from that. `motus install --revision <n>` downloads an exact Chromium revision, constructing the download URL for that revision rather than resolving through the stable listing, and `launch.executablePath` or `MOTUS_EXECUTABLE_PATH` then points `options.ExecutablePath` at it. A path set in code still wins over both, so the precedence above is unchanged.
+A system browser resolves to whichever build the machine has, which is why a CI run can change behavior without a commit: the channel moved. `motus install --revision <n>` downloads an exact Chromium revision, constructing the download URL for that revision rather than resolving through the stable listing, and the marker then points at it, so a launch with no channel picks it up. The marker records the most recent install, so the browser used is the one installed last. Setting `launch.executablePath` or `MOTUS_EXECUTABLE_PATH` to the path it reports makes the choice explicit, which is still the strongest pin, and a path set in code wins over both.
 
 On Windows, a browser unzipped into a user directory does not necessarily carry the file-system permissions its sandbox requires. The installer grants them during install and when repairing an existing install. A failure there is reported rather than fatal, since the browser can still run where those permissions are not needed.
 
@@ -386,6 +411,7 @@ The returned `IBrowserLease` holds the browser and a return callback. Disposing 
 
 - `src/Motus/Motus.cs` - `MotusLauncher` source
 - `src/Motus/Browser/BrowserFinder.cs` - platform executable discovery
+- `src/Motus/Browser/InstalledBrowsers.cs` - the `motus install` cache and its marker files
 - `src/Motus/Context/BrowserContext.cs` - context and page creation
 - `src/Motus/Page/Page.cs` - page initialization and CDP domain enablement
 - `src/Motus/Pool/MotusBrowserPool.cs` and `BrowserPool.cs` - pool implementation

@@ -97,10 +97,11 @@ internal sealed partial class Page
             CdpJsonContext.Default.PageFrameStoppedLoadingEvent,
             evt => FrameStoppedLoading?.Invoke(evt.FrameId), ct);
 
-        _ = PumpEventsAsync(session,
-            "Runtime.executionContextCreated",
-            CdpJsonContext.Default.RuntimeExecutionContextCreatedEvent,
-            OnExecutionContextCreated, ct);
+        // Contexts are made and torn down by the same navigations, so their events are read
+        // together for the same reason as the frame tree's. BiDi has no counterpart to listen for
+        // (see PumpExecutionContextEventsAsync).
+        if (session is not BiDiSession)
+            _ = PumpExecutionContextEventsAsync(session, ct);
 
         _ = PumpEventsAsync(session,
             "Runtime.consoleAPICalled",
@@ -125,7 +126,11 @@ internal sealed partial class Page
 
     private async Task PumpFrameTreeEventsAsync(IMotusSession session, bool isPageSession, CancellationToken ct)
     {
-        string[] events = ["Page.frameNavigated", "Page.frameAttached", "Page.frameDetached"];
+        string[] events =
+        [
+            "Page.frameNavigated", "Page.frameAttached", "Page.frameDetached",
+            "Page.navigatedWithinDocument"
+        ];
 
         try
         {
@@ -146,6 +151,10 @@ internal sealed partial class Page
                         case "Page.frameDetached":
                             if (JsonSerializer.Deserialize(raw.Params, CdpJsonContext.Default.PageFrameDetachedEvent) is { } detached)
                                 OnFrameDetached(detached, session);
+                            break;
+                        case "Page.navigatedWithinDocument":
+                            if (JsonSerializer.Deserialize(raw.Params, CdpJsonContext.Default.PageNavigatedWithinDocumentEvent) is { } within)
+                                OnNavigatedWithinDocument(within);
                             break;
                     }
                 }
@@ -221,6 +230,27 @@ internal sealed partial class Page
             MainFrameNavigated?.Invoke(info.Url);
     }
 
+    /// <summary>
+    /// Records a URL change that kept the frame's document: a history API call or a fragment
+    /// navigation.
+    /// </summary>
+    /// <remarks>
+    /// The browser does not report these as <c>Page.frameNavigated</c>, so without this a frame's
+    /// URL stayed at whatever its last document loaded with, and a single-page application that
+    /// routes through <c>history.pushState</c> never appeared to move. The document, its child
+    /// frames and its execution contexts are all unchanged, so none of the cleanup a full
+    /// navigation does applies here; only the URL is updated, and
+    /// <see cref="FrameNavigated"/> is raised so a wait on the URL can see the change.
+    /// </remarks>
+    private void OnNavigatedWithinDocument(PageNavigatedWithinDocumentEvent evt)
+    {
+        if (!_frames.TryGetValue(evt.FrameId, out var frame))
+            return;
+
+        frame.Url = evt.Url;
+        FrameNavigated?.Invoke(this, frame);
+    }
+
     private void OnFrameAttached(PageFrameAttachedEvent evt, IMotusSession source)
     {
         var frame = EnsureFrame(evt.FrameId, evt.ParentFrameId);
@@ -291,6 +321,10 @@ internal sealed partial class Page
             return;
 
         frame.MarkDetached();
+
+        // Anyone waiting for this frame's next context would otherwise wait out the clock.
+        SignalExecutionContextWaiters(frameId);
+
         FrameDetached?.Invoke(this, frame);
     }
 
@@ -308,34 +342,6 @@ internal sealed partial class Page
     {
         if (!isPageSession)
             _frameIdToSession[frameId] = source;
-    }
-
-    private void OnExecutionContextCreated(RuntimeExecutionContextCreatedEvent evt)
-    {
-        var ctx = evt.Context;
-
-        // Extract frameId from auxData if present
-        string? frameId = null;
-        var isDefaultWorld = true;
-        if (ctx.AuxData is JsonElement aux && aux.ValueKind == JsonValueKind.Object)
-        {
-            if (aux.TryGetProperty("frameId", out var fid))
-                frameId = fid.GetString();
-
-            // A frame has one main world and any number of others beside it. Only the main world
-            // is the frame's context: an isolated world reports the same frame id, and recording
-            // it here would send every later main-world evaluation into the isolated world, where
-            // the page's own globals do not exist. That failure is silent, so it is guarded at the
-            // one place contexts are recorded rather than at each reader.
-            if (aux.TryGetProperty("isDefault", out var isDefault)
-                && isDefault.ValueKind is JsonValueKind.False)
-            {
-                isDefaultWorld = false;
-            }
-        }
-
-        if (frameId is not null && isDefaultWorld)
-            _frameIdToExecutionContext[frameId] = ctx.Id;
     }
 
     private void OnConsoleApiCalled(RuntimeConsoleApiCalledEvent evt)

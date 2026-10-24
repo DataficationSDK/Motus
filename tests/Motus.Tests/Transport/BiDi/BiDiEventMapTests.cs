@@ -60,6 +60,39 @@ public class BiDiEventMapTests
         Assert.AreEqual("https://example.com", frame.GetProperty("url").GetString());
     }
 
+    /// <summary>
+    /// BiDi reports a fragment navigation and a history API call as two events where CDP has one,
+    /// so the CDP name carries a translation for each.
+    /// </summary>
+    [TestMethod]
+    public void NavigatedWithinDocument_Is_Translated_From_Both_BiDi_Events()
+    {
+        var translations = BiDiEventMap.GetEventTranslations("Page.navigatedWithinDocument");
+
+        CollectionAssert.AreEquivalent(
+            new[] { "browsingContext.fragmentNavigated", "browsingContext.historyUpdated" },
+            translations.Select(t => t.BiDiEventName).ToArray());
+    }
+
+    [TestMethod]
+    [DataRow("browsingContext.fragmentNavigated", "fragment")]
+    [DataRow("browsingContext.historyUpdated", "historyApi")]
+    public void NavigatedWithinDocument_Builds_FrameId_And_Url(string biDiEvent, string navigationType)
+    {
+        var translation = BiDiEventMap.GetEventTranslations("Page.navigatedWithinDocument")
+            .Single(t => t.BiDiEventName == biDiEvent);
+        var bidiParams = Parse("""{"context":"ctx-1","navigation":"nav-1","url":"https://example.com/a#b","timestamp":1}""");
+        var cdpParams = translation.TranslateEvent(bidiParams);
+
+        Assert.AreEqual("ctx-1", cdpParams.GetProperty("frameId").GetString());
+        Assert.AreEqual("https://example.com/a#b", cdpParams.GetProperty("url").GetString());
+        Assert.AreEqual(navigationType, cdpParams.GetProperty("navigationType").GetString());
+    }
+
+    [TestMethod]
+    public void SingleSource_Event_Has_One_Translation() =>
+        Assert.AreEqual(1, BiDiEventMap.GetEventTranslations("Page.frameNavigated").Count);
+
     [TestMethod]
     public void DialogOpening_Maps_Type_And_Message()
     {

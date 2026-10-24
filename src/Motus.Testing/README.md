@@ -27,6 +27,6 @@ dotnet add package Motus.Testing
 
 This package depends on [Motus](https://www.nuget.org/packages/Motus) and [Motus.Abstractions](https://www.nuget.org/packages/Motus.Abstractions). Most consumers should install one of the framework-specific packages instead:
 
-- [Motus.Testing.MSTest](https://www.nuget.org/packages/Motus.Testing.MSTest)
+- [Motus.Testing.MSTest](https://www.nuget.org/packages/Motus.Testing.MSTest) (MSTest 3) or [Motus.Testing.MSTest.v4](https://www.nuget.org/packages/Motus.Testing.MSTest.v4) (MSTest 4)
 - [Motus.Testing.xUnit](https://www.nuget.org/packages/Motus.Testing.xUnit)
 - [Motus.Testing.NUnit](https://www.nuget.org/packages/Motus.Testing.NUnit)

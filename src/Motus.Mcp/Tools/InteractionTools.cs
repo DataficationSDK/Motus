@@ -60,7 +60,8 @@ public sealed class InteractionTools
                 cancellationToken, snapshot == true);
 
     [McpServerTool(Name = "set_checked", Title = "Set checkbox state", Destructive = true)]
-    [Description("Sets the checked state of a checkbox or radio button addressed by a ref or a selector.")]
+    [Description("Sets the checked state of a checkbox or radio button addressed by a ref or a selector. "
+        + "Clicks only when the state differs, and reports an error if the click left it unchanged.")]
     public static Task<CallToolResult> SetCheckedAsync(
         [Description("The element to act on. " + ToolDescriptions.Target)] string @ref,
         [Description("The desired state: true to check, false to uncheck.")] bool @checked,

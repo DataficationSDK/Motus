@@ -108,8 +108,12 @@ See [Attaching to a Running Browser](../guides/attaching-to-a-running-browser.md
 | `page.GoForwardAsync(options)` | `page.GoForwardAsync(options)` |
 | `page.ReloadAsync(options)` | `page.ReloadAsync(options)` |
 | `page.WaitForURLAsync(pattern, options)` | `page.WaitForURLAsync(pattern, options)` |
+| `page.WaitForURLAsync(regex, options)` | `page.WaitForURLAsync(regex, options)` |
+| `page.WaitForURLAsync(predicate, options)` | `page.WaitForURLAsync(predicate, options)` |
 | `page.WaitForLoadStateAsync(state, timeout)` | `page.WaitForLoadStateAsync(state, timeout)` |
 | `page.Url` | `page.Url` |
+
+A URL string is matched as Playwright matches it: a string with no wildcard has to equal the whole URL, and a glob has to cover the whole URL. The glob syntax is simpler, though. Each `*` matches any run of characters including `/`, so `*` and `**` are the same, and brace lists such as `{png,jpg}` are matched literally. A pattern written with `**` behaves the same in both; a single `*` that relied on stopping at a `/`, or a brace list, is better written as a `Regex`.
 
 ### Page - locators
 
@@ -386,12 +390,14 @@ Environment variables prefixed with `MOTUS_` override individual config values a
 
 ### 1. Replace the NuGet package
 
-Remove `Microsoft.Playwright` (and `Microsoft.Playwright.MSTest` if present). Add the Motus packages:
+Remove `Microsoft.Playwright` (and `Microsoft.Playwright.MSTest` or `Microsoft.Playwright.MSTest.v4` if present). Add the Motus packages:
 
 ```xml
 <PackageReference Include="Motus" Version="..." />
 <PackageReference Include="Motus.Testing.MSTest" Version="..." />
 ```
+
+On MSTest 4, reference `Motus.Testing.MSTest.v4` in place of `Motus.Testing.MSTest`, the way `Microsoft.Playwright.MSTest.v4` stands in for `Microsoft.Playwright.MSTest`. The namespace is `Motus.Testing.MSTest` in both.
 
 ### 2. Remove the Playwright CLI install step
 
@@ -465,6 +471,8 @@ page.GetByRole(AriaRole.Button, new() { Name = "Submit" })
 // After
 page.GetByRole("button", "Submit")
 ```
+
+Both match implicit roles and the computed accessible name. Playwright matches the name as a case-insensitive substring unless `Exact` is set; Motus always compares the whole name, case-sensitively, which is Playwright's `Exact = true`. The other text-based factories (`GetByText`, `GetByLabel`, `GetByPlaceholder`, `GetByTitle`, `GetByAltText`) follow Playwright: a case-insensitive substring by default, the whole text when `exact` is true.
 
 ### 8. Migrate configuration
 

@@ -23,6 +23,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Motus.Cli\Motus.Cli.csproj" />
     <ProjectReference Include="..\..\src\Motus.Abstractions\Motus.Abstractions.csproj" />
+    <ProjectReference Include="..\..\src\Motus.Testing.MSTest\Motus.Testing.MSTest.csproj" />
   </ItemGroup>
 
 </Project>
