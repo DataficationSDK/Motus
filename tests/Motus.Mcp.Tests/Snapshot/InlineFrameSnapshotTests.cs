@@ -110,6 +110,30 @@ public class InlineFrameSnapshotTests
     /// <summary>
     /// A page whose only content is an element hosting one frame, and that frame's own document.
     /// </summary>
+    [TestMethod]
+    public async Task AFrameThatCannotEvaluateYet_DoesNotHoldUpThePageSnapshot()
+    {
+        // A lazy iframe below the fold has no document, so an evaluation in it waits for one.
+        var page = new FakeToolPage(Document(
+            Node("Iframe", "Payment frame", 7),
+            Node("Iframe", "Lazy frame", 8)));
+        var main = new FakeToolFrame(page, "http://example.test/");
+        page.FrameTree = main;
+
+        var loaded = main.AddChild("http://example.test/frame.html");
+        loaded.Snapshot = Document(Node("button", "Pay now", 42));
+
+        var lazy = main.AddChild("");
+        lazy.EvaluateNeverCompletes = true;
+        lazy.Snapshot = Document();
+
+        var snapshot = new PageSnapshotService(page).TakeSnapshotAsync();
+        var finished = await Task.WhenAny(snapshot, Task.Delay(TimeSpan.FromSeconds(10)));
+
+        Assert.AreSame(snapshot, finished, "the snapshot waited on a frame that could not answer");
+        StringAssert.Contains(await snapshot, "button \"Pay now\"");
+    }
+
     private static FakeToolPage PageWithOneFrame(out FakeToolFrame frame)
     {
         var page = new FakeToolPage(Document(Node("Iframe", "Payment frame", 7)));

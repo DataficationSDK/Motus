@@ -10,9 +10,19 @@ Provides `MotusTestBase`, a base class that shares a single browser across all t
 
 ## Installation
 
+For MSTest 4, which `dotnet new mstest` creates:
+
+```shell
+dotnet add package Motus.Testing.MSTest.v4
+```
+
+For MSTest 3:
+
 ```shell
 dotnet add package Motus.Testing.MSTest
 ```
+
+The two packages are built from the same source for each MSTest major, with the same namespace and types, so moving between them changes the package reference and nothing in the tests. A base class built against one MSTest major has its setup and cleanup ignored by the other, which is why there are two.
 
 ## Quick Start
 

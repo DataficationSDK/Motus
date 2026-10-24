@@ -113,6 +113,28 @@ public class InlineFrameIntegrationTests
     }
 
     [TestMethod]
+    public async Task ALazyFrameBelowTheFold_DoesNotHoldUpThePageSnapshot()
+    {
+        // A lazy iframe that has not scrolled into view has no document, so it never reports an
+        // execution context and an evaluation in it waits for one until it times out.
+        var page = await _pages!.GetOrCreateActivePageAsync();
+        await page.SetContentAsync(
+            "<iframe title='Payment frame' srcdoc='<button>Pay now</button>'></iframe>"
+            + "<div style='height:6000px'></div>"
+            + $"<iframe title='Lazy one' loading=lazy src='{_server!.IndexUrl}'></iframe>"
+            + $"<iframe title='Lazy two' loading=lazy src='{_server.IndexUrl}'></iframe>");
+
+        var stopwatch = Stopwatch.StartNew();
+        var text = TextOf(await SnapshotAsync());
+        stopwatch.Stop();
+
+        StringAssert.Contains(text, "- button \"Pay now\"");
+        Assert.IsTrue(
+            stopwatch.Elapsed < TimeSpan.FromSeconds(10),
+            $"the snapshot took {stopwatch.ElapsedMilliseconds} ms");
+    }
+
+    [TestMethod]
     public async Task WithNoRoomForFrames_ThePageSaysWhatItLeftOut()
     {
         var text = TextOf(await SnapshotAsync(maxFrames: 0));

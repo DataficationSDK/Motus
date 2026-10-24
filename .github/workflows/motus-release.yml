@@ -53,6 +53,7 @@ jobs:
           dotnet pack src/Motus.Recorder/Motus.Recorder.csproj -c Release -p:Version=${{ steps.version.outputs.version }} -o packages
           dotnet pack src/Motus.Testing/Motus.Testing.csproj -c Release -p:Version=${{ steps.version.outputs.version }} -o packages
           dotnet pack src/Motus.Testing.MSTest/Motus.Testing.MSTest.csproj -c Release -p:Version=${{ steps.version.outputs.version }} -o packages
+          dotnet pack src/Motus.Testing.MSTest.v4/Motus.Testing.MSTest.v4.csproj -c Release -p:Version=${{ steps.version.outputs.version }} -o packages
           dotnet pack src/Motus.Testing.xUnit/Motus.Testing.xUnit.csproj -c Release -p:Version=${{ steps.version.outputs.version }} -o packages
           dotnet pack src/Motus.Testing.NUnit/Motus.Testing.NUnit.csproj -c Release -p:Version=${{ steps.version.outputs.version }} -o packages
           dotnet pack src/Motus.Cli/Motus.Cli.csproj -c Release -p:Version=${{ steps.version.outputs.version }} -o packages

@@ -626,9 +626,14 @@ internal static class ScriptResultTranslator
 
 /// <summary>
 /// Input.dispatchKeyEvent -> input.performActions (key)
-/// CDP params: { type: "keyDown"|"rawKeyDown"|"keyUp", key, code, ... }
+/// CDP params: { type: "keyDown"|"rawKeyDown"|"keyUp"|"char", key, code, text, modifiers, ... }
 /// BiDi: single-action key sequence
 /// </summary>
+/// <remarks>
+/// The CDP modifiers bitmask is not carried over. WebDriver keeps the keys an input source holds
+/// between commands and derives the modifiers from them, and the keyboard sends every modifier as
+/// a key event of its own, so a Shift that went down earlier is still held when "A" arrives.
+/// </remarks>
 internal sealed class InputDispatchKeyEventTranslation : IBiDiTranslation
 {
     public string CdpMethod => "Input.dispatchKeyEvent";
@@ -637,14 +642,25 @@ internal sealed class InputDispatchKeyEventTranslation : IBiDiTranslation
     public JsonElement TranslateParams(JsonElement cdpParams, string? contextId)
     {
         var cdpType = cdpParams.GetStringOrNull("type") ?? "keyDown";
-        var key = cdpParams.GetStringOrNull("key") ?? cdpParams.GetStringOrNull("text") ?? string.Empty;
 
-        var actionType = cdpType switch
+        BiDiInputAction action;
+        if (cdpType == "char")
         {
-            "rawKeyDown" or "keyDown" => "keyDown",
-            "keyUp" => "keyUp",
-            _ => "keyDown" // "char" maps to keyDown in BiDi
-        };
+            // A WebDriver key down already produces the key's text, so the char event that follows
+            // a rawKeyDown has nothing left to add. Sending it as another key down would type the
+            // character twice and leave the key held.
+            action = new BiDiInputAction(Type: "pause", Duration: 0);
+        }
+        else
+        {
+            var key = cdpParams.GetStringOrNull("key");
+            if (string.IsNullOrEmpty(key))
+                key = cdpParams.GetStringOrNull("text") ?? string.Empty;
+
+            action = new BiDiInputAction(
+                Type: cdpType == "keyUp" ? "keyUp" : "keyDown",
+                Value: BiDiKeyValues.FromCdp(key, cdpParams.GetStringOrNull("code")));
+        }
 
         return JsonSerializer.SerializeToElement(
             new BiDiInputPerformActionsParams(
@@ -654,7 +670,7 @@ internal sealed class InputDispatchKeyEventTranslation : IBiDiTranslation
                     new BiDiInputActionSequence(
                         Type: "key",
                         Id: "keyboard-0",
-                        Actions: [new BiDiInputAction(Type: actionType, Value: key)])
+                        Actions: [action])
                 ]),
             BiDiJsonContext.Default.BiDiInputPerformActionsParams);
     }

@@ -208,7 +208,7 @@ public static class RunCommand
                 }
 
                 tests = tests
-                    .Select(t => t with { Quarantined = t.Quarantined || quarantineList.Contains(t.FullName) })
+                    .Select(t => t with { Quarantined = t.Quarantined || IsListed(t, quarantineList) })
                     .ToList();
             }
 
@@ -249,6 +249,14 @@ public static class RunCommand
                 return false;
         }
     }
+
+    /// <summary>
+    /// True when the quarantine list names <paramref name="test"/>. A data-driven test's rows can be
+    /// listed one by one, or all at once by the method's name.
+    /// </summary>
+    internal static bool IsListed(DiscoveredTest test, IReadOnlySet<string> quarantineList)
+        => quarantineList.Contains(test.FullName)
+           || quarantineList.Contains($"{test.TestClass.FullName}.{test.TestMethod.Name}");
 
     private static HashSet<string> LoadQuarantineList(string path)
     {

@@ -1,4 +1,5 @@
 using System.Reflection;
+using Motus.Runner.Services.Execution;
 using Motus.Runner.Services.Models;
 
 namespace Motus.Runner.Services;
@@ -16,6 +17,12 @@ public sealed class TestDiscovery(ILogger<TestDiscovery> logger)
         "TestMethodAttribute",
         "TestAttribute",
         "FactAttribute",
+    };
+
+    // xUnit's [Theory] derives from [Fact] but needs data the runners don't supply.
+    private static readonly HashSet<string> ExcludedMethodAttributes = new(StringComparer.Ordinal)
+    {
+        "TheoryAttribute",
     };
 
     private static readonly HashSet<string> IgnoreAttributes = new(StringComparer.Ordinal)
@@ -55,15 +62,18 @@ public sealed class TestDiscovery(ILogger<TestDiscovery> logger)
                     if (!IsTestMethod(method))
                         continue;
 
-                    var fullName = $"{type.FullName}.{method.Name}";
-
-                    if (filter is not null && !fullName.Contains(filter, StringComparison.OrdinalIgnoreCase))
-                        continue;
-
                     var (methodIgnored, methodReason) = GetIgnoreInfo(method.GetCustomAttributes(true));
-                    var isIgnored = classIgnored || methodIgnored;
-                    var reason = classIgnored ? classReason : methodReason;
-                    tests.Add(new DiscoveredTest(type, method, fullName, assemblyName, isIgnored, reason));
+
+                    foreach (var testCase in TestCaseExpander.Expand(type, method, message => logger.LogWarning("{Message}", message)))
+                    {
+                        if (filter is not null && !testCase.FullName.Contains(filter, StringComparison.OrdinalIgnoreCase))
+                            continue;
+
+                        var isIgnored = classIgnored || methodIgnored || testCase.IgnoreReason is not null;
+                        var reason = classIgnored ? classReason : methodIgnored ? methodReason : testCase.IgnoreReason;
+                        tests.Add(new DiscoveredTest(type, method, testCase.FullName, assemblyName, isIgnored, reason,
+                            Arguments: testCase.Arguments));
+                    }
                 }
             }
         }
@@ -77,13 +87,14 @@ public sealed class TestDiscovery(ILogger<TestDiscovery> logger)
             return false;
 
         return type.GetCustomAttributes(true)
-            .Any(a => ClassAttributes.Contains(a.GetType().Name));
+            .Any(a => TestCaseExpander.IsOrDerivesFrom(a, ClassAttributes));
     }
 
     private static bool IsTestMethod(MethodInfo method)
     {
         return method.GetCustomAttributes(true)
-            .Any(a => MethodAttributes.Contains(a.GetType().Name));
+            .Any(a => TestCaseExpander.IsOrDerivesFrom(a, MethodAttributes)
+                      && !TestCaseExpander.IsOrDerivesFrom(a, ExcludedMethodAttributes));
     }
 
     private static (bool IsIgnored, string? Reason) GetIgnoreInfo(object[] attrs)

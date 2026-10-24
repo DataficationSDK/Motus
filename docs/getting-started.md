@@ -16,7 +16,8 @@ Add the Motus core package and the integration for your test framework:
 dotnet add package Motus
 
 # Pick one test framework integration
-dotnet add package Motus.Testing.MSTest
+dotnet add package Motus.Testing.MSTest.v4   # MSTest 4, which `dotnet new mstest` uses
+dotnet add package Motus.Testing.MSTest      # MSTest 3
 dotnet add package Motus.Testing.NUnit
 dotnet add package Motus.Testing.xUnit
 ```
@@ -177,12 +178,19 @@ Page.GetByPlaceholder("Search...")
 Page.GetByTestId("login-form")
 ```
 
+`GetByRole` matches implicit roles and computed accessible names, so a plain `<button>Submit</button>` is found without a `role` or `aria-label` attribute, and the name must match exactly. `GetByLabel` finds a control through its `<label for>`, a wrapping `<label>`, `aria-labelledby` or `aria-label`. `GetByText`, `GetByLabel`, `GetByPlaceholder`, `GetByTitle` and `GetByAltText` match a case-insensitive substring by default; pass `exact: true` to require the whole text, case-sensitively:
+
+```csharp
+Page.GetByText("welcome")               // matches "Welcome back, Ada"
+Page.GetByText("Welcome", exact: true)  // matches only "Welcome"
+```
+
 Locators can be chained and filtered:
 
 ```csharp
 Page.GetByRole("listitem")
     .Filter(new LocatorOptions { HasText = "Product A" })
-    .GetByRole("button", "Add to cart")
+    .Locator("button.add-to-cart")
     .ClickAsync();
 ```
 
@@ -198,7 +206,11 @@ await locator.CheckAsync();
 await locator.PressAsync("Enter");
 ```
 
-A click can name a mouse button or hold modifier keys by passing `MouseButtonOptions`. It runs the same actionability checks as a plain click, so the element still has to be visible, enabled, settled, and receiving events before the button goes down. Assembling the same click from a bounding box and `Page.Mouse` skips every one of those checks, which is why a right-click or a modified click belongs on the locator. Double-clicking stays left-button only.
+Clicking, double-clicking, hovering, tapping, checking, and unchecking all act on the center of the element, so each one first scrolls the element into view: the page, any scrollable container it sits in, and the frames around it. An element that is already in view is left where it is. The scroll is repeated while the action waits, so an element that layout pushes back out of view is brought back before the pointer moves.
+
+`CheckAsync` and `UncheckAsync` click only when the element is not already in the state asked for, and read the state back afterwards. A click that changes nothing, because a handler cancelled it or the page reset the box, throws a `MotusException` that says so rather than returning as though it had worked. They act on checkboxes, radio buttons, elements with a checkable ARIA role (`checkbox`, `switch`, `radio`, and the menu item variants) read through `aria-checked`, and a `<label>` for one of those. Anything else throws, and so does unchecking a radio button, which only checking another in its group can do.
+
+A click can name a mouse button or hold modifier keys by passing `MouseButtonOptions`. It runs the same actionability checks as a plain click, so the element is scrolled into view and still has to be visible, enabled, settled, and receiving events before the button goes down. Assembling the same click from a bounding box and `Page.Mouse` skips every one of those checks, which is why a right-click or a modified click belongs on the locator. Double-clicking stays left-button only.
 
 ```csharp
 // Right-click, then pick from the menu the page draws for itself
@@ -234,6 +246,8 @@ Held modifiers apply to the keys pressed under them. With Shift held, `"a"` arri
 
 `TypeAsync` presses one key per character. `"\n"` and `"\r"` press Enter, which starts a new line in a text area and submits the form from a single-line field. A character with no key on a US layout, such as `é`, an emoji, or `"\t"`, is inserted as text without key events, the way `Keyboard.InsertTextAsync` does. To move focus to the next field, press Tab with `PressAsync("Tab")` rather than typing `"\t"`.
 
+On Firefox, keys travel as WebDriver BiDi key actions and every key above works the same way, with two differences. WebDriver has no value for CapsLock, NumLock, ScrollLock, PrintScreen, ContextMenu or the media and volume keys, so pressing one of them on Firefox throws a `NotSupportedException` that names the key. And since WebDriver BiDi cannot insert text, `TypeAsync` presses a character off the US layout as a key of its own rather than inserting it.
+
 #### Per-call timeouts
 
 Most actions take a timeout in milliseconds as their last argument, which overrides the default for that one call:
@@ -258,7 +272,7 @@ await locator.SelectOptionAsync(["large"], timeout: 2000);
 
 ### Assertions
 
-Assertions re-evaluate until they pass or a timeout is reached, so there is no need to wait for a value the page has not settled on yet. A locator assertion still needs its element to be present: it fails at once when the locator matches nothing, so wait for an element that has still to render with `ToBeAttachedAsync` first. Use `Expect.That()` or import it statically:
+Assertions re-evaluate until they pass or a timeout is reached, so there is no need to wait for a value the page has not settled on yet, or for an element that has still to render: `ToBeVisibleAsync` or `ToHaveTextAsync` straight after a click waits for the element to appear. An assertion that absence answers treats a locator that matches nothing as a result, so `ToBeHiddenAsync` and `Not.ToBeVisibleAsync` pass at once when the element is not there. Use `Expect.That()` or import it statically:
 
 ```csharp
 using static Motus.Assertions.Expect;

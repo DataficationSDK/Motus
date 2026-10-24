@@ -30,7 +30,11 @@
 
     private TestStatus CurrentStatus => CurrentState?.Status ?? TestStatus.Pending;
 
-    private string MethodDisplayName => Test.TestMethod?.Name ?? GetMethodFromFullName(Test.FullName);
+    // A data row's name carries its arguments, e.g. SignsIn ("owner"), so rows of one method differ.
+    private string MethodDisplayName =>
+        Test.TestClass?.FullName is { } className && Test.FullName.StartsWith(className + ".", StringComparison.Ordinal)
+            ? Test.FullName[(className.Length + 1)..]
+            : Test.TestMethod?.Name ?? GetMethodFromFullName(Test.FullName);
 
     private bool ShowRerunButton =>
         Options.ViewerMode == ViewerMode.Trx && CurrentStatus != TestStatus.Passed;

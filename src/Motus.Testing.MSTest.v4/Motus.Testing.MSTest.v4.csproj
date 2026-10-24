@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <GenerateDocumentationFile>True</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);1591</NoWarn>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <IsPackable>true</IsPackable>
+    <PackageId>Motus.Testing.MSTest.v4</PackageId>
+    <Title>Motus.Testing.MSTest.v4</Title>
+    <Description>MSTest 4 integration for Motus browser automation. Provides a base test class with per-test browser context isolation. For MSTest 3, use Motus.Testing.MSTest.</Description>
+    <IsTestProject>false</IsTestProject>
+    <!-- The same namespace as the MSTest 3 package, so moving between them is a package reference
+         and nothing in the tests. -->
+    <RootNamespace>Motus.Testing.MSTest</RootNamespace>
+    <DefineConstants>$(DefineConstants);MSTEST_V4</DefineConstants>
+  </PropertyGroup>
+
+  <!-- MSTest finds a base class's [TestInitialize] and [TestCleanup] by the exact identity of the
+       attribute type, and MSTest 4 renamed the assemblies those types live in. A base class built
+       against one major is invisible to a test project on the other, so this package is the
+       MSTest 3 package's source compiled a second time against MSTest 4. NuGet cannot choose a
+       build by the version of a dependency, which is why it is a package of its own rather than a
+       second build inside the first. -->
+  <ItemGroup>
+    <Compile Include="..\Motus.Testing.MSTest\**\*.cs"
+             Exclude="..\Motus.Testing.MSTest\bin\**;..\Motus.Testing.MSTest\obj\**"
+             LinkBase="Shared" />
+    <None Include="..\Motus.Testing.MSTest\README.md" Pack="true" PackagePath="\" Link="README.md" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Motus.Testing\Motus.Testing.csproj" />
+    <ProjectReference Include="..\Motus.Abstractions\Motus.Abstractions.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MSTest.TestFramework" Version="4.0.0" />
+  </ItemGroup>
+
+</Project>

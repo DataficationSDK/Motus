@@ -255,6 +255,235 @@ public class BiDiTranslationTests
     }
 
     [TestMethod]
+    [DataRow("Enter", "Enter", "")]
+    [DataRow("Enter", "NumpadEnter", "")]
+    [DataRow("Tab", "Tab", "")]
+    [DataRow("Escape", "Escape", "")]
+    [DataRow("Backspace", "Backspace", "")]
+    [DataRow("Delete", "Delete", "")]
+    [DataRow("Insert", "Insert", "")]
+    [DataRow("Home", "Home", "")]
+    [DataRow("End", "End", "")]
+    [DataRow("PageUp", "PageUp", "")]
+    [DataRow("PageDown", "PageDown", "")]
+    [DataRow("ArrowLeft", "ArrowLeft", "")]
+    [DataRow("ArrowUp", "ArrowUp", "")]
+    [DataRow("ArrowRight", "ArrowRight", "")]
+    [DataRow("ArrowDown", "ArrowDown", "")]
+    [DataRow("Pause", "Pause", "")]
+    [DataRow("F1", "F1", "")]
+    [DataRow("F5", "F5", "")]
+    [DataRow("F12", "F12", "")]
+    [DataRow("Shift", "ShiftLeft", "")]
+    [DataRow("Shift", "ShiftRight", "")]
+    [DataRow("Control", "ControlLeft", "")]
+    [DataRow("Control", "ControlRight", "")]
+    [DataRow("Alt", "AltLeft", "")]
+    [DataRow("Alt", "AltRight", "")]
+    [DataRow("Meta", "MetaLeft", "")]
+    [DataRow("Meta", "MetaRight", "")]
+    [DataRow("0", "Numpad0", "")]
+    [DataRow("5", "Numpad5", "")]
+    [DataRow("9", "Numpad9", "")]
+    [DataRow("*", "NumpadMultiply", "")]
+    [DataRow("+", "NumpadAdd", "")]
+    [DataRow("-", "NumpadSubtract", "")]
+    [DataRow(".", "NumpadDecimal", "")]
+    [DataRow("/", "NumpadDivide", "")]
+    [DataRow("Home", "Numpad7", "")]
+    [DataRow("Delete", "NumpadDecimal", "")]
+    public void InputDispatchKeyEvent_NamedKey_UsesWebDriverCodePoint(string key, string code, string expected)
+    {
+        var translation = GetTranslation("Input.dispatchKeyEvent");
+
+        foreach (var type in new[] { "rawKeyDown", "keyUp" })
+        {
+            var cdpParams = JsonBuilder.FromObject(new { type, key, code });
+            var action = translation.TranslateParams(cdpParams, "ctx-1")
+                .GetProperty("actions")[0].GetProperty("actions")[0];
+
+            Assert.AreEqual(expected, action.GetProperty("value").GetString(), $"{type} {key} ({code})");
+        }
+    }
+
+    [TestMethod]
+    [DataRow("Enter", "")]
+    [DataRow("Shift", "")]
+    [DataRow("Control", "")]
+    [DataRow("Escape", "")]
+    public void InputDispatchKeyEvent_NamedKeyWithoutCode_UsesWebDriverCodePoint(string key, string expected)
+    {
+        var translation = GetTranslation("Input.dispatchKeyEvent");
+
+        var cdpParams = JsonBuilder.FromObject(new { type = "rawKeyDown", key });
+        var action = translation.TranslateParams(cdpParams, "ctx-1")
+            .GetProperty("actions")[0].GetProperty("actions")[0];
+
+        Assert.AreEqual(expected, action.GetProperty("value").GetString());
+    }
+
+    [TestMethod]
+    [DataRow("a", "KeyA")]
+    [DataRow("A", "KeyA")]
+    [DataRow("!", "Digit1")]
+    [DataRow("1", "Digit1")]
+    [DataRow(" ", "Space")]
+    [DataRow("/", "Slash")]
+    [DataRow("+", "Equal")]
+    [DataRow("é", null)]
+    [DataRow("😀", null)]
+    [DataRow("👩‍💻", null)]
+    public void InputDispatchKeyEvent_CharacterKey_IsSentAsItself(string key, string? code)
+    {
+        var translation = GetTranslation("Input.dispatchKeyEvent");
+
+        var cdpParams = JsonBuilder.FromObject(new { type = "keyDown", key, code, text = key });
+        var action = translation.TranslateParams(cdpParams, "ctx-1")
+            .GetProperty("actions")[0].GetProperty("actions")[0];
+
+        Assert.AreEqual("keyDown", action.GetProperty("type").GetString());
+        Assert.AreEqual(key, action.GetProperty("value").GetString());
+    }
+
+    [TestMethod]
+    public void InputDispatchKeyEvent_EnterWithCarriageReturnText_IsEnter()
+    {
+        var translation = GetTranslation("Input.dispatchKeyEvent");
+
+        var cdpParams = Parse("""{"type":"keyDown","key":"Enter","code":"Enter","text":"\r","unmodifiedText":"\r","modifiers":0}""");
+        var action = translation.TranslateParams(cdpParams, "ctx-1")
+            .GetProperty("actions")[0].GetProperty("actions")[0];
+
+        Assert.AreEqual("keyDown", action.GetProperty("type").GetString());
+        Assert.AreEqual("", action.GetProperty("value").GetString());
+    }
+
+    [TestMethod]
+    public void InputDispatchKeyEvent_TextWithoutKey_IsSentAsTheText()
+    {
+        var translation = GetTranslation("Input.dispatchKeyEvent");
+
+        var cdpParams = Parse("""{"type":"keyDown","text":"\r"}""");
+        var action = translation.TranslateParams(cdpParams, "ctx-1")
+            .GetProperty("actions")[0].GetProperty("actions")[0];
+
+        Assert.AreEqual("", action.GetProperty("value").GetString());
+    }
+
+    /// <summary>
+    /// WebDriver keeps a key source's held keys between commands and derives the modifiers from
+    /// them, so the CDP bitmask adds nothing: the Shift that went down earlier is still held.
+    /// </summary>
+    [TestMethod]
+    public void InputDispatchKeyEvent_Modifiers_SendOnlyTheKeyItself()
+    {
+        var translation = GetTranslation("Input.dispatchKeyEvent");
+
+        var cdpParams = Parse("""{"type":"keyDown","key":"A","code":"KeyA","text":"A","modifiers":8}""");
+        var seq = translation.TranslateParams(cdpParams, "ctx-1").GetProperty("actions")[0];
+
+        Assert.AreEqual("keyboard-0", seq.GetProperty("id").GetString());
+        Assert.AreEqual(1, seq.GetProperty("actions").GetArrayLength());
+        Assert.AreEqual("A", seq.GetProperty("actions")[0].GetProperty("value").GetString());
+    }
+
+    [TestMethod]
+    public void InputDispatchKeyEvent_ShortcutWithoutText_IsAKeyDown()
+    {
+        var translation = GetTranslation("Input.dispatchKeyEvent");
+
+        var cdpParams = Parse("""{"type":"rawKeyDown","key":"a","code":"KeyA","modifiers":2}""");
+        var action = translation.TranslateParams(cdpParams, "ctx-1")
+            .GetProperty("actions")[0].GetProperty("actions")[0];
+
+        Assert.AreEqual("keyDown", action.GetProperty("type").GetString());
+        Assert.AreEqual("a", action.GetProperty("value").GetString());
+    }
+
+    /// <summary>
+    /// A WebDriver key down already produces the key's character, so a CDP char event has nothing
+    /// left to add. It becomes a pause rather than a second key down that would leave the key held.
+    /// </summary>
+    [TestMethod]
+    public void InputDispatchKeyEvent_Char_IsAPause()
+    {
+        var translation = GetTranslation("Input.dispatchKeyEvent");
+
+        var cdpParams = Parse("""{"type":"char","key":"a","text":"a"}""");
+        var seq = translation.TranslateParams(cdpParams, "ctx-1").GetProperty("actions")[0];
+
+        Assert.AreEqual("key", seq.GetProperty("type").GetString());
+        var action = seq.GetProperty("actions")[0];
+        Assert.AreEqual("pause", action.GetProperty("type").GetString());
+        Assert.IsFalse(action.TryGetProperty("value", out _));
+    }
+
+    [TestMethod]
+    [DataRow("CapsLock", "CapsLock")]
+    [DataRow("NumLock", "NumLock")]
+    [DataRow("ContextMenu", "ContextMenu")]
+    [DataRow("AudioVolumeUp", "AudioVolumeUp")]
+    public void InputDispatchKeyEvent_KeyWithoutWebDriverValue_Throws(string key, string code)
+    {
+        var translation = GetTranslation("Input.dispatchKeyEvent");
+
+        var cdpParams = JsonBuilder.FromObject(new { type = "rawKeyDown", key, code });
+
+        var ex = Assert.ThrowsException<NotSupportedException>(
+            () => translation.TranslateParams(cdpParams, "ctx-1"));
+        StringAssert.Contains(ex.Message, $"'{key}'");
+    }
+
+    [TestMethod]
+    public void InputDispatchKeyEvent_WithoutKeyOrText_Throws()
+    {
+        var translation = GetTranslation("Input.dispatchKeyEvent");
+
+        Assert.ThrowsException<ArgumentException>(
+            () => translation.TranslateParams(Parse("""{"type":"keyDown","code":"KeyA"}"""), "ctx-1"));
+    }
+
+    /// <summary>
+    /// Every key the keyboard can press either reaches WebDriver as a single character or is one
+    /// of the few keys WebDriver has no value for, which fail with a clear message.
+    /// </summary>
+    [TestMethod]
+    public void InputDispatchKeyEvent_EveryLayoutKey_TranslatesToOneCharacter()
+    {
+        string[] noWebDriverValue =
+        [
+            "CapsLock", "NumLock", "ScrollLock", "PrintScreen", "ContextMenu",
+            "AudioVolumeMute", "AudioVolumeDown", "AudioVolumeUp",
+            "MediaTrackNext", "MediaTrackPrevious", "MediaStop", "MediaPlayPause",
+        ];
+
+        var translation = GetTranslation("Input.dispatchKeyEvent");
+        var defs = KeyDefinitions.Keys.Values
+            .SelectMany(d => d.Shifted is null ? new[] { d } : new[] { d, d.Shifted })
+            .Distinct();
+
+        foreach (var def in defs)
+        {
+            var cdpParams = JsonBuilder.FromObject(new { type = "keyUp", key = def.Key, code = def.Code });
+
+            if (noWebDriverValue.Contains(def.Code))
+            {
+                Assert.ThrowsException<NotSupportedException>(
+                    () => translation.TranslateParams(cdpParams, "ctx-1"), def.Code);
+                continue;
+            }
+
+            var value = translation.TranslateParams(cdpParams, "ctx-1")
+                .GetProperty("actions")[0].GetProperty("actions")[0].GetProperty("value").GetString()!;
+
+            Assert.AreEqual(1, new System.Globalization.StringInfo(value).LengthInTextElements,
+                $"{def.Key} ({def.Code}) became '{value}'");
+            if (def.Key.Length > 1)
+                Assert.IsTrue(value[0] is >= '' and <= '', $"{def.Key} ({def.Code}) became '{value}'");
+        }
+    }
+
+    [TestMethod]
     public void InputDispatchMouseEvent_MousePressed_Creates_Pointer_Sequence()
     {
         var translation = GetTranslation("Input.dispatchMouseEvent");

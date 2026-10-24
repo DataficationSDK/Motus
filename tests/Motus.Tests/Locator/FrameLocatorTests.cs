@@ -170,8 +170,17 @@ public class FrameLocatorTests
         Assert.AreEqual("beta", await beta.GetByRole("button", "Go").TextContentAsync());
     }
 
-    // GetByRole builds an attribute selector, so it never reaches the accessibility-tree strategy.
-    // That strategy scopes by node rather than by execution context, so it is pinned separately.
+    [TestMethod]
+    public async Task GetByLabel_ScopesToTheFrame()
+    {
+        var (alpha, beta) = await FramesAsync();
+
+        Assert.AreEqual("alpha", await alpha.GetByLabel("Go").TextContentAsync());
+        Assert.AreEqual("beta", await beta.GetByLabel("Go").TextContentAsync());
+    }
+
+    // GetByRole resolves through the accessibility-tree strategy, which scopes by node rather than
+    // by execution context. The selector form is pinned on its own as well.
     [TestMethod]
     public async Task RoleSelector_ScopesToTheFrame()
     {
