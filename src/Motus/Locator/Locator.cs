@@ -682,6 +682,69 @@ internal sealed class Locator : ILocator
 
     // --- Action Methods ---
 
+    // Everything that presses, taps, or points at the center of the element's box. The element is
+    // scrolled into view before the stability and hit tests, since a point outside the viewport
+    // hits nothing and the hit test could never pass for it.
+    private const ActionabilityFlags PointerActionFlags =
+        ActionabilityFlags.Visible | ActionabilityFlags.Enabled | ActionabilityFlags.ScrollIntoView |
+        ActionabilityFlags.Stable | ActionabilityFlags.ReceivesEvents;
+
+    // Scrolls the element into view for a pointer action, and for ScrollIntoViewIfNeededAsync.
+    // Answers whether the element's center is inside the page's viewport afterwards.
+    //
+    // The in-page check sees every frame whose host element it can reach, which stops at the first
+    // frame from another origin. Past that point only the page can say where the frame sits, so a
+    // frame-rooted locator also measures the element in the page's coordinate space, the space
+    // input is dispatched in. A scroll started inside such a frame reaches the page through
+    // another process and lands a little later, so "not yet" sends the caller round again rather
+    // than aiming at a position that is about to move.
+    private async Task<bool> ScrollIntoViewAsync(string objectId, CancellationToken ct)
+    {
+        var scrolled = await ActionabilityChecker.ScrollIntoViewIfNeededAsync(Session, objectId, ct).ConfigureAwait(false);
+        if (_frameRoot is null)
+            return true;
+
+        var box = await GetPageRelativeBoxAsync(objectId, ct).ConfigureAwait(false);
+        var viewport = await GetPageViewportAsync(ct).ConfigureAwait(false);
+        if (box is null || viewport is null)
+            return true;
+
+        var centerX = box.X + box.Width / 2;
+        var centerY = box.Y + box.Height / 2;
+        if (centerX >= 0 && centerX <= viewport.Value.Width && centerY >= 0 && centerY <= viewport.Value.Height)
+            return true;
+
+        if (!scrolled)
+        {
+            await EvalOnElementVoidAsync(objectId,
+                "function() { this.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' }); }",
+                null, ct).ConfigureAwait(false);
+        }
+
+        return false;
+    }
+
+    // The size of the page's own viewport, read from the top-level document. Null when it cannot be
+    // read, which leaves the decision to the hit test.
+    private async Task<(double Width, double Height)?> GetPageViewportAsync(CancellationToken ct)
+    {
+        var result = await _page.Session.SendAsync(
+            "Runtime.evaluate",
+            new RuntimeEvaluateParams(Expression: "[window.innerWidth, window.innerHeight]", ReturnByValue: true),
+            CdpJsonContext.Default.RuntimeEvaluateParams,
+            CdpJsonContext.Default.RuntimeEvaluateResult,
+            ct).ConfigureAwait(false);
+
+        if (result.ExceptionDetails is null
+            && result.Result.Value is JsonElement { ValueKind: JsonValueKind.Array } size
+            && size.GetArrayLength() == 2
+            && size[0].ValueKind == JsonValueKind.Number
+            && size[1].ValueKind == JsonValueKind.Number)
+            return (size[0].GetDouble(), size[1].GetDouble());
+
+        return null;
+    }
+
     public Task ClickAsync(double? timeout = null) => ClickCoreAsync(options: null, timeout);
 
     public Task ClickAsync(MouseButtonOptions options, double? timeout = null)
@@ -700,8 +763,8 @@ internal sealed class Locator : ILocator
         {
             var objectId = await ActionabilityChecker.WaitForActionabilityAsync(
                 _page, Session, ResolveObjectIdCoreAsync,
-                ActionabilityFlags.Visible | ActionabilityFlags.Enabled | ActionabilityFlags.Stable | ActionabilityFlags.ReceivesEvents,
-                _selector, cts.Token).ConfigureAwait(false);
+                PointerActionFlags,
+                _selector, cts.Token, ScrollIntoViewAsync).ConfigureAwait(false);
             var box = await GetBoundingBoxOrThrowAsync(objectId, cts.Token).ConfigureAwait(false);
             await _page.Mouse.ClickAsync(box.X + box.Width / 2, box.Y + box.Height / 2, options).ConfigureAwait(false);
         }).ConfigureAwait(false);
@@ -714,8 +777,8 @@ internal sealed class Locator : ILocator
         {
             var objectId = await ActionabilityChecker.WaitForActionabilityAsync(
                 _page, Session, ResolveObjectIdCoreAsync,
-                ActionabilityFlags.Visible | ActionabilityFlags.Enabled | ActionabilityFlags.Stable | ActionabilityFlags.ReceivesEvents,
-                _selector, cts.Token).ConfigureAwait(false);
+                PointerActionFlags,
+                _selector, cts.Token, ScrollIntoViewAsync).ConfigureAwait(false);
             var box = await GetBoundingBoxOrThrowAsync(objectId, cts.Token).ConfigureAwait(false);
             await _page.Mouse.DblClickAsync(box.X + box.Width / 2, box.Y + box.Height / 2).ConfigureAwait(false);
         }).ConfigureAwait(false);
@@ -793,48 +856,90 @@ internal sealed class Locator : ILocator
         }).ConfigureAwait(false);
     }
 
-    public async Task CheckAsync(double? timeout = null)
+    public Task CheckAsync(double? timeout = null) => SetCheckedCoreAsync(true, "check", timeout);
+
+    public Task UncheckAsync(double? timeout = null) => SetCheckedCoreAsync(false, "uncheck", timeout);
+
+    public Task SetCheckedAsync(bool @checked, double? timeout = null) =>
+        SetCheckedCoreAsync(@checked, @checked ? "check" : "uncheck", timeout);
+
+    // Reads the checked state of a checkbox, a radio button, or an element with a checkable ARIA
+    // role, as "kind:state" where kind is "radio" or "checkbox" and state is "true" or "false". A
+    // label answers for the control it labels, which is also what a click on it toggles. Anything
+    // else answers null, because it has no checked state for a click to change.
+    private const string ReadCheckedStateJs = """
+        function() {
+            var el = this;
+            if (el.tagName === 'LABEL' && el.control) el = el.control;
+            if (el.tagName === 'INPUT' && (el.type === 'checkbox' || el.type === 'radio'))
+                return (el.type === 'radio' ? 'radio:' : 'checkbox:') + (el.checked ? 'true' : 'false');
+            var role = el.getAttribute('role');
+            if (role === 'checkbox' || role === 'switch' || role === 'menuitemcheckbox')
+                return 'checkbox:' + (el.getAttribute('aria-checked') === 'true' ? 'true' : 'false');
+            if (role === 'radio' || role === 'menuitemradio')
+                return 'radio:' + (el.getAttribute('aria-checked') === 'true' ? 'true' : 'false');
+            return null;
+        }
+        """;
+
+    private async Task<(bool IsRadio, bool IsChecked)> ReadCheckedStateAsync(string objectId, CancellationToken ct)
+    {
+        var state = await EvalOnElementAsync<string?>(objectId, ReadCheckedStateJs, null, ct).ConfigureAwait(false)
+            ?? throw new MotusException(
+                $"Cannot check or uncheck '{_selector}': it is not a checkbox, a radio button, or an element with a checkable role.");
+
+        return (state.StartsWith("radio:", StringComparison.Ordinal), state.EndsWith(":true", StringComparison.Ordinal));
+    }
+
+    // Clicks the element only when its state differs from the one asked for, then reads the state
+    // back. A click can land and still change nothing: a handler that cancels it, a page that
+    // re-renders the box unchecked, a click that reached some other element. Returning normally in
+    // any of those cases would report a state the page does not have.
+    private async Task SetCheckedCoreAsync(bool target, string actionName, double? timeout)
     {
         using var cts = BuildActionCts(timeout);
-        await RunWithHooksAsync("check", async () =>
+        await RunWithHooksAsync(actionName, async () =>
         {
+            // The state is read before the pointer checks, so a box that is already as asked is
+            // left alone: not scrolled to, and not waited on while something else covers it.
             var objectId = await ActionabilityChecker.WaitForActionabilityAsync(
                 _page, Session, ResolveObjectIdCoreAsync,
                 ActionabilityFlags.Visible | ActionabilityFlags.Enabled,
                 _selector, cts.Token).ConfigureAwait(false);
-            var isChecked = await EvalOnElementAsync<bool>(objectId, "function() { return this.checked; }", null, cts.Token).ConfigureAwait(false);
-            if (!isChecked)
-            {
-                var box = await GetBoundingBoxOrThrowAsync(objectId, cts.Token).ConfigureAwait(false);
-                await _page.Mouse.ClickAsync(box.X + box.Width / 2, box.Y + box.Height / 2).ConfigureAwait(false);
-            }
-        }).ConfigureAwait(false);
-    }
 
-    public async Task UncheckAsync(double? timeout = null)
-    {
-        using var cts = BuildActionCts(timeout);
-        await RunWithHooksAsync("uncheck", async () =>
-        {
-            var objectId = await ActionabilityChecker.WaitForActionabilityAsync(
+            var (isRadio, isChecked) = await ReadCheckedStateAsync(objectId, cts.Token).ConfigureAwait(false);
+            if (isChecked == target)
+                return;
+
+            if (isRadio && !target)
+                throw new MotusException(
+                    $"Cannot uncheck '{_selector}': it is a radio button, which is only unchecked by checking another in its group.");
+
+            objectId = await ActionabilityChecker.WaitForActionabilityAsync(
                 _page, Session, ResolveObjectIdCoreAsync,
-                ActionabilityFlags.Visible | ActionabilityFlags.Enabled,
-                _selector, cts.Token).ConfigureAwait(false);
-            var isChecked = await EvalOnElementAsync<bool>(objectId, "function() { return this.checked; }", null, cts.Token).ConfigureAwait(false);
-            if (isChecked)
-            {
-                var box = await GetBoundingBoxOrThrowAsync(objectId, cts.Token).ConfigureAwait(false);
-                await _page.Mouse.ClickAsync(box.X + box.Width / 2, box.Y + box.Height / 2).ConfigureAwait(false);
-            }
-        }).ConfigureAwait(false);
-    }
+                PointerActionFlags,
+                _selector, cts.Token, ScrollIntoViewAsync).ConfigureAwait(false);
 
-    public async Task SetCheckedAsync(bool @checked, double? timeout = null)
-    {
-        if (@checked)
-            await CheckAsync(timeout).ConfigureAwait(false);
-        else
-            await UncheckAsync(timeout).ConfigureAwait(false);
+            var box = await GetBoundingBoxOrThrowAsync(objectId, cts.Token).ConfigureAwait(false);
+            await _page.Mouse.ClickAsync(box.X + box.Width / 2, box.Y + box.Height / 2).ConfigureAwait(false);
+
+            bool nowChecked;
+            try
+            {
+                (_, nowChecked) = await ReadCheckedStateAsync(objectId, cts.Token).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or MotusProtocolException)
+            {
+                // The click took the document with it, as a box that submits its form does. There is
+                // nothing left to read, and the page moving on is the click having landed.
+                return;
+            }
+
+            if (nowChecked != target)
+                throw new MotusException(
+                    $"Clicking '{_selector}' did not {actionName} it: it is still {(nowChecked ? "checked" : "unchecked")}. " +
+                    "A handler may have cancelled the click, or the page may have reset the state.");
+        }).ConfigureAwait(false);
     }
 
     public Task<IReadOnlyList<string>> SelectOptionAsync(params string[] values)
@@ -912,8 +1017,8 @@ internal sealed class Locator : ILocator
         {
             var objectId = await ActionabilityChecker.WaitForActionabilityAsync(
                 _page, Session, ResolveObjectIdCoreAsync,
-                ActionabilityFlags.Visible | ActionabilityFlags.Stable | ActionabilityFlags.ReceivesEvents,
-                _selector, cts.Token).ConfigureAwait(false);
+                ActionabilityFlags.Visible | ActionabilityFlags.ScrollIntoView | ActionabilityFlags.Stable | ActionabilityFlags.ReceivesEvents,
+                _selector, cts.Token, ScrollIntoViewAsync).ConfigureAwait(false);
             var box = await GetBoundingBoxOrThrowAsync(objectId, cts.Token).ConfigureAwait(false);
             await _page.Mouse.MoveAsync(box.X + box.Width / 2, box.Y + box.Height / 2).ConfigureAwait(false);
         }).ConfigureAwait(false);
@@ -936,8 +1041,8 @@ internal sealed class Locator : ILocator
         {
             var objectId = await ActionabilityChecker.WaitForActionabilityAsync(
                 _page, Session, ResolveObjectIdCoreAsync,
-                ActionabilityFlags.Visible | ActionabilityFlags.Enabled | ActionabilityFlags.Stable | ActionabilityFlags.ReceivesEvents,
-                _selector, cts.Token).ConfigureAwait(false);
+                PointerActionFlags,
+                _selector, cts.Token, ScrollIntoViewAsync).ConfigureAwait(false);
             var box = await GetBoundingBoxOrThrowAsync(objectId, cts.Token).ConfigureAwait(false);
             await _page.Touchscreen.TapAsync(box.X + box.Width / 2, box.Y + box.Height / 2).ConfigureAwait(false);
         }).ConfigureAwait(false);
@@ -950,9 +1055,7 @@ internal sealed class Locator : ILocator
             _page, Session, ResolveObjectIdCoreAsync,
             ActionabilityFlags.None,
             _selector, cts.Token).ConfigureAwait(false);
-        await EvalOnElementVoidAsync(objectId,
-            "function() { this.scrollIntoViewIfNeeded ? this.scrollIntoViewIfNeeded() : this.scrollIntoView({ block: 'center' }); }",
-            null, cts.Token).ConfigureAwait(false);
+        await ScrollIntoViewAsync(objectId, cts.Token).ConfigureAwait(false);
     }
 
     public async Task<byte[]> ScreenshotAsync(ScreenshotOptions? options = null)
@@ -1169,7 +1272,24 @@ internal sealed class Locator : ILocator
             """, null, cts.Token).ConfigureAwait(false);
     }
 
+    // A locator that matches nothing answers "not visible" rather than throwing, as Playwright's
+    // does: visibility is a question about what the user can see, and an element that is not in
+    // the document is not seen.
     public async Task<bool> IsVisibleAsync(double? timeout = null)
+    {
+        try
+        {
+            return await IsVisibleCoreAsync(timeout).ConfigureAwait(false);
+        }
+        catch (ElementNotFoundException)
+        {
+            return false;
+        }
+    }
+
+    // The visibility check without the absence mapping, for callers that need to tell an absent
+    // element from a hidden one, such as an assertion reporting what it last saw.
+    internal async Task<bool> IsVisibleCoreAsync(double? timeout = null)
     {
         using var cts = BuildActionCts(timeout);
         var objectId = await ResolveObjectIdCoreAsync(cts.Token).ConfigureAwait(false);

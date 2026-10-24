@@ -269,6 +269,34 @@ public class CoordinateToolsUnitTests
     }
 
     [TestMethod]
+    public async Task Drag_ByRefs_ScrollsEachEndIntoViewBeforeMeasuringIt()
+    {
+        var page = new FakeToolPage(Snapshot(Node("listitem", "Revenue", 10)));
+        var service = new FakeActivePageService(page);
+        await CoreTools.SnapshotAsync(
+            pageService: service,
+            cancellationToken: CancellationToken.None,
+            root_ref: null,
+            max_depth: null);
+
+        var result = await CoordinateTools.DragAsync(
+            pageService: service,
+            cancellationToken: CancellationToken.None,
+            start_ref: "e1",
+            end_ref: "e1",
+            start_x: null,
+            start_y: null,
+            end_x: null,
+            end_y: null,
+            steps: null,
+            hold_ms: null);
+
+        Assert.IsFalse(result.IsError ?? false);
+        Assert.AreEqual(2, page.RecordingLocator.ScrollIntoViewCount,
+            "Both the dragged element and the drop target should be scrolled into view.");
+    }
+
+    [TestMethod]
     public async Task Drag_ByRefs_WithoutSnapshotGivesGuidance()
     {
         var (page, service) = Setup();

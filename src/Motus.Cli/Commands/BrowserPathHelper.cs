@@ -2,25 +2,24 @@ namespace Motus.Cli.Commands;
 
 public static class BrowserPathHelper
 {
-    private static readonly string BrowserCacheDir = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-        ".motus", "browsers");
+    // The cache and its marker names are shared with the launcher, which reads the same markers
+    // when no executable path is given, so the CLI and a test run agree on what was installed.
+    private static readonly string BrowserCacheDir = InstalledBrowsers.DefaultRoot;
 
-    private static readonly string LegacyMarkerPath = Path.Combine(BrowserCacheDir, ".installed");
+    private static readonly string LegacyMarkerPath = InstalledBrowsers.LegacyMarkerPath(BrowserCacheDir);
 
     public static string? Resolve(string? channel = null)
     {
         // Try channel-specific marker first
         if (channel is not null)
         {
-            var channelMarker = Path.Combine(BrowserCacheDir, $".installed.{channel}");
-            var channelPath = ReadMarker(channelMarker);
+            var channelPath = InstalledBrowsers.ReadMarker(InstalledBrowsers.MarkerPath(BrowserCacheDir, channel));
             if (channelPath is not null)
                 return channelPath;
         }
 
         // Fall back to legacy single marker for backward compatibility
-        return ReadMarker(LegacyMarkerPath);
+        return InstalledBrowsers.ReadMarker(LegacyMarkerPath);
     }
 
     /// <summary>
@@ -31,15 +30,6 @@ public static class BrowserPathHelper
     public static string? ResolveChannel(string channel)
     {
         ArgumentException.ThrowIfNullOrEmpty(channel);
-        return ReadMarker(Path.Combine(BrowserCacheDir, $".installed.{channel.ToLowerInvariant()}"));
-    }
-
-    private static string? ReadMarker(string markerPath)
-    {
-        if (!File.Exists(markerPath))
-            return null;
-
-        var path = File.ReadAllText(markerPath).Trim();
-        return File.Exists(path) ? path : null;
+        return InstalledBrowsers.ReadMarker(InstalledBrowsers.MarkerPath(BrowserCacheDir, channel));
     }
 }

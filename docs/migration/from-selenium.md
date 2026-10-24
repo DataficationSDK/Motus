@@ -22,7 +22,7 @@ Motus's `ILocator` is a lazy description of how to find an element. Calling `pag
 
 Selenium requires explicit coordination with the DOM through `WebDriverWait`, implicit waits, or `ExpectedConditions`. Forgetting a wait is a common source of flaky tests.
 
-Motus builds actionability checks into every action. Before performing a click, fill, or other interaction, Motus waits for the target element to be attached, visible, stable (not animating), and enabled. This happens automatically on every call with a configurable timeout. Most `WebDriverWait` constructs are unnecessary in Motus.
+Motus builds actionability checks into every action. Before performing a click, fill, or other interaction, Motus waits for the target element to be attached, visible, stable (not animating), and enabled, and scrolls it into view before any action that points at it. This happens automatically on every call with a configurable timeout. Most `WebDriverWait` constructs are unnecessary in Motus.
 
 ### PageFactory
 
@@ -129,7 +129,7 @@ Motus provides explicit waiting utilities for cases that actionability checks do
 
 ## Assertions
 
-Motus provides a dedicated assertion API in the `Motus.Assertions` namespace that retries until the condition is met or the timeout expires, which removes most timing-related assertion failures. It does not remove all of them: a locator assertion needs its element present already and fails at once when the locator matches nothing, so wait for an element that has still to render with `ToBeAttachedAsync` first.
+Motus provides a dedicated assertion API in the `Motus.Assertions` namespace that retries until the condition is met or the timeout expires, which removes most timing-related assertion failures. The retry covers an element that has still to render as well as a value that has still to change, so an assertion needs no wait in front of it. A locator that matches nothing counts as hidden, so `ToBeHiddenAsync` and `Not.ToBeVisibleAsync` pass at once when the element is not there; text, value, and state assertions wait for the element to appear.
 
 ```csharp
 using Motus.Assertions;
@@ -283,7 +283,7 @@ Add `await` to every element interaction and navigation call. Mark test methods 
 
 **7. Remove explicit waits.**
 
-Delete `Thread.Sleep` and `ImplicitlyWait` calls. Motus auto-wait handles the common cases. Keep a `WebDriverWait` that was there to let an element render, though: an assertion re-evaluates its condition but does not wait for a missing element to appear. Replace those with `ToBeAttachedAsync` or the `WaitFor*Async` methods listed in the waiting section above.
+Delete `Thread.Sleep` and `ImplicitlyWait` calls. Motus auto-wait handles the common cases. A `WebDriverWait` that was there to let an element render can go too when an assertion follows it, since the assertion waits for the element to appear. Replace the rest with the `WaitFor*Async` methods listed in the waiting section above.
 
 **8. Replace assertions.**
 

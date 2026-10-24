@@ -32,6 +32,10 @@ internal static class FrameCollector
     private const string SelfIndexExpression =
         "(() => { const p = window.parent; for (let i = 0; i < p.length; i++) { if (p[i] === window) return i; } return -1; })()";
 
+    // How long the frames of one document get to say which of their parent's contexts they are.
+    // A frame with a document answers in milliseconds.
+    private static readonly TimeSpan SelfIndexAllowance = TimeSpan.FromSeconds(1);
+
     // Which child browsing context this element holds, asked of the document the element lives in.
     private const string HostIndexExpression =
         "el => { const w = el.ownerDocument.defaultView; for (let i = 0; i < w.length; i++) { if (w[i] === el.contentWindow) return i; } return -1; }";
@@ -182,24 +186,32 @@ internal static class FrameCollector
     /// Frames that cannot answer, and any index two frames both claim, are left out, so a reading
     /// that is not trustworthy falls through to the order the engine gives instead of guessing.
     /// </summary>
+    /// <remarks>
+    /// A frame that has not loaded a document yet, such as a lazy iframe still below the fold, has
+    /// no context to evaluate in, and an evaluation there waits for one until its own timeout. So
+    /// every frame is asked at once and the answers are read after <see cref="SelfIndexAllowance"/>
+    /// at most: a frame that cannot answer costs the snapshot that allowance once, rather than a
+    /// full evaluation timeout for each such frame.
+    /// </remarks>
     private static async Task<IReadOnlyDictionary<int, IFrame>> ByContextIndexAsync(
         IReadOnlyList<IFrame> children)
     {
         var byContext = new Dictionary<int, IFrame>();
         var duplicates = new HashSet<int>();
 
-        foreach (var child in children)
-        {
-            int position;
-            try
-            {
-                position = await child.EvaluateAsync<int>(SelfIndexExpression).ConfigureAwait(false);
-            }
-            catch (Exception)
-            {
-                continue;
-            }
+        var asks = children.Select(AskSelfIndex).ToList();
+        await Task.WhenAny(Task.WhenAll(asks), Task.Delay(SelfIndexAllowance)).ConfigureAwait(false);
 
+        for (var i = 0; i < children.Count; i++)
+        {
+            var child = children[i];
+            var ask = asks[i];
+
+            // Still waiting, or failed: either way this frame can't say where it belongs.
+            if (!ask.IsCompletedSuccessfully)
+                continue;
+
+            var position = ask.Result;
             if (position < 0)
                 continue;
 
@@ -211,6 +223,19 @@ internal static class FrameCollector
             byContext.Remove(position);
 
         return byContext;
+    }
+
+    // Never faults, so an answer that arrives after the allowance has nobody left to observe it.
+    private static async Task<int> AskSelfIndex(IFrame child)
+    {
+        try
+        {
+            return await child.EvaluateAsync<int>(SelfIndexExpression).ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            return -1;
+        }
     }
 
     /// <summary>

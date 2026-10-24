@@ -70,6 +70,8 @@ public class LocatorTests
         _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""boolean"", ""value"": true}}}}}}");
         // enabled
         _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""boolean"", ""value"": true}}}}}}");
+        // scroll into view: already in view, so nothing scrolled
+        _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""boolean"", ""value"": false}}}}}}");
         // stable
         _socket.QueueResponse($@"{{""id"": {id++}, ""sessionId"": ""session-1"", ""result"": {{""result"": {{""type"": ""boolean"", ""value"": true}}}}}}");
         // receives-events: pure JS elementFromPoint check
@@ -106,13 +108,13 @@ public class LocatorTests
 
         QueueClickActionabilityResponses(9);
 
-        // getBoundingClientRect for the click action itself (id=15: after resolve(2)+visible+enabled+stable+receivesEvents)
-        _socket.QueueResponse("""{"id": 15, "sessionId": "session-1", "result": {"result": {"type": "object", "value": {"x": 100, "y": 200, "width": 80, "height": 30}}}}""");
+        // getBoundingClientRect for the click action itself (id=16: after resolve(2)+visible+enabled+scrollIntoView+stable+receivesEvents)
+        _socket.QueueResponse("""{"id": 16, "sessionId": "session-1", "result": {"result": {"type": "object", "value": {"x": 100, "y": 200, "width": 80, "height": 30}}}}""");
 
         // Mouse: mouseMoved, mousePressed, mouseReleased
-        _socket.QueueResponse("""{"id": 16, "sessionId": "session-1", "result": {}}""");
         _socket.QueueResponse("""{"id": 17, "sessionId": "session-1", "result": {}}""");
         _socket.QueueResponse("""{"id": 18, "sessionId": "session-1", "result": {}}""");
+        _socket.QueueResponse("""{"id": 19, "sessionId": "session-1", "result": {}}""");
 
         await locator.ClickAsync();
 
@@ -387,5 +389,29 @@ public class LocatorTests
 
         await Assert.ThrowsExceptionAsync<ElementNotFoundException>(
             () => locator.TextContentAsync());
+    }
+
+    [TestMethod]
+    public async Task IsVisibleAsync_ReturnsFalse_WhenNoElementFound()
+    {
+        var page = await CreatePageAsync();
+        var locator = page.Locator("#nonexistent");
+
+        _socket.QueueResponse("""{"id": 9, "sessionId": "session-1", "result": {"result": {"type": "object", "objectId": "arr-empty"}}}""");
+        _socket.QueueResponse("""{"id": 10, "sessionId": "session-1", "result": {"result": []}}""");
+
+        Assert.IsFalse(await locator.IsVisibleAsync());
+    }
+
+    [TestMethod]
+    public async Task IsHiddenAsync_ReturnsTrue_WhenNoElementFound()
+    {
+        var page = await CreatePageAsync();
+        var locator = page.Locator("#nonexistent");
+
+        _socket.QueueResponse("""{"id": 9, "sessionId": "session-1", "result": {"result": {"type": "object", "objectId": "arr-empty"}}}""");
+        _socket.QueueResponse("""{"id": 10, "sessionId": "session-1", "result": {"result": []}}""");
+
+        Assert.IsTrue(await locator.IsHiddenAsync());
     }
 }

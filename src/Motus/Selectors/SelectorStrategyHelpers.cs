@@ -20,18 +20,22 @@ internal static class SelectorStrategyHelpers
         IFrame frame, string js, CancellationToken ct)
     {
         var page = GetPage(frame);
-        var session = page.SessionFor(frame);
 
-        var result = await session.SendAsync(
-            "Runtime.evaluate",
-            new RuntimeEvaluateParams(
-                Expression: js,
-                ReturnByValue: false,
-                AwaitPromise: false,
-                ContextId: page.GetSelectorContextId(frame)),
-            CdpJsonContext.Default.RuntimeEvaluateParams,
-            CdpJsonContext.Default.RuntimeEvaluateResult,
-            ct).ConfigureAwait(false);
+        var (session, result) = await page.RunInSelectorContextAsync(frame, async target =>
+        {
+            var evaluated = await target.Session.SendAsync(
+                "Runtime.evaluate",
+                new RuntimeEvaluateParams(
+                    Expression: js,
+                    ReturnByValue: false,
+                    AwaitPromise: false,
+                    ContextId: target.ContextId),
+                CdpJsonContext.Default.RuntimeEvaluateParams,
+                CdpJsonContext.Default.RuntimeEvaluateResult,
+                ct).ConfigureAwait(false);
+
+            return (target.Session, evaluated);
+        }, ct).ConfigureAwait(false);
 
         if (result.ExceptionDetails is not null)
             throw new InvalidOperationException(
@@ -101,16 +105,17 @@ internal static class SelectorStrategyHelpers
     {
         var page = GetPage(frame);
 
-        var result = await page.SessionFor(frame).SendAsync(
-            "Runtime.evaluate",
-            new RuntimeEvaluateParams(
-                Expression: "document.documentElement",
-                ReturnByValue: false,
-                AwaitPromise: false,
-                ContextId: page.GetSelectorContextId(frame)),
-            CdpJsonContext.Default.RuntimeEvaluateParams,
-            CdpJsonContext.Default.RuntimeEvaluateResult,
-            ct).ConfigureAwait(false);
+        var result = await page.RunInSelectorContextAsync(frame, target =>
+            target.Session.SendAsync(
+                "Runtime.evaluate",
+                new RuntimeEvaluateParams(
+                    Expression: "document.documentElement",
+                    ReturnByValue: false,
+                    AwaitPromise: false,
+                    ContextId: target.ContextId),
+                CdpJsonContext.Default.RuntimeEvaluateParams,
+                CdpJsonContext.Default.RuntimeEvaluateResult,
+                ct), ct).ConfigureAwait(false);
 
         return result.ExceptionDetails is null ? result.Result.ObjectId : null;
     }
