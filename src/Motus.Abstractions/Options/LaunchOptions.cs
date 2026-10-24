@@ -9,9 +9,19 @@ public sealed record LaunchOptions
     public bool Headless { get; init; } = true;
 
     /// <summary>The browser distribution channel to use.</summary>
+    /// <remarks>
+    /// When null, a Chromium build downloaded by <c>motus install</c> is used if there is one, and
+    /// otherwise an installed Chrome, Edge or Chromium, in that order. <see cref="BrowserChannel.Chromium"/>
+    /// and <see cref="BrowserChannel.Firefox"/> also prefer a <c>motus install</c> download for that
+    /// browser. <see cref="BrowserChannel.Chrome"/> and <see cref="BrowserChannel.Edge"/> mean the
+    /// installed branded browser only.
+    /// </remarks>
     public BrowserChannel? Channel { get; init; }
 
-    /// <summary>Path to a browser executable to use instead of the bundled one.</summary>
+    /// <summary>
+    /// Path to a browser executable to use instead of resolving one from <see cref="Channel"/>, a
+    /// <c>motus install</c> download, or the browsers installed on the machine.
+    /// </summary>
     public string? ExecutablePath { get; init; }
 
     /// <summary>Additional command-line arguments to pass to the browser.</summary>

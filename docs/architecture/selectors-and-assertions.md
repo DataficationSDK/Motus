@@ -19,15 +19,39 @@ Key behaviors:
 
 ### Built-in Strategies
 
-Five strategies are registered at startup. The prefix is the string that appears before `=` in a selector expression (for example, `role=button`).
+These strategies are registered at startup. The prefix is the string that appears before `=` in a selector expression (for example, `role=button`).
 
 | Strategy | Prefix | Priority | Resolution mechanism |
 |---|---|---|---|
+| Backend node ID | `_node` | 100 | CDP `DOM.resolveNode` for a node ID read from an accessibility snapshot |
 | TestId | `data-testid` (configurable) | 40 | CSS attribute selector via recursive shadow DOM traversal |
 | Role | `role` | 30 | CDP `Accessibility.queryAXTree` with optional name filter |
 | Text | `text` | 20 | JavaScript `textContent` match with optional shadow-piercing tree walk |
 | CSS | `css` | 10 | `querySelectorAll` with optional recursive shadow DOM traversal |
 | XPath | `xpath` | 10 | `document.evaluate` with `ORDERED_NODE_SNAPSHOT_TYPE`; no shadow piercing |
+| GetBy text, label, attribute | `_text`, `_label`, `_attr` | 0 | JavaScript text, label and attribute matching behind the `GetBy*` factories; see below |
+
+The prefixes that start with an underscore are reserved for selectors Motus builds itself. They resolve like any other prefix but never generate a selector for the recorder.
+
+### Locator factories
+
+The `GetBy*` methods on `IPage` and `IFrame` build a selector for one of the strategies above:
+
+| Factory | Selector it builds | Matches |
+|---|---|---|
+| `GetByRole(role, name)` | `role=button[name="Save"]` | The accessibility tree: implicit roles and computed accessible names |
+| `GetByText(text, exact)` | `_text="Save"i` | The innermost element whose text matches; `input` buttons by their value |
+| `GetByLabel(text, exact)` | `_label="Email"i` | Elements labelled by `aria-labelledby`, `aria-label`, or an associated `<label>` |
+| `GetByPlaceholder(text, exact)` | `_attr=placeholder="Search"i` | The `placeholder` attribute |
+| `GetByTitle(text, exact)` | `_attr=title="Close"i` | The `title` attribute |
+| `GetByAltText(text, exact)` | `_attr=alt="Logo"i` | The `alt` attribute |
+| `GetByTestId(id)` | `[data-testid="submit"]` | The `data-testid` attribute, through the CSS strategy |
+
+The text-based factories write their text as a JSON string literal followed by a flag. `i`, used when `exact` is omitted or false, matches a case-insensitive substring. `s`, used when `exact` is true, matches the whole string case-sensitively. Both collapse runs of whitespace and trim the ends before comparing, so indentation in the markup never decides a match. Quoting the text as JSON keeps any quote, bracket or backslash in it from ending the selector early.
+
+`GetByLabel` reads an element's labels in the same order of precedence a browser computes a name from: the elements named by `aria-labelledby` when it resolves to any, otherwise a non-empty `aria-label`, otherwise the `<label>` elements associated with a form control through `for` or by wrapping it.
+
+`GetByRole` matches the accessible name exactly, as `Accessibility.queryAXTree` does. Elements the accessibility tree ignores, such as one inside `display: none` or `aria-hidden="true"`, never match.
 
 ### Resolution scope: the page, or one frame
 
@@ -59,7 +83,9 @@ Selector syntax supports an optional name filter using bracket notation:
 role=button[name="Submit"]
 ```
 
-Parsing is implemented in `ParseRoleSelector(ReadOnlySpan<char>)` without regular expressions. It strips the `role=` prefix, slices at the first `[`, then checks for a `name=` attribute. Quoted names are extracted by skipping the leading `"` and the trailing `"]` pair. Unquoted names are extracted by slicing to the first `]`. Nodes with `Ignored: true` or no `BackendDOMNodeId` are skipped. Each matching node is resolved to an `ElementHandle` via `DOM.resolveNode`.
+Parsing is implemented in `ParseRoleSelector(ReadOnlySpan<char>)` without regular expressions. It strips the `role=` prefix, slices at the first `[`, then checks for a `name=` attribute. Quoted names are extracted by skipping the leading `"` and the trailing `"]` pair, so a quoted name may itself contain quotes and brackets. Unquoted names are extracted by slicing to the first `]`. Nodes with `Ignored: true` or no `BackendDOMNodeId` are skipped. Each matching node is resolved to an `ElementHandle` via `DOM.resolveNode`.
+
+The query matches the browser's own spelling of a role. Chromium spells the ARIA `img` role as `image`, so the strategy queries `image` first for either spelling and falls back to `img` when that finds nothing.
 
 `GenerateSelector` evaluates an inline JavaScript function that checks the explicit `role` attribute first, then infers semantic roles from tag name and `type` attribute (for example, `<button>` maps to `button`, `<a href>` maps to `link`, `<input type="checkbox">` maps to `checkbox`). If a role is found it appends the accessible name using `aria-label` or trimmed `textContent`, formatted as `role=button[name="Submit"]`.
 
@@ -125,8 +151,29 @@ Behavior:
 - **Default timeout**: resolved by `ResolveTimeout(int?)`. A per-call timeout from `AssertionOptions.Timeout` takes precedence. If no per-call timeout is supplied, it falls back to the value at `MotusConfigLoader.Config.Assertions?.Timeout`, and if that is also absent, uses 10,000 ms.
 - A linked `CancellationTokenSource` is created from the caller's token and cancelled after the timeout via `CancelAfter`.
 - On each iteration, if the condition delegate returns `(passed: true, actual)`, the assertion returns successfully.
-- **Transient error handling**: the following exception types are caught and retried rather than propagated: `InvalidOperationException` (evaluation failures, element not found), `MotusProtocolException` (CDP command errors such as stale context), `MotusTargetClosedException` (target navigated away), and `TimeoutException` (inner operation timeouts). `OperationCanceledException` is not caught here and rethrows to the outer handler.
+- **Transient error handling**: the following exception types are caught and retried rather than propagated: `InvalidOperationException` (evaluation failures), `MotusProtocolException` (CDP command errors such as stale context), `MotusTargetClosedException` (target navigated away), and `TimeoutException` (inner operation timeouts). `OperationCanceledException` is not caught here and rethrows to the outer handler.
 - When the timeout elapses, `OperationCanceledException` is caught and rethrown as `MotusAssertionException` with full diagnostic context.
+
+### Element absence
+
+`LocatorAssertions` decides what a locator that matches nothing means before the helper sees a result. Each assertion passes a `whenAbsent` value to its private `RetryAsync`, which catches `ElementNotFoundException` from the condition and turns it into a poll result with `<element not found>` as the received value:
+
+- `whenAbsent: false` (`ToBeVisibleAsync`): absence means the condition does not hold. The assertion keeps polling for the element to appear, and `Not.ToBeVisibleAsync` passes at once.
+- `whenAbsent: true` (`ToBeHiddenAsync`): absence means the condition holds. The assertion passes at once, and `Not.ToBeHiddenAsync` keeps polling for a visible element.
+- `whenAbsent: null` (every other element assertion): absence answers nothing. The result reported is the assertion's own polarity, so the helper's negation comes out unsatisfied for both forms and the poll repeats until the element appears or the timeout elapses. This follows Playwright: `Not.ToHaveTextAsync("x")` on a missing element fails rather than passing.
+- `ToBeAttachedAsync`, `ToBeDetachedAsync`, and `ToHaveCountAsync` count matches instead of resolving one element, so a missing element is simply a count of zero.
+
+| Assertion | Nothing matches | `Not` form, nothing matches |
+|---|---|---|
+| `ToBeVisibleAsync` | waits | passes |
+| `ToBeHiddenAsync` | passes | waits |
+| `ToBeAttachedAsync` | waits | passes |
+| `ToBeDetachedAsync` | passes | waits |
+| `ToHaveCountAsync(0)` | passes | waits |
+| `ToHaveCountAsync(n > 0)` | waits | passes |
+| All other locator assertions | waits | waits |
+
+A wait that runs out fails with `MotusAssertionException` whose `Actual` is `<element not found>`.
 
 ### .Not Negation
 
@@ -142,8 +189,8 @@ All methods accept an optional `AssertionOptions? options` parameter and return 
 
 | Method | Condition checked |
 |---|---|
-| `ToBeVisibleAsync` | Element is visible (`IsVisibleAsync`) |
-| `ToBeHiddenAsync` | Element is hidden (`IsHiddenAsync`) |
+| `ToBeVisibleAsync` | Element is visible (`IsVisibleAsync`); a missing element is not visible |
+| `ToBeHiddenAsync` | Element is hidden (`IsHiddenAsync`); a missing element is hidden |
 | `ToBeEnabledAsync` | Element is enabled (`IsEnabledAsync`) |
 | `ToBeDisabledAsync` | Element is disabled (`IsDisabledAsync`) |
 | `ToBeCheckedAsync` | Checkbox or radio is checked (`IsCheckedAsync`) |

@@ -27,7 +27,7 @@ The result is a framework that talks directly to Chromium and Firefox (CDP and W
 
 ```bash
 dotnet add package Motus
-dotnet add package Motus.Testing.MSTest # or Motus.Testing.xUnit / Motus.Testing.NUnit
+dotnet add package Motus.Testing.MSTest.v4 # MSTest 4; or Motus.Testing.MSTest (MSTest 3) / Motus.Testing.xUnit / Motus.Testing.NUnit
 dotnet tool install --global Motus.Cli
 ```
 
@@ -223,10 +223,13 @@ Under `dotnet test`, `[MotusTestClass]` does the same for an MSTest suite: it re
 
 A suite is only reproducible if it can say which browser it ran against. A CI image update can change Chrome underneath a build that was green yesterday, and the failure that follows is indistinguishable from a regression in your own code.
 
-`motus install --revision` downloads an exact Chrome for Testing build, and `MOTUS_EXECUTABLE_PATH` points a test run at it. Code that sets `LaunchOptions.ExecutablePath` itself still wins.
+`motus install --revision` downloads an exact Chrome for Testing build, and a test run that names no browser uses it, ahead of any Chrome installed on the machine. `MOTUS_EXECUTABLE_PATH` names the binary explicitly, and code that sets `LaunchOptions.ExecutablePath` itself still wins over both.
 
 ```bash
 motus install --channel chromium --revision 149.0.7827.156
+dotnet test
+
+# Or name the binary explicitly
 export MOTUS_EXECUTABLE_PATH="$(cat ~/.motus/browsers/.installed.chromium)"
 dotnet test
 ```
@@ -276,7 +279,7 @@ All CDP types are source-generated at build time from the protocol JSON schema. 
 | `Motus.Recorder` | Action capture, selector inference, POM generation |
 | `Motus.Runner` | Blazor visual test runner with live screencast and timeline |
 | `Motus.Cli` | `motus` CLI tool |
-| `Motus.Testing.*` | Test framework integrations (MSTest, xUnit, NUnit) |
+| `Motus.Testing.*` | Test framework integrations (MSTest 3 and 4, xUnit, NUnit) |
 
 ## The Extension Model
 

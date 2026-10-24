@@ -51,18 +51,29 @@ internal sealed class RoleSelectorStrategy : ISelectorStrategy
         if (rootObjectId is null)
             return [];
 
-        var queryResult = await session.SendAsync(
-            "Accessibility.queryAXTree",
-            new AccessibilityQueryAXTreeParams(
-                ObjectId: rootObjectId,
-                AccessibleName: name,
-                Role: role),
-            CdpJsonContext.Default.AccessibilityQueryAXTreeParams,
-            CdpJsonContext.Default.AccessibilityQueryAXTreeResult,
-            ct).ConfigureAwait(false);
+        // The query matches the browser's own spelling of a role, and Chromium spells the ARIA
+        // role "img" as "image", for an <img> and for an explicit role="img" alike. Each spelling
+        // of the image role is tried in turn, so either one finds images on any Chromium build.
+        var nodes = Array.Empty<AccessibilityAXNodeSimple>();
+        foreach (var spelling in QueryRoles(role))
+        {
+            var queryResult = await session.SendAsync(
+                "Accessibility.queryAXTree",
+                new AccessibilityQueryAXTreeParams(
+                    ObjectId: rootObjectId,
+                    AccessibleName: name,
+                    Role: spelling),
+                CdpJsonContext.Default.AccessibilityQueryAXTreeParams,
+                CdpJsonContext.Default.AccessibilityQueryAXTreeResult,
+                ct).ConfigureAwait(false);
+
+            nodes = queryResult.Nodes;
+            if (nodes.Length > 0)
+                break;
+        }
 
         var handles = new List<IElementHandle>();
-        foreach (var node in queryResult.Nodes)
+        foreach (var node in nodes)
         {
             if (node.Ignored || node.BackendDOMNodeId is null)
                 continue;
@@ -122,6 +133,20 @@ internal sealed class RoleSelectorStrategy : ISelectorStrategy
 
         return $"role={role}";
     }
+
+    /// <summary>
+    /// The role spellings to query for a role, in order. Every role but the image role has one.
+    /// </summary>
+    internal static IReadOnlyList<string> QueryRoles(string role)
+        => AccessibilityRoleNames.IsImage(role) ? ["image", "img"] : [role];
+
+    /// <summary>
+    /// Builds a role selector, with a name filter when a name is given. The name is written as is:
+    /// <see cref="ParseRoleSelector"/> takes everything between <c>name="</c> and the closing
+    /// <c>"]</c>, so quotes, brackets and backslashes inside the name need no escaping.
+    /// </summary>
+    internal static string BuildSelector(string role, string? name)
+        => name is null ? $"role={role}" : $"role={role}[name=\"{name}\"]";
 
     /// <summary>
     /// Parses role=button[name="Submit"] into (role, name) using span slicing (no Regex).
