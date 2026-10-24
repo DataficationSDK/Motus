@@ -46,16 +46,21 @@ public sealed class PageAssertions
     /// <c>https://example.com/orders/*</c> matches any order page but not the site root. Any other
     /// pattern has to equal the URL exactly: <c>https://example.com/orders</c> does not match
     /// <c>https://example.com/orders/17/edit</c>. To match part of a URL, use a glob such as
-    /// <c>**/orders**</c>. This is the same matching <see cref="IPage.WaitForURLAsync(string, NavigationOptions?)"/>
-    /// uses, so a wait and an assertion given the same string agree.
+    /// <c>**/orders**</c>. A URL without a scheme, such as <c>/orders/17</c>, is resolved against
+    /// the context's <see cref="ContextOptions.BaseURL"/> when one is set. This is the same
+    /// matching <see cref="IPage.WaitForURLAsync(string, NavigationOptions?)"/> uses, so a wait
+    /// and an assertion given the same string agree.
     /// </remarks>
-    public Task ToHaveUrlAsync(string urlOrGlob, AssertionOptions? options = null) =>
-        RetryAsync(async ct =>
+    public Task ToHaveUrlAsync(string urlOrGlob, AssertionOptions? options = null)
+    {
+        var expected = _page.ResolveAgainstBaseUrl(urlOrGlob);
+        return RetryAsync(async ct =>
         {
             var url = _page.Url;
-            var matches = Page.UrlMatchesWhole(url, urlOrGlob);
+            var matches = Page.UrlMatchesWhole(url, expected);
             return (matches, url);
-        }, "ToHaveUrl", urlOrGlob, options);
+        }, "ToHaveUrl", expected, options);
+    }
 
     /// <summary>Asserts that the document title equals the expected string.</summary>
     /// <param name="expected">The title the document must carry.</param>

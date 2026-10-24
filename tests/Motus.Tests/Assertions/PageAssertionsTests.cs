@@ -29,7 +29,7 @@ public class PageAssertionsTests
     [TestCleanup]
     public async Task Cleanup() => await _transport.DisposeAsync();
 
-    private async Task<IPage> CreatePageWithFrameAsync(string url = "about:blank")
+    private async Task<IPage> CreatePageWithFrameAsync(string url = "about:blank", ContextOptions? options = null)
     {
         _socket.QueueResponse("""{"id": 2, "result": {"browserContextId": "ctx-1"}}""");
         _socket.QueueResponse("""{"id": 3, "result": {"targetId": "target-1"}}""");
@@ -39,7 +39,7 @@ public class PageAssertionsTests
         _socket.QueueResponse("""{"id": 7, "sessionId": "session-1", "result": {}}""");
         _socket.QueueResponse("""{"id": 8, "sessionId": "session-1", "result": {}}""");
         _socket.QueueResponse("""{"id": 9, "sessionId": "session-1", "result": {}}""");
-        var page = await _browser.NewPageAsync();
+        var page = await _browser.NewPageAsync(options);
 
         // Inject frame navigated + execution context so evaluation works
         _socket.Enqueue($$"""
@@ -162,6 +162,17 @@ public class PageAssertionsTests
         await Assert.ThrowsExceptionAsync<MotusAssertionException>(
             () => Expect.That(page).ToHaveUrlAsync("https://example.com/orders?page=1", new() { Timeout = 200 }));
         await Expect.That(page).ToHaveUrlAsync("**/orders**", new() { Timeout = 200 });
+    }
+
+    [TestMethod]
+    public async Task ToHaveUrlAsync_ResolvesARelativeUrlAgainstTheBaseUrl()
+    {
+        var page = await CreatePageWithFrameAsync(
+            "http://localhost:5000/orders/17", new ContextOptions { BaseURL = "http://localhost:5000" });
+
+        await Expect.That(page).ToHaveUrlAsync("/orders/17", new() { Timeout = 200 });
+        await Assert.ThrowsExceptionAsync<MotusAssertionException>(
+            () => Expect.That(page).ToHaveUrlAsync("/orders/1", new() { Timeout = 200 }));
     }
 
     [TestMethod]

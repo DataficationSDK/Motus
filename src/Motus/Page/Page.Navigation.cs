@@ -152,8 +152,9 @@ internal sealed partial class Page
     public Task WaitForURLAsync(string urlPattern, NavigationOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(urlPattern);
+        var expected = ResolveAgainstBaseUrl(urlPattern);
         return WaitForFrameUrlAsync(
-            frame: null, url => UrlMatchesWhole(url, urlPattern), $"'{urlPattern}'", options);
+            frame: null, url => UrlMatchesWhole(url, expected), $"'{expected}'", options);
     }
 
     public Task WaitForURLAsync(Regex urlPattern, NavigationOptions? options = null)
@@ -375,6 +376,28 @@ internal sealed partial class Page
         FrameStoppedLoading += Handler;
 
         return tcs.Task;
+    }
+
+    /// <summary>
+    /// Resolves a URL written relative to the context's base URL into the address it names, the
+    /// way <see cref="GotoAsync"/> resolves one it is asked to load.
+    /// </summary>
+    /// <remarks>
+    /// A URL wait or assertion compares the whole URL, so a relative string such as
+    /// <c>/dashboard</c> could otherwise never match the absolute URL the browser reports, even
+    /// after <c>GotoAsync("/dashboard")</c> had loaded exactly that page. A glob, an absolute URL,
+    /// or any string when no base URL is set is returned unchanged.
+    /// </remarks>
+    internal string ResolveAgainstBaseUrl(string pattern)
+    {
+        if (_context.BaseURL is null || pattern.Contains('*')
+            || Uri.IsWellFormedUriString(pattern, UriKind.Absolute))
+            return pattern;
+
+        return Uri.TryCreate(_context.BaseURL, UriKind.Absolute, out var baseUri)
+            && Uri.TryCreate(baseUri, pattern, out var resolved)
+            ? resolved.AbsoluteUri
+            : pattern;
     }
 
     /// <summary>

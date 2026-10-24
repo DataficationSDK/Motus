@@ -401,7 +401,8 @@ public interface IPage : IAsyncDisposable
     /// <param name="urlPattern">
     /// The URL to wait for. A string containing <c>*</c> is a glob that has to cover the whole URL,
     /// where each <c>*</c> stands for any run of characters, path separators included. Any other
-    /// string has to equal the URL exactly.
+    /// string has to equal the URL exactly. A string without a scheme, such as <c>/dashboard</c>, is
+    /// resolved against <see cref="ContextOptions.BaseURL"/> first when one is set.
     /// </param>
     /// <param name="options">The timeout in milliseconds. The other navigation options are unused.</param>
     /// <remarks>

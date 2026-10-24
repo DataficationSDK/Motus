@@ -287,7 +287,7 @@ await Page.ReloadAsync();
 await Page.WaitForURLAsync("**/dashboard");
 ```
 
-`WaitForURLAsync` returns at once when the URL already matches. A string with no `*` has to be the whole URL, so `WaitForURLAsync("https://example.com/")` waits for the site's root and is not satisfied by `https://example.com/account`. The browser's normal form counts as the same URL, so `https://example.com` without the trailing slash also matches the root. A string containing `*` is a glob that has to cover the whole URL, where each `*` stands for any run of characters, path separators included. For anything a glob cannot say, pass a `Regex` or a predicate instead:
+`WaitForURLAsync` returns at once when the URL already matches. A string with no `*` has to be the whole URL, so `WaitForURLAsync("https://example.com/")` waits for the site's root and is not satisfied by `https://example.com/account`. The browser's normal form counts as the same URL, so `https://example.com` without the trailing slash also matches the root. When the context has a `BaseURL`, a string without a scheme is resolved against it first, as `GotoAsync` does, so `WaitForURLAsync("/dashboard")` waits for that page under the base URL. A string containing `*` is a glob that has to cover the whole URL, where each `*` stands for any run of characters, path separators included. For anything a glob cannot say, pass a `Regex` or a predicate instead:
 
 ```csharp
 await Page.WaitForURLAsync(new Regex(@"/orders/\d+$"));

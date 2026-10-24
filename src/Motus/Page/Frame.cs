@@ -80,8 +80,9 @@ internal sealed class Frame : IFrame
     public Task WaitForURLAsync(string urlPattern, NavigationOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(urlPattern);
+        var expected = _page.ResolveAgainstBaseUrl(urlPattern);
         return _page.WaitForFrameUrlAsync(
-            this, url => Motus.Page.UrlMatchesWhole(url, urlPattern), $"'{urlPattern}'", options);
+            this, url => Motus.Page.UrlMatchesWhole(url, expected), $"'{expected}'", options);
     }
 
     public Task WaitForURLAsync(System.Text.RegularExpressions.Regex urlPattern, NavigationOptions? options = null)

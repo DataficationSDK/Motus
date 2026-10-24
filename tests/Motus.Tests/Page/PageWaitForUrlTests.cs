@@ -38,7 +38,7 @@ public class PageWaitForUrlTests
 
     private static NavigationOptions Within(int ms) => new() { Timeout = ms };
 
-    private async Task<IPage> CreatePageAsync(string url)
+    private async Task<IPage> CreatePageAsync(string url, ContextOptions? options = null)
     {
         _socket.QueueResponse("""{"id": 2, "result": {"browserContextId": "ctx-1"}}""");
         _socket.QueueResponse("""{"id": 3, "result": {"targetId": "target-1"}}""");
@@ -48,7 +48,7 @@ public class PageWaitForUrlTests
         _socket.QueueResponse("""{"id": 7, "sessionId": "session-1", "result": {}}""");
         _socket.QueueResponse("""{"id": 8, "sessionId": "session-1", "result": {}}""");
         _socket.QueueResponse("""{"id": 9, "sessionId": "session-1", "result": {}}""");
-        var page = await _browser.NewPageAsync();
+        var page = await _browser.NewPageAsync(options);
 
         Navigate("frame-main", url);
         await WaitUntilAsync(() => page.Url == url);
@@ -131,6 +131,44 @@ public class PageWaitForUrlTests
 
         var wait = page.WaitForURLAsync("https://example.test/", Within(5_000));
         Navigate("frame-main", "https://example.test/");
+
+        await wait;
+    }
+
+    [TestMethod]
+    public async Task String_RelativeToTheBaseUrl_WaitsForThatAddress()
+    {
+        var page = await CreatePageAsync(
+            "http://localhost:5000/login", new ContextOptions { BaseURL = "http://localhost:5000" });
+
+        var wait = page.WaitForURLAsync("/dashboard", Within(5_000));
+        Navigate("frame-main", "http://localhost:5000/dashboard/settings");
+        Navigate("frame-main", "http://localhost:5000/dashboard");
+
+        await wait;
+        Assert.AreEqual("http://localhost:5000/dashboard", page.Url);
+    }
+
+    [TestMethod]
+    public async Task String_RelativeWithoutABaseUrl_IsComparedAsWritten()
+    {
+        var page = await CreatePageAsync("http://localhost:5000/dashboard");
+
+        await Assert.ThrowsExceptionAsync<WaitTimeoutException>(
+            () => page.WaitForURLAsync("/dashboard", Within(300)));
+    }
+
+    [TestMethod]
+    public async Task Frame_StringRelativeToTheBaseUrl_WaitsForThatAddress()
+    {
+        var page = await CreatePageAsync(
+            "http://localhost:5000/", new ContextOptions { BaseURL = "http://localhost:5000/app/" });
+        Navigate("frame-child", "http://localhost:5000/app/widget?step=1", parentId: "frame-main");
+        await WaitUntilAsync(() => page.Frames.Any(f => f.Url == "http://localhost:5000/app/widget?step=1"));
+        var child = page.Frames.Single(f => f.Url == "http://localhost:5000/app/widget?step=1");
+
+        var wait = child.WaitForURLAsync("widget?step=2", Within(5_000));
+        NavigateWithinDocument("frame-child", "http://localhost:5000/app/widget?step=2");
 
         await wait;
     }
