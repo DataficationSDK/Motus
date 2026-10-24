@@ -10,8 +10,8 @@ internal static class CdpFakeResponse
 {
     /// <summary>
     /// Commands a fixture does not answer itself: ones that only switch a connection-wide feature
-    /// on, and ones that ask the browser for state an empty answer reports as nothing to record.
-    /// They carry nothing a fixture asserts against.
+    /// on, ones that put every new page in the same mode, and ones that ask the browser for state
+    /// an empty answer reports as nothing to record. They carry nothing a fixture asserts against.
     /// </summary>
     /// <remarks>
     /// A fake answers these by method name before it looks at anything a fixture queued. That is
@@ -24,6 +24,7 @@ internal static class CdpFakeResponse
     {
         "Target.setDiscoverTargets",
         "Page.getFrameTree",
+        "Emulation.setFocusEmulationEnabled",
     };
 
     /// <summary>

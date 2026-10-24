@@ -30,7 +30,7 @@ The launch sequence runs in the following order:
    - For Chromium channels: if `options.UserDataDir` is `null`, a temporary directory is created at `{Path.GetTempPath()}/motus-profile-{8-char guid}`. The `ownsTempDir` flag is set to `true` so the directory is deleted on cleanup.
    - For Firefox: `FirefoxProfileManager.CreateTempProfile` creates a minimal profile directory unconditionally when no `UserDataDir` is supplied.
 
-6. **Process start.** A `ProcessStartInfo` is built with `UseShellExecute = false`, `RedirectStandardOutput = true`, and `RedirectStandardError = true`. Arguments are added via `ArgumentList` (not `Arguments`) so that paths with spaces are handled correctly without manual quoting. For Firefox, environment variables from `FirefoxArgs.Build` are also applied.
+6. **Process start.** A `ProcessStartInfo` is built with `UseShellExecute = false`, `RedirectStandardOutput = true`, and `RedirectStandardError = true`. Arguments are added via `ArgumentList` (not `Arguments`) so that paths with spaces are handled correctly without manual quoting. A Chromium browser starts with the defaults listed in [Default browser arguments](../guides/configuration.md#default-browser-arguments), less any named in `IgnoreDefaultArgs`, and `Args` come last. For Firefox, environment variables from `FirefoxArgs.Build` are also applied.
 
    A browser on the pipe transport is started through `/bin/sh -c 'exec "$0" "$@" 3<&0 4>&1 1>/dev/null'`, because the process API offers no way to give a child an arbitrary file descriptor. The shell copies this process's end of the redirected standard input onto descriptor 3 and of the redirected standard output onto descriptor 4, points standard output at nothing so the browser's own logging cannot be mistaken for protocol traffic, and then replaces itself with the browser, so the process handle still refers to the browser. Standard output then carries CDP rather than diagnostics, and only standard error is drained.
 
@@ -249,7 +249,7 @@ The sequence:
 
    i. `Page.getFrameTree` is read and recorded. The browser never announces a new tab's initial `about:blank` as a navigation, so this read is what gives the page its main frame before anything navigates it: `Url` reads `about:blank`, `MainFrame` and `Frames` are populated, and `EvaluateAsync` and `SetContentAsync` work straight away. On Firefox the same read is answered by `browsingContext.getTree`.
 
-4. Context options are applied to the new page: viewport (`Emulation.setDeviceMetricsOverride`), locale, timezone, color scheme, user agent, HTTPS error handling, and geolocation are each sent if the corresponding option is set.
+4. `Emulation.setFocusEmulationEnabled` is sent so the page behaves as though its window had focus, which keeps `document.hasFocus()` true in every context's pages at once. It is skipped for a context that was already open in an attached browser and on Firefox, and a browser that rejects it does not stop the page from opening. Context options are then applied to the new page: viewport (`Emulation.setDeviceMetricsOverride`), locale, timezone, color scheme, user agent, HTTPS error handling, and geolocation are each sent if the corresponding option is set.
 
 5. Context-level extra HTTP headers and offline state are propagated to the page.
 

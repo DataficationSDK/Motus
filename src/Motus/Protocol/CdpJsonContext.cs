@@ -145,6 +145,9 @@ namespace Motus;
 [JsonSerializable(typeof(EmulationSetEmulatedMediaParams))]
 [JsonSerializable(typeof(EmulationMediaFeature))]
 [JsonSerializable(typeof(EmulationSetEmulatedMediaResult))]
+// --- Emulation domain (focus) ---
+[JsonSerializable(typeof(EmulationSetFocusEmulationEnabledParams))]
+[JsonSerializable(typeof(EmulationSetFocusEmulationEnabledResult))]
 // --- Input domain ---
 [JsonSerializable(typeof(InputDispatchKeyEventParams))]
 [JsonSerializable(typeof(InputDispatchKeyEventResult))]
@@ -884,6 +887,14 @@ internal sealed record EmulationSetEmulatedMediaParams(
 internal sealed record EmulationMediaFeature(string Name, string Value);
 
 internal sealed record EmulationSetEmulatedMediaResult();
+
+// ============================================================================
+// Emulation domain (focus)
+// ============================================================================
+
+internal sealed record EmulationSetFocusEmulationEnabledParams(bool Enabled);
+
+internal sealed record EmulationSetFocusEmulationEnabledResult();
 
 // ============================================================================
 // Emulation domain (locale, timezone, user agent)

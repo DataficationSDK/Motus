@@ -416,12 +416,58 @@ The merge checks are per-property:
 | `UserDataDir` | `string?` | `null` | Path to a browser user-data directory. Enables persistent sessions. |
 | `HandleSIGINT` | `bool` | `true` | Close the browser when the process receives SIGINT, or Ctrl+C on Windows. |
 | `HandleSIGTERM` | `bool` | `true` | Close the browser when the process receives SIGTERM or SIGHUP. Unix only. |
-| `IgnoreDefaultArgs` | `IReadOnlyList<string>?` | `null` | Default browser arguments to suppress. |
+| `IgnoreDefaultArgs` | `IReadOnlyList<string>?` | `null` | Default browser arguments to suppress, matched exactly. See [Default browser arguments](#default-browser-arguments). |
 | `DownloadsPath` | `string?` | `null` | Directory for browser-initiated file downloads. |
 | `Plugins` | `IReadOnlyList<IPlugin>?` | `null` | Plugin instances loaded into every browser context created from this launch. |
 | `Accessibility` | `AccessibilityOptions?` | `null` | Accessibility audit hook configuration. Disabled when `null`. |
 | `Performance` | `PerformanceOptions?` | `null` | Performance metrics collector configuration. Disabled when `null`. |
 | `ProtocolLog` | `ProtocolLogOptions?` | `null` | Protocol log configuration. Disabled when `null`, unless `MOTUS_PROTOCOL_LOG` names a destination. Also on `ConnectOptions`. |
+
+### Default browser arguments
+
+A Chromium browser Motus launches starts with these switches, before any in `Args`:
+
+| Switch | Why |
+|---|---|
+| `--disable-background-networking` | Stops update checks and other traffic a test did not ask for. |
+| `--disable-background-timer-throttling` | Keeps a page's timers at full speed when the browser thinks it is in the background. |
+| `--disable-backgrounding-occluded-windows` | Keeps a page visible when its window is covered by another. |
+| `--disable-client-side-phishing-detection` | Stops phishing checks from loading models and making requests. |
+| `--disable-default-apps` | Skips installing the default apps into a new profile. |
+| `--disable-extensions` | Starts without extensions. |
+| `--disable-hang-monitor` | Stops the "page unresponsive" dialog from appearing over a paused page. |
+| `--disable-popup-blocking` | Lets a page open popups, so tests can drive them. |
+| `--disable-prompt-on-repost` | Reloads a page reached by POST without asking. |
+| `--disable-renderer-backgrounding` | Keeps a page's renderer process at normal priority. |
+| `--disable-sync` | Turns off account sync. |
+| `--disable-translate` | Turns off the translation prompt. |
+| `--metrics-recording-only` | Records usage metrics without uploading them. |
+| `--no-first-run` | Skips the first-run experience. |
+| `--safebrowsing-disable-auto-update` | Stops Safe Browsing list downloads. |
+
+The transport (`--remote-debugging-pipe`, or `--remote-debugging-port` on Windows), `--user-data-dir`, and `--headless=new` or the headed-mode switches are added as well. They are not defaults in the sense above, and `IgnoreDefaultArgs` does not remove them.
+
+The three backgrounding switches matter most in a test that uses more than one context, such as an admin and a visitor. Each context gets a window of its own, and without them opening and closing a second context could leave a page in the first one marked hidden: `document.visibilityState` reads `hidden`, `visibilitychange` handlers run, timers are throttled, and `requestAnimationFrame`, `ResizeObserver` and `IntersectionObserver` callbacks stop. The symptom is a timeout in code waiting for any of those, a long way from the cause.
+
+To test backgrounding itself, name the switches in `IgnoreDefaultArgs`. Each entry is matched against a default exactly, so one switch can go and the rest stay:
+
+```csharp
+await using var browser = await MotusLauncher.LaunchAsync(new LaunchOptions
+{
+    IgnoreDefaultArgs =
+    [
+        "--disable-backgrounding-occluded-windows",
+        "--disable-renderer-backgrounding",
+        "--disable-background-timer-throttling",
+    ],
+});
+```
+
+Motus passes no `--disable-features` or `--enable-features` switch of its own. Chromium honors only the last of a repeated feature-list switch, so one passed in `Args` is the only one the browser sees.
+
+Every page Motus opens on Chromium also has focus emulated through CDP, so `document.hasFocus()` is true and focus events fire in each page of a run at once, rather than only in whichever window the browser last brought forward. This is not a launch switch and `IgnoreDefaultArgs` does not affect it. It does not apply to Firefox, which has no equivalent in WebDriver BiDi, or to pages in a context that was already open in a browser Motus attached to. See [Attaching to a Running Browser](attaching-to-a-running-browser.md#known-traps).
+
+A Firefox browser Motus launches gets its own, much shorter, list of defaults, which `IgnoreDefaultArgs` filters the same way.
 
 ### AccessibilityOptions
 

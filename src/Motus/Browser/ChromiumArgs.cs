@@ -7,15 +7,31 @@ namespace Motus;
 /// </summary>
 internal static class ChromiumArgs
 {
-    private static readonly string[] DefaultArgs =
+    /// <summary>
+    /// The switches every Chromium launch starts with, unless named in
+    /// <see cref="LaunchOptions.IgnoreDefaultArgs"/>.
+    /// </summary>
+    /// <remarks>
+    /// The three backgrounding switches keep every page Motus drives running at full speed. The
+    /// browser treats a page whose window it thinks is covered as hidden, and a hidden page has
+    /// its timers throttled, its renderer deprioritized, and its animation frames and observers
+    /// stopped. Each context gets a window of its own, so opening and closing a second context is
+    /// enough to leave a page in the first one hidden, and a test then waits on something that
+    /// never runs. Removing them through <see cref="LaunchOptions.IgnoreDefaultArgs"/> brings
+    /// backgrounding back for a test that is about it.
+    /// </remarks>
+    internal static readonly string[] DefaultArgs =
     [
         "--disable-background-networking",
+        "--disable-background-timer-throttling",
+        "--disable-backgrounding-occluded-windows",
         "--disable-client-side-phishing-detection",
         "--disable-default-apps",
         "--disable-extensions",
         "--disable-hang-monitor",
         "--disable-popup-blocking",
         "--disable-prompt-on-repost",
+        "--disable-renderer-backgrounding",
         "--disable-sync",
         "--disable-translate",
         "--metrics-recording-only",
