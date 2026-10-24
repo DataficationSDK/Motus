@@ -22,63 +22,6 @@ public class ConnectDiagnosticsTests
 
     private static readonly TimeSpan PollBudget = TimeSpan.FromMilliseconds(400);
 
-    // TEMPORARY DIAGNOSTIC: measures where a cold Windows test host spends its time on the first
-    // request to a local endpoint. Removed before the PR is ready.
-    [TestMethod]
-    public async Task A0_TemporaryWindowsTimingProbe()
-    {
-        var report = new System.Text.StringBuilder();
-        var sw = System.Diagnostics.Stopwatch.StartNew();
-        void Mark(string what) { report.Append($"{what}={sw.ElapsedMilliseconds}ms; "); sw.Restart(); }
-
-        var endpoint = new StallingCdpEndpoint(completeHandshake: false, offersWebSocketUrl: false);
-        Mark("ctor");
-        var url = new Uri(endpoint.HttpEndpoint + "/json/version");
-
-        var proxy = System.Net.Http.HttpClient.DefaultProxy;
-        Mark($"defaultProxy({proxy.GetType().Name})");
-        var p1 = proxy.GetProxy(url);
-        Mark($"getProxy1({p1?.ToString() ?? "null"})");
-        var b1 = proxy.IsBypassed(url);
-        Mark($"isBypassed({b1})");
-        proxy.GetProxy(url);
-        Mark("getProxy2");
-
-        using (var client = new HttpClient { Timeout = TimeSpan.FromSeconds(10) })
-        {
-            for (var i = 0; i < 4; i++)
-            {
-                try { await client.GetStringAsync(url); Mark($"get{i}"); }
-                catch (Exception ex) { Mark($"get{i}-{ex.GetType().Name}"); }
-            }
-        }
-
-        using (var client = new HttpClient(new SocketsHttpHandler { UseProxy = false }) { Timeout = TimeSpan.FromSeconds(10) })
-        {
-            for (var i = 0; i < 2; i++)
-            {
-                try { await client.GetStringAsync(url); Mark($"noProxyGet{i}"); }
-                catch (Exception ex) { Mark($"noProxyGet{i}-{ex.GetType().Name}"); }
-            }
-        }
-
-        using (var other = new StallingCdpEndpoint(completeHandshake: false, offersWebSocketUrl: false))
-        {
-            Mark("ctor2");
-            using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
-            try { await client.GetStringAsync(new Uri(other.HttpEndpoint + "/json/version")); Mark("ctor2get0"); }
-            catch (Exception ex) { Mark($"ctor2get0-{ex.GetType().Name}"); }
-        }
-        Mark("dispose2");
-
-        endpoint.Dispose();
-        Mark("dispose");
-
-        if (OperatingSystem.IsWindows())
-            Assert.Fail("TIMING " + report);
-        Console.WriteLine("TIMING " + report);
-    }
-
     [TestMethod]
     public async Task WaitForEndpoint_SaysWhyTheLastAttemptFailed()
     {
