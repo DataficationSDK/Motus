@@ -127,10 +127,11 @@ internal sealed partial class Page
             // it to the page session, and Page.frameDetached from the parent stays the only signal
             // that a frame has actually gone away.
             _frameIdToSession.TryRemove(frameId, out _);
-            _frameIdToExecutionContext.TryRemove(frameId, out _);
             _frameIdToIsolatedWorld.TryRemove(frameId, out _);
             _frameTargetInit.TryRemove(frameId, out _);
         }
+
+        ForgetExecutionContextsFrom(evt.SessionId);
 
         if (_context.SessionRegistry.TryGetSession(evt.SessionId, out var detached))
             detached?.CleanupChannels();

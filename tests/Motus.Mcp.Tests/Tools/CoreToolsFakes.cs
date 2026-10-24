@@ -1016,10 +1016,18 @@ internal sealed class FakeToolFrame(FakeToolPage page, string url, FakeToolFrame
         return page.RecordingLocator;
     }
 
+    /// <summary>
+    /// When set, <see cref="EvaluateAsync{T}"/> never completes, like a frame that has no document
+    /// to evaluate in yet.
+    /// </summary>
+    public bool EvaluateNeverCompletes { get; set; }
+
     public Task<T> EvaluateAsync<T>(string expression, object? arg = null)
     {
         Evaluated.Add(expression);
-        return Task.FromResult(default(T)!);
+        return EvaluateNeverCompletes
+            ? new TaskCompletionSource<T>().Task
+            : Task.FromResult(default(T)!);
     }
 
     public Task<T> EvaluateAsync<T>(string expression, object? arg, EvaluateOptions options)

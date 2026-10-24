@@ -78,6 +78,7 @@ namespace Motus;
 [JsonSerializable(typeof(RuntimeExceptionThrownEvent))]
 [JsonSerializable(typeof(RuntimeBindingCalledEvent))]
 [JsonSerializable(typeof(RuntimeExecutionContextCreatedEvent))]
+[JsonSerializable(typeof(RuntimeExecutionContextDestroyedEvent))]
 // --- Emulation domain ---
 [JsonSerializable(typeof(EmulationSetDeviceMetricsOverrideParams))]
 [JsonSerializable(typeof(EmulationSetDeviceMetricsOverrideResult))]
@@ -554,6 +555,9 @@ internal sealed record RuntimeExecutionContextDescription(
 
 internal sealed record RuntimeExecutionContextCreatedEvent(
     RuntimeExecutionContextDescription Context);
+
+internal sealed record RuntimeExecutionContextDestroyedEvent(
+    int ExecutionContextId);
 
 internal sealed record RuntimeConsoleApiCalledEvent(
     string Type,

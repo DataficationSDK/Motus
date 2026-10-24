@@ -139,6 +139,38 @@ public class FirefoxIntegrationTests
     }
 
     /// <summary>
+    /// Evaluating straight after a navigation works on Firefox too. BiDi addresses script to a
+    /// browsing context rather than to an execution context id, so there is no id to go stale, and
+    /// the waiting Chromium needs must not get in its way.
+    /// </summary>
+    [TestMethod]
+    public async Task Firefox_EvaluateRightAfterNavigation_Succeeds()
+    {
+        if (!FirefoxAvailable())
+        {
+            Assert.Inconclusive("Firefox not found on this machine.");
+            return;
+        }
+
+        await using var browser = await MotusLauncher.LaunchAsync(
+            new LaunchOptions { Headless = true, Channel = BrowserChannel.Firefox });
+
+        for (var i = 0; i < 30; i++)
+        {
+            var context = await browser.NewContextAsync();
+            var page = await context.NewPageAsync();
+
+            await page.GotoAsync("about:blank");
+            Assert.AreEqual(2, await page.EvaluateAsync<int>("1+1"), $"iteration {i}");
+
+            await page.GotoAsync($"data:text/html,<title>t{i}</title>");
+            Assert.AreEqual($"t{i}", await page.TitleAsync(), $"iteration {i}");
+
+            await context.CloseAsync();
+        }
+    }
+
+    /// <summary>
     /// Pointer actions scroll their target into view with a script that runs in the page rather
     /// than with a Chromium-only command, so the script has to behave the same under Firefox. It is
     /// run directly here because locator resolution is not yet translated for WebDriver BiDi.

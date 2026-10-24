@@ -64,8 +64,6 @@ internal sealed partial class Page
     internal async Task<IElementHandle> AddScriptTagAsync(string? url, string? content, IFrame? frame)
     {
         await WhenFrameReadyAsync(frame).ConfigureAwait(false);
-        var session = SessionFor(frame);
-        var contextId = frame is null ? null : GetSelectorContextId(frame);
 
         string js;
         if (url is not null)
@@ -79,13 +77,18 @@ internal sealed partial class Page
             js = "(() => { const s = document.createElement('script'); s.textContent = " + serializedContent + "; document.head.appendChild(s); return s; })()";
         }
 
-        var result = await session.SendAsync(
-            "Runtime.evaluate",
-            new RuntimeEvaluateParams(Expression: js, ReturnByValue: false, AwaitPromise: false,
-                ContextId: contextId),
-            CdpJsonContext.Default.RuntimeEvaluateParams,
-            CdpJsonContext.Default.RuntimeEvaluateResult,
-            _pageCts.Token).ConfigureAwait(false);
+        var (session, result) = await RunInSelectorContextAsync(frame, async target =>
+        {
+            var evaluated = await target.Session.SendAsync(
+                "Runtime.evaluate",
+                new RuntimeEvaluateParams(Expression: js, ReturnByValue: false, AwaitPromise: false,
+                    ContextId: target.ContextId),
+                CdpJsonContext.Default.RuntimeEvaluateParams,
+                CdpJsonContext.Default.RuntimeEvaluateResult,
+                _pageCts.Token).ConfigureAwait(false);
+
+            return (target.Session, evaluated);
+        }, _pageCts.Token).ConfigureAwait(false);
 
         if (result.Result.ObjectId is null)
             throw new InvalidOperationException("Failed to create script element.");
@@ -103,8 +106,6 @@ internal sealed partial class Page
     internal async Task<IElementHandle> AddStyleTagAsync(string? url, string? content, IFrame? frame)
     {
         await WhenFrameReadyAsync(frame).ConfigureAwait(false);
-        var session = SessionFor(frame);
-        var contextId = frame is null ? null : GetSelectorContextId(frame);
 
         string js;
         if (url is not null)
@@ -118,13 +119,18 @@ internal sealed partial class Page
             js = "(() => { const s = document.createElement('style'); s.textContent = " + serializedContent + "; document.head.appendChild(s); return s; })()";
         }
 
-        var result = await session.SendAsync(
-            "Runtime.evaluate",
-            new RuntimeEvaluateParams(Expression: js, ReturnByValue: false, AwaitPromise: false,
-                ContextId: contextId),
-            CdpJsonContext.Default.RuntimeEvaluateParams,
-            CdpJsonContext.Default.RuntimeEvaluateResult,
-            _pageCts.Token).ConfigureAwait(false);
+        var (session, result) = await RunInSelectorContextAsync(frame, async target =>
+        {
+            var evaluated = await target.Session.SendAsync(
+                "Runtime.evaluate",
+                new RuntimeEvaluateParams(Expression: js, ReturnByValue: false, AwaitPromise: false,
+                    ContextId: target.ContextId),
+                CdpJsonContext.Default.RuntimeEvaluateParams,
+                CdpJsonContext.Default.RuntimeEvaluateResult,
+                _pageCts.Token).ConfigureAwait(false);
+
+            return (target.Session, evaluated);
+        }, _pageCts.Token).ConfigureAwait(false);
 
         if (result.Result.ObjectId is null)
             throw new InvalidOperationException("Failed to create style element.");
