@@ -199,8 +199,7 @@ public sealed class BrowserInstaller
         return "linux64";
     }
 
-    internal static string DefaultCachePath() =>
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".motus", "browsers");
+    internal static string DefaultCachePath() => InstalledBrowsers.DefaultRoot;
 
     private static string FindChromiumExecutable(string destDir, string platformKey)
     {
@@ -251,12 +250,10 @@ public sealed class BrowserInstaller
     private static void WriteMarker(string cachePath, string channel, string executablePath)
     {
         // Write channel-specific marker
-        var markerPath = Path.Combine(cachePath, $".installed.{channel}");
-        File.WriteAllText(markerPath, executablePath);
+        File.WriteAllText(InstalledBrowsers.MarkerPath(cachePath, channel), executablePath);
 
         // Also write legacy marker for backward compatibility
-        var legacyMarkerPath = Path.Combine(cachePath, ".installed");
-        File.WriteAllText(legacyMarkerPath, executablePath);
+        File.WriteAllText(InstalledBrowsers.LegacyMarkerPath(cachePath), executablePath);
     }
 
     // ALL RESTRICTED APPLICATION PACKAGES, the identity Chromium's most restricted child processes

@@ -41,49 +41,11 @@ public class BrowserFinderTests
     }
 
     [TestMethod]
-    public void CandidatesForChannel_IncludesInstalledBinariesPath_WhenSet()
-    {
-        var originalPath = BrowserFinder.InstalledBinariesPath;
-        try
-        {
-            BrowserFinder.InstalledBinariesPath = "/opt/motus/browsers";
-            var candidates = BrowserFinder.CandidatesForChannel(BrowserChannel.Chrome);
-
-            Assert.IsTrue(candidates.Any(c => c.StartsWith("/opt/motus/browsers")),
-                "Should include installed binaries path when set.");
-        }
-        finally
-        {
-            BrowserFinder.InstalledBinariesPath = originalPath;
-        }
-    }
-
-    [TestMethod]
     public void CandidatesForChannel_Firefox_ReturnsNonEmptyList()
     {
         var candidates = BrowserFinder.CandidatesForChannel(BrowserChannel.Firefox);
 
         Assert.IsTrue(candidates.Count > 0, "Should return at least one Firefox candidate path.");
-    }
-
-    [TestMethod]
-    public void CandidatesForChannel_Firefox_IncludesInstalledBinariesPath_WhenSet()
-    {
-        var originalPath = BrowserFinder.InstalledBinariesPath;
-        try
-        {
-            BrowserFinder.InstalledBinariesPath = "/opt/motus/browsers";
-            var candidates = BrowserFinder.CandidatesForChannel(BrowserChannel.Firefox);
-
-            Assert.IsTrue(candidates.Any(c => c.StartsWith("/opt/motus/browsers")),
-                "Should include installed binaries path for Firefox when set.");
-            Assert.IsTrue(candidates.Any(c => c.Contains("firefox")),
-                "Firefox candidate should contain 'firefox' in the path.");
-        }
-        finally
-        {
-            BrowserFinder.InstalledBinariesPath = originalPath;
-        }
     }
 
     [TestMethod]
@@ -112,46 +74,6 @@ public class BrowserFinderTests
     }
 
     [TestMethod]
-    public void CandidatesForChannel_Edge_IncludesInstalledBinariesPath_WhenSet()
-    {
-        var originalPath = BrowserFinder.InstalledBinariesPath;
-        try
-        {
-            BrowserFinder.InstalledBinariesPath = "/opt/motus/browsers";
-            var candidates = BrowserFinder.CandidatesForChannel(BrowserChannel.Edge);
-
-            Assert.IsTrue(candidates.Any(c => c.StartsWith("/opt/motus/browsers")),
-                "Should include installed binaries path for Edge when set.");
-            Assert.IsTrue(candidates.Any(c => c.Contains("msedge")),
-                "Edge candidate should contain 'msedge' in the path.");
-        }
-        finally
-        {
-            BrowserFinder.InstalledBinariesPath = originalPath;
-        }
-    }
-
-    [TestMethod]
-    public void CandidatesForChannel_Chromium_IncludesInstalledBinariesPath_WhenSet()
-    {
-        var originalPath = BrowserFinder.InstalledBinariesPath;
-        try
-        {
-            BrowserFinder.InstalledBinariesPath = "/opt/motus/browsers";
-            var candidates = BrowserFinder.CandidatesForChannel(BrowserChannel.Chromium);
-
-            Assert.IsTrue(candidates.Any(c => c.StartsWith("/opt/motus/browsers")),
-                "Should include installed binaries path for Chromium when set.");
-            Assert.IsTrue(candidates.Any(c => c.Contains("chromium")),
-                "Chromium candidate should contain 'chromium' in the path.");
-        }
-        finally
-        {
-            BrowserFinder.InstalledBinariesPath = originalPath;
-        }
-    }
-
-    [TestMethod]
     public void CandidatesForChannel_AllChannels_DoNotOverlap()
     {
         var chrome = BrowserFinder.CandidatesForChannel(BrowserChannel.Chrome);
@@ -159,33 +81,19 @@ public class BrowserFinderTests
         var chromium = BrowserFinder.CandidatesForChannel(BrowserChannel.Chromium);
         var firefox = BrowserFinder.CandidatesForChannel(BrowserChannel.Firefox);
 
-        // With InstalledBinariesPath cleared, platform-specific paths should be distinct
-        var originalPath = BrowserFinder.InstalledBinariesPath;
-        try
-        {
-            BrowserFinder.InstalledBinariesPath = null;
-            chrome = BrowserFinder.CandidatesForChannel(BrowserChannel.Chrome);
-            edge = BrowserFinder.CandidatesForChannel(BrowserChannel.Edge);
-            chromium = BrowserFinder.CandidatesForChannel(BrowserChannel.Chromium);
-            firefox = BrowserFinder.CandidatesForChannel(BrowserChannel.Firefox);
-
-            var all = chrome.Concat(edge).Concat(chromium).Concat(firefox).ToList();
-            var distinct = all.Distinct().ToList();
-            Assert.AreEqual(distinct.Count, all.Count, "Candidate paths across channels should be unique.");
-        }
-        finally
-        {
-            BrowserFinder.InstalledBinariesPath = originalPath;
-        }
+        var all = chrome.Concat(edge).Concat(chromium).Concat(firefox).ToList();
+        var distinct = all.Distinct().ToList();
+        Assert.AreEqual(distinct.Count, all.Count, "Candidate paths across channels should be unique.");
     }
 
     [TestMethod]
     public void Resolve_WithChannel_ExercisesChannelPath()
     {
-        var originalPath = BrowserFinder.InstalledBinariesPath;
+        using var machine = new FakeMachine();
+        var originalRoot = BrowserFinder.InstallRoot;
         try
         {
-            BrowserFinder.InstalledBinariesPath = "/nonexistent/motus/browsers";
+            BrowserFinder.InstallRoot = machine.InstallRoot;
             try
             {
                 var result = BrowserFinder.Resolve(channel: BrowserChannel.Firefox, executablePath: null);
@@ -199,80 +107,18 @@ public class BrowserFinderTests
         }
         finally
         {
-            BrowserFinder.InstalledBinariesPath = originalPath;
-        }
-    }
-
-    [TestMethod]
-    public void Resolve_WithChannel_UsesExistingBinary()
-    {
-        var existingFile = typeof(BrowserFinderTests).Assembly.Location;
-        var originalPath = BrowserFinder.InstalledBinariesPath;
-        try
-        {
-            // Point InstalledBinariesPath to the directory containing the test assembly,
-            // and rename expectation to match the binary name pattern
-            var dir = Path.GetDirectoryName(existingFile)!;
-
-            // Create a temp file named "chrome" (or "chrome.exe" on Windows) in a temp dir
-            var tempDir = Path.Combine(Path.GetTempPath(), $"motus-test-{Guid.NewGuid():N}");
-            Directory.CreateDirectory(tempDir);
-            var fakeBrowser = Path.Combine(tempDir,
-                OperatingSystem.IsWindows() ? "chrome.exe" : "chrome");
-            File.WriteAllText(fakeBrowser, "fake");
-
-            BrowserFinder.InstalledBinariesPath = tempDir;
-            var result = BrowserFinder.Resolve(channel: BrowserChannel.Chrome, executablePath: null);
-
-            Assert.AreEqual(fakeBrowser, result);
-
-            // Cleanup
-            File.Delete(fakeBrowser);
-            Directory.Delete(tempDir);
-        }
-        finally
-        {
-            BrowserFinder.InstalledBinariesPath = originalPath;
-        }
-    }
-
-    [TestMethod]
-    public void Resolve_AutoDetect_FindsFirstAvailableBrowser()
-    {
-        var originalPath = BrowserFinder.InstalledBinariesPath;
-        try
-        {
-            var tempDir = Path.Combine(Path.GetTempPath(), $"motus-test-{Guid.NewGuid():N}");
-            Directory.CreateDirectory(tempDir);
-            var fakeBrowser = Path.Combine(tempDir,
-                OperatingSystem.IsWindows() ? "chrome.exe" : "chrome");
-            File.WriteAllText(fakeBrowser, "fake");
-
-            BrowserFinder.InstalledBinariesPath = tempDir;
-            // channel: null, executablePath: null triggers auto-detect
-            var result = BrowserFinder.Resolve(channel: null, executablePath: null);
-
-            Assert.AreEqual(fakeBrowser, result, "Auto-detect should find Chrome first.");
-
-            File.Delete(fakeBrowser);
-            Directory.Delete(tempDir);
-        }
-        finally
-        {
-            BrowserFinder.InstalledBinariesPath = originalPath;
+            BrowserFinder.InstallRoot = originalRoot;
         }
     }
 
     [TestMethod]
     public void Resolve_AutoDetect_ExercisesAutoDetectPath()
     {
-        var originalPath = BrowserFinder.InstalledBinariesPath;
+        using var machine = new FakeMachine();
+        var originalRoot = BrowserFinder.InstallRoot;
         try
         {
-            var tempDir = Path.Combine(Path.GetTempPath(), $"motus-test-{Guid.NewGuid():N}");
-            Directory.CreateDirectory(tempDir);
-
-            BrowserFinder.InstalledBinariesPath = tempDir;
+            BrowserFinder.InstallRoot = machine.InstallRoot;
             try
             {
                 var result = BrowserFinder.Resolve(channel: null, executablePath: null);
@@ -283,32 +129,285 @@ public class BrowserFinderTests
             {
                 // Expected when no browser is installed at system paths
             }
-            finally
-            {
-                Directory.Delete(tempDir);
-            }
         }
         finally
         {
-            BrowserFinder.InstalledBinariesPath = originalPath;
+            BrowserFinder.InstallRoot = originalRoot;
         }
     }
 
     [TestMethod]
-    public void InstalledBinariesPath_Null_DoesNotPrependPath()
+    public void Resolve_WithChannel_UsesExistingSystemBinary()
     {
-        var originalPath = BrowserFinder.InstalledBinariesPath;
+        using var machine = new FakeMachine();
+        var chrome = machine.AddSystemBrowser(BrowserChannel.Chrome);
+
+        var result = machine.Resolve(BrowserChannel.Chrome);
+
+        Assert.AreEqual(chrome, result);
+    }
+
+    [TestMethod]
+    public void Resolve_AutoDetect_TriesChromeThenEdgeThenChromium()
+    {
+        using var machine = new FakeMachine();
+        var chromium = machine.AddSystemBrowser(BrowserChannel.Chromium);
+
+        Assert.AreEqual(chromium, machine.Resolve(channel: null));
+
+        var edge = machine.AddSystemBrowser(BrowserChannel.Edge);
+
+        Assert.AreEqual(edge, machine.Resolve(channel: null), "Edge comes before Chromium.");
+
+        var chrome = machine.AddSystemBrowser(BrowserChannel.Chrome);
+
+        Assert.AreEqual(chrome, machine.Resolve(channel: null), "Chrome comes before Edge.");
+    }
+
+    // The case the default path exists for: a machine with nothing but what motus install put
+    // there, such as a fresh CI image, used to report that no browser could be found at all.
+    [TestMethod]
+    public void Resolve_AutoDetect_FindsTheDownload_WhenTheMachineHasNoBrowser()
+    {
+        using var machine = new FakeMachine();
+        var downloaded = machine.Install(BrowserChannel.Chromium);
+
+        Assert.AreEqual(downloaded, machine.Resolve(channel: null));
+    }
+
+    [TestMethod]
+    public void Resolve_AutoDetect_PrefersTheDownload_OverASystemBrowser()
+    {
+        using var machine = new FakeMachine();
+        machine.AddSystemBrowser(BrowserChannel.Chrome);
+        machine.AddSystemBrowser(BrowserChannel.Edge);
+        machine.AddSystemBrowser(BrowserChannel.Chromium);
+        var downloaded = machine.Install(BrowserChannel.Chromium);
+
+        Assert.AreEqual(downloaded, machine.Resolve(channel: null),
+            "The browser the user chose to install should win over whatever the machine happens to have.");
+    }
+
+    [TestMethod]
+    public void Resolve_AutoDetect_FallsBackToTheSystem_WhenThereIsNoMarker()
+    {
+        using var machine = new FakeMachine();
+        var chrome = machine.AddSystemBrowser(BrowserChannel.Chrome);
+
+        // A download with no marker beside it is not something the installer leaves behind, and
+        // is not guessed at: the marker is what names the executable.
+        Directory.CreateDirectory(Path.Combine(machine.InstallRoot, "chromium-149.0.7827.54", "chrome-linux64"));
+        File.WriteAllText(Path.Combine(machine.InstallRoot, "chromium-149.0.7827.54", "chrome-linux64", "chrome"), "");
+
+        Assert.AreEqual(chrome, machine.Resolve(channel: null));
+    }
+
+    [TestMethod]
+    public void Resolve_AutoDetect_FallsBackToTheSystem_WhenTheMarkerIsStale()
+    {
+        using var machine = new FakeMachine();
+        var chrome = machine.AddSystemBrowser(BrowserChannel.Chrome);
+        var downloaded = machine.Install(BrowserChannel.Chromium);
+
+        // The cache cleaned by hand, leaving the marker naming a folder that is gone.
+        Directory.Delete(Path.GetDirectoryName(Path.GetDirectoryName(downloaded))!, recursive: true);
+
+        Assert.AreEqual(chrome, machine.Resolve(channel: null));
+    }
+
+    [TestMethod]
+    public void Resolve_AutoDetect_Throws_WhenTheMarkerIsStaleAndTheMachineHasNoBrowser()
+    {
+        using var machine = new FakeMachine();
+        var downloaded = machine.Install(BrowserChannel.Chromium);
+        File.Delete(downloaded);
+
+        var ex = Assert.ThrowsException<FileNotFoundException>(() => machine.Resolve(channel: null));
+        StringAssert.Contains(ex.Message, "motus install");
+    }
+
+    [TestMethod]
+    public void Resolve_AutoDetect_IgnoresAnEmptyMarker()
+    {
+        using var machine = new FakeMachine();
+        var chrome = machine.AddSystemBrowser(BrowserChannel.Chrome);
+        Directory.CreateDirectory(machine.InstallRoot);
+        File.WriteAllText(InstalledBrowsers.MarkerPath(machine.InstallRoot, "chromium"), "   \n");
+
+        Assert.AreEqual(chrome, machine.Resolve(channel: null));
+    }
+
+    [TestMethod]
+    public void Resolve_ReadsAMarkerWithATrailingNewline()
+    {
+        using var machine = new FakeMachine();
+        var downloaded = machine.Install(BrowserChannel.Chromium);
+        File.WriteAllText(InstalledBrowsers.MarkerPath(machine.InstallRoot, "chromium"), downloaded + Environment.NewLine);
+
+        Assert.AreEqual(downloaded, machine.Resolve(channel: null));
+    }
+
+    [TestMethod]
+    public void Resolve_ExplicitPath_WinsOverTheDownload()
+    {
+        using var machine = new FakeMachine();
+        machine.Install(BrowserChannel.Chromium);
+        var pinned = machine.AddFile("pinned", "chrome");
+
+        Assert.AreEqual(pinned, machine.Resolve(channel: null, executablePath: pinned));
+        Assert.AreEqual(pinned, machine.Resolve(BrowserChannel.Chromium, executablePath: pinned));
+    }
+
+    [TestMethod]
+    public void Resolve_ChromiumChannel_PrefersTheDownload_OverASystemChromium()
+    {
+        using var machine = new FakeMachine();
+        machine.AddSystemBrowser(BrowserChannel.Chromium);
+        var downloaded = machine.Install(BrowserChannel.Chromium);
+
+        Assert.AreEqual(downloaded, machine.Resolve(BrowserChannel.Chromium));
+    }
+
+    [TestMethod]
+    public void Resolve_ChromiumChannel_FallsBackToTheSystem_WhenTheMarkerIsStale()
+    {
+        using var machine = new FakeMachine();
+        var chromium = machine.AddSystemBrowser(BrowserChannel.Chromium);
+        File.Delete(machine.Install(BrowserChannel.Chromium));
+
+        Assert.AreEqual(chromium, machine.Resolve(BrowserChannel.Chromium));
+    }
+
+    // Chrome and Edge name the branded browsers. The download is a Chromium build, so asking for
+    // Chrome by name must not quietly hand back something else, with or without Chrome present.
+    [TestMethod]
+    [DataRow(BrowserChannel.Chrome)]
+    [DataRow(BrowserChannel.Edge)]
+    public void Resolve_BrandedChannel_IgnoresTheChromiumDownload(BrowserChannel channel)
+    {
+        using var machine = new FakeMachine();
+        machine.Install(BrowserChannel.Chromium);
+
+        Assert.ThrowsException<FileNotFoundException>(() => machine.Resolve(channel));
+
+        var branded = machine.AddSystemBrowser(channel);
+
+        Assert.AreEqual(branded, machine.Resolve(channel));
+    }
+
+    [TestMethod]
+    public void Resolve_FirefoxChannel_PrefersTheFirefoxDownload()
+    {
+        using var machine = new FakeMachine();
+        machine.AddSystemBrowser(BrowserChannel.Firefox);
+        machine.Install(BrowserChannel.Chromium);
+        var downloaded = machine.Install(BrowserChannel.Firefox);
+
+        Assert.AreEqual(downloaded, machine.Resolve(BrowserChannel.Firefox));
+    }
+
+    [TestMethod]
+    public void Resolve_FirefoxChannel_DoesNotTakeTheChromiumDownload()
+    {
+        using var machine = new FakeMachine();
+        machine.Install(BrowserChannel.Chromium);
+
+        Assert.ThrowsException<FileNotFoundException>(() => machine.Resolve(BrowserChannel.Firefox));
+    }
+
+    // Auto-detect has never picked Firefox, which is driven over a different protocol, and a
+    // Firefox download does not change that.
+    [TestMethod]
+    public void Resolve_AutoDetect_DoesNotTakeAFirefoxDownload()
+    {
+        using var machine = new FakeMachine();
+        machine.Install(BrowserChannel.Firefox);
+
+        Assert.ThrowsException<FileNotFoundException>(() => machine.Resolve(channel: null));
+    }
+
+    [TestMethod]
+    public void Resolve_WithoutARoot_ReadsBrowserFinderInstallRoot()
+    {
+        using var machine = new FakeMachine();
+        var downloaded = machine.Install(BrowserChannel.Chromium);
+        var originalRoot = BrowserFinder.InstallRoot;
         try
         {
-            BrowserFinder.InstalledBinariesPath = null;
-            var candidates = BrowserFinder.CandidatesForChannel(BrowserChannel.Chrome);
+            BrowserFinder.InstallRoot = machine.InstallRoot;
 
-            // All candidates should be platform-specific system paths, not prepended
-            Assert.IsTrue(candidates.All(c => !string.IsNullOrWhiteSpace(c)));
+            Assert.AreEqual(downloaded, BrowserFinder.Resolve(BrowserChannel.Chromium, executablePath: null));
         }
         finally
         {
-            BrowserFinder.InstalledBinariesPath = originalPath;
+            BrowserFinder.InstallRoot = originalRoot;
+        }
+    }
+
+    [TestMethod]
+    public void InstallRoot_DefaultsToTheInstallersCache()
+    {
+        var expected = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".motus", "browsers");
+
+        Assert.AreEqual(expected, InstalledBrowsers.DefaultRoot);
+        Assert.AreEqual(Path.Combine(expected, ".installed.chromium"), InstalledBrowsers.MarkerPath(expected, "Chromium"));
+    }
+
+    /// <summary>
+    /// A browser cache and a set of system locations in a temporary folder, so that what is
+    /// installed on the machine running the tests cannot change what they find.
+    /// </summary>
+    private sealed class FakeMachine : IDisposable
+    {
+        private readonly string _dir = Path.Combine(Path.GetTempPath(), $"motus-finder-{Guid.NewGuid():N}");
+
+        public string InstallRoot => Path.Combine(_dir, "browsers");
+
+        /// <summary>
+        /// Lays a download out the way motus install does, a versioned folder holding the
+        /// platform's archive folder, and writes the marker that names its executable.
+        /// </summary>
+        public string Install(BrowserChannel channel)
+        {
+            var name = channel.ToString().ToLowerInvariant();
+            var executable = channel == BrowserChannel.Firefox
+                ? AddFile(Path.Combine("browsers", $"{name}-150.0"), "firefox")
+                : AddFile(Path.Combine("browsers", $"{name}-149.0.7827.54", "chrome-linux64"), "chrome");
+            File.WriteAllText(InstalledBrowsers.MarkerPath(InstallRoot, name), executable);
+            return executable;
+        }
+
+        public string AddSystemBrowser(BrowserChannel channel) =>
+            AddFile(Path.Combine("system", channel.ToString()), "browser");
+
+        public string AddFile(string folder, string name)
+        {
+            var dir = Path.Combine(_dir, folder);
+            Directory.CreateDirectory(dir);
+            var path = Path.Combine(dir, name);
+            File.WriteAllText(path, "");
+            return path;
+        }
+
+        public string Resolve(BrowserChannel? channel, string? executablePath = null) =>
+            BrowserFinder.Resolve(channel, executablePath, InstallRoot, SystemCandidates);
+
+        // Each channel's system location is listed whether or not it exists yet, the way the
+        // real candidate lists name paths that may not be installed.
+        private IReadOnlyList<string> SystemCandidates(BrowserChannel channel) =>
+            [Path.Combine(_dir, "system", channel.ToString(), "browser")];
+
+        public void Dispose()
+        {
+            try
+            {
+                if (Directory.Exists(_dir))
+                    Directory.Delete(_dir, recursive: true);
+            }
+            catch (IOException)
+            {
+            }
         }
     }
 }

@@ -9,15 +9,40 @@ namespace Motus;
 internal static class BrowserFinder
 {
     /// <summary>
-    /// When set, this path is prepended to candidate lists for all channels.
-    /// Used by the install system to register downloaded binaries.
+    /// The browser cache searched for a <c>motus install</c> download. It is the installer's default
+    /// cache, and tests point it at a folder of their own so that what is installed on the machine
+    /// running them cannot change their outcome.
     /// </summary>
-    internal static string? InstalledBinariesPath { get; set; }
+    internal static string InstallRoot { get; set; } = InstalledBrowsers.DefaultRoot;
 
     /// <summary>
     /// Resolves a browser executable path from channel preference or explicit path.
     /// </summary>
-    internal static string Resolve(BrowserChannel? channel, string? executablePath)
+    internal static string Resolve(BrowserChannel? channel, string? executablePath) =>
+        Resolve(channel, executablePath, InstallRoot, CandidatesForChannel);
+
+    /// <summary>
+    /// Resolves a browser executable path, with the download cache and the system locations
+    /// supplied by the caller.
+    /// </summary>
+    /// <remarks>
+    /// An explicit path wins, then a browser <c>motus install</c> downloaded, then one the machine
+    /// has installed. The download comes before the system browser because it is the one the user
+    /// chose to install, usually pinned to a version, and a suite that found a system Chrome first
+    /// would quietly test whatever Chrome the machine happened to have.
+    ///
+    /// A named channel is binding, and only a download recorded for that same channel answers it.
+    /// <c>motus install</c> downloads Chromium and Firefox; Chrome and Edge are branded browsers it
+    /// leaves to their own installers, so those channels still resolve to the installed browser.
+    /// With no channel, the Chromium download is tried before the system Chrome, Edge and Chromium,
+    /// in that order. A Firefox download is never picked without the Firefox channel, just as a
+    /// system Firefox is not.
+    /// </remarks>
+    internal static string Resolve(
+        BrowserChannel? channel,
+        string? executablePath,
+        string installRoot,
+        Func<BrowserChannel, IReadOnlyList<string>> systemCandidates)
     {
         if (executablePath is not null)
         {
@@ -28,41 +53,29 @@ internal static class BrowserFinder
 
         if (channel is not null)
         {
-            return FindFirstExisting(CandidatesForChannel(channel.Value))
+            return InstalledBrowsers.Find(installRoot, channel.Value)
+                   ?? FindFirstExisting(systemCandidates(channel.Value))
                    ?? throw new FileNotFoundException($"No {channel} installation found.");
         }
+
+        if (InstalledBrowsers.Find(installRoot, BrowserChannel.Chromium) is { } downloaded)
+            return downloaded;
 
         // Auto-detect: try Chrome, Edge, Chromium in order
         foreach (var ch in new[] { BrowserChannel.Chrome, BrowserChannel.Edge, BrowserChannel.Chromium })
         {
-            var path = FindFirstExisting(CandidatesForChannel(ch));
+            var path = FindFirstExisting(systemCandidates(ch));
             if (path is not null)
                 return path;
         }
 
-        throw new FileNotFoundException("No supported browser found. Install Chrome, Edge, or Chromium.");
+        throw new FileNotFoundException(
+            "No supported browser found. Install Chrome, Edge, or Chromium, or run 'motus install' to download Chromium.");
     }
 
     internal static IReadOnlyList<string> CandidatesForChannel(BrowserChannel channel)
     {
         var candidates = new List<string>();
-
-        if (InstalledBinariesPath is not null)
-        {
-            var name = channel switch
-            {
-                BrowserChannel.Chrome => "chrome",
-                BrowserChannel.Edge => "msedge",
-                BrowserChannel.Chromium => "chromium",
-                BrowserChannel.Firefox => "firefox",
-                _ => "chrome"
-            };
-
-            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                candidates.Add(Path.Combine(InstalledBinariesPath, $"{name}.exe"));
-            else
-                candidates.Add(Path.Combine(InstalledBinariesPath, name));
-        }
 
         if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
         {

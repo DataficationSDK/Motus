@@ -131,7 +131,7 @@ motus install --revision 1421000
 motus run bin/Release/net8.0/MyTests.dll
 ```
 
-`motus install` reports the path it installed to. Supply that path as `launch.executablePath`, or as `MOTUS_EXECUTABLE_PATH` in the environment, which is usually easier in CI because the install step can export it directly. When a revision is given the download URL is constructed for that revision rather than resolved through the stable listing, so the same revision is fetched every time.
+A launch with no `channel` and no `executablePath`, or with `channel` set to `Chromium`, uses the browser `motus install` downloaded last, ahead of any Chrome, Edge or Chromium installed on the machine. `Chrome` and `Edge` still mean the branded browsers. `motus install` also reports the path it installed to. Supplying that path as `launch.executablePath`, or as `MOTUS_EXECUTABLE_PATH` in the environment, makes the choice explicit, and is needed when the install used `--path` or a suite wants a download other than the one installed last. When a revision is given the download URL is constructed for that revision rather than resolved through the stable listing, so the same revision is fetched every time.
 
 On Windows, a browser unzipped into a user directory is granted the file-system permissions its sandbox needs as part of installing or repairing an install. A failure to do so is reported but does not abort the install, since the browser may still run in configurations that do not need those permissions.
 
