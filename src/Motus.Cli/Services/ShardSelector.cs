@@ -11,7 +11,8 @@ public static class ShardSelector
     /// <summary>
     /// Returns the subset of <paramref name="tests"/> belonging to shard <paramref name="index"/>
     /// of <paramref name="total"/>. The full set is first sorted by a stable key
-    /// (assembly path + fully qualified name, ordinal) so the order is identical across machines
+    /// (assembly path + test id, ordinal; the id rather than the name, since a data source can name
+    /// its rows differently in each process) so the order is identical across machines
     /// regardless of reflection enumeration order, then assigned round-robin by
     /// <c>position % total == index - 1</c>. Round-robin over a stable sort spreads slow classes
     /// across shards without needing timing data.
@@ -76,5 +77,5 @@ public static class ShardSelector
     }
 
     private static string SortKey(DiscoveredTest test) =>
-        $"{test.TestClass.Assembly.Location}::{test.FullName}";
+        $"{test.AssemblyPath}::{test.TestId}";
 }

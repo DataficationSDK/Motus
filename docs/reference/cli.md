@@ -63,14 +63,23 @@ motus run bin/Release/net8.0/MyTests.dll --shard 1/4 --retries 2
 
 The output path for a reporter is part of its value, so it is `--reporter junit:results.xml` rather than a separate flag. Passing `--reporter junit` with no path writes nowhere.
 
-**How tests run.** `motus run` and the visual runner load the test assembly and call its tests by reflection, without going through the MSTest, NUnit or xUnit test adapter. They cover the parts of each framework that suites lean on:
+**Where tests run.** Each test assembly runs in a test host process of its own, the way `dotnet test` runs it. The process is started with the assembly's own `.deps.json` and `.runtimeconfig.json`, so the tests get the versions of their dependencies that they were built with (an app that uses SkiaSharp 3 gets SkiaSharp 3, whatever `motus` itself uses), and the ASP.NET Core and other frameworks they reference. Both `AppContext.BaseDirectory` and the current directory are the assembly's output folder, which is what `WebApplicationFactory` and anything else that reads files beside the tests expects:
+
+- A relative path a test uses, including a relative `failure.tracePath` or `failure.screenshotPath`, resolves against the output folder, as it does under `dotnet test`.
+- `motus.config.json` is still looked up from the directory `motus run` was started in, so the runner and its test hosts read the same settings.
+- The tests run on the Motus version their project references. When that differs from the version of `motus`, `motus run` prints a warning; keep the two on the same version. With an older Motus, anything that version cannot provide, such as accessibility reports, performance metrics or coverage, is left out with a warning, and the tests still run and report their results.
+- A suite built for an older .NET than `motus` runs on the newest .NET installed.
+- A test that ends its process, or crashes it, takes only its test host down: that test fails with the host's exit code, each test of that assembly still to run fails saying it did not run, and other assemblies carry on. Whatever the process wrote before it ended, such as a stack overflow report, is on the console.
+- Starting a test host adds a fraction of a second per assembly. The visual runner starts a new one for each run, so a rebuilt assembly is picked up by the next run without restarting the runner. It finds each test again by its class, method and, for a data row, its place in its data source, so a row whose name changes on every read (one that carries a Guid or a time) still runs; a row its data source no longer returns fails saying so.
+
+**How tests run.** Inside the test host, the runners call the tests by reflection, without going through the MSTest, NUnit or xUnit test adapter. They cover the parts of each framework that suites lean on:
 
 - MSTest tests get a `TestContext`, through their `TestContext` property or a constructor that takes one, and `[AssemblyInitialize]`, `[ClassInitialize]` and the matching cleanup methods receive one when they take it. It carries `TestName`, `FullyQualifiedTestClassName` and a `CancellationTokenSource`, and `CurrentTestOutcome` is the test's own outcome by the time `[TestCleanup]` runs. `WriteLine` goes to the console. Files passed to `AddResultFile` are left where they are rather than attached to a result.
 - `[DataRow]`, `[DynamicData]` and any other MSTest data source run as one test per row, named the way MSTest names them, such as `SignInTests.SignsIn (owner)`. `--filter` matches that name, so it can select a single row.
 - Setup methods (`[TestInitialize]`, NUnit `[SetUp]`) run base class first. Cleanup methods (`[TestCleanup]`, NUnit `[TearDown]`) run derived class first and base class last, and each one runs even when an earlier one throws.
 - Attributes derived from `[TestClass]` or `[TestMethod]`, such as `[DataTestMethod]`, `[MotusTestClass]` and `[MotusTestMethod]`, mark tests as the attributes they derive from do. NUnit `[TestCase]` and xUnit `[Theory]` tests are not run.
 
-**Exit code.** `0` when everything passed. `1` when any test failed, when a coverage threshold was missed, or when `--fail-on-flaky` was given and any test was flaky.
+**Exit code.** `0` when everything passed. `1` when any test failed, when a test assembly could not be loaded or its test host could not start, when a coverage threshold was missed, or when `--fail-on-flaky` was given and any test was flaky. The tests of the other assemblies still run.
 
 See [Sharding](../guides/sharding.md), [Flaky Tests and Quarantine](../guides/flaky-tests-and-quarantine.md), and [Configuration](../guides/configuration.md) for the settings behind these.
 

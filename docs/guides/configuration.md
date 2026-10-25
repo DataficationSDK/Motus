@@ -16,6 +16,8 @@ Each layer is additive. A value set in a higher-precedence layer is never overwr
 
 When Motus initializes, it walks up from `Environment.CurrentDirectory`, checking each directory for a `motus.config.json` file. The first file found is used. If no file is found anywhere in the directory tree, Motus proceeds with defaults. Discovery is performed once at startup and the result is cached for the lifetime of the process.
 
+Under `motus run`, the tests run in a test host process whose current directory is the test assembly's output folder. The test host looks for `motus.config.json` from the directory `motus run` was started in, as the runner does, so both read the same file. Relative paths in the file are resolved later, when they are used, against the output folder. See [`motus run`](../reference/cli.md#motus-run).
+
 ### Complete Schema
 
 ```json

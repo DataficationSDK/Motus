@@ -191,8 +191,10 @@ public static class RunCommand
                 }
             }
 
-            var discovery = new TestDiscovery();
-            var tests = discovery.Discover(assemblies, filter);
+            // Each assembly gets a test host process of its own, which discovery starts and which
+            // runs its tests; disposing the discovery shuts them down.
+            await using var discovery = new TestDiscovery();
+            var tests = await discovery.DiscoverAsync(assemblies, filter, ct);
 
             if (quarantinePath is not null)
             {
@@ -226,8 +228,17 @@ public static class RunCommand
                 tests, reporter, a11yMode, perfBudget, coverageReporters, retries, retryPolicy,
                 shardIndex, shardTotal);
 
+            // An assembly named on the command line whose tests could not even be listed fails the run,
+            // so that a test host that cannot start never looks like a green run.
+            if (discovery.FailedAssemblies.Count > 0)
+            {
+                Console.Error.WriteLine(
+                    $"Error: {discovery.FailedAssemblies.Count} test assembly(ies) could not be loaded: {string.Join(", ", discovery.FailedAssemblies)}");
+            }
+
             return (runResult.Failed > 0
                 || runResult.CoverageThresholdsFailed
+                || discovery.FailedAssemblies.Count > 0
                 || (failOnFlaky && runResult.Flaky > 0)) ? 1 : 0;
         });
 
@@ -256,7 +267,7 @@ public static class RunCommand
     /// </summary>
     internal static bool IsListed(DiscoveredTest test, IReadOnlySet<string> quarantineList)
         => quarantineList.Contains(test.FullName)
-           || quarantineList.Contains($"{test.TestClass.FullName}.{test.TestMethod.Name}");
+           || quarantineList.Contains($"{test.ClassName}.{test.MethodName}");
 
     private static HashSet<string> LoadQuarantineList(string path)
     {

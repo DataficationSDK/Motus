@@ -26,4 +26,20 @@
     <ProjectReference Include="..\..\src\Motus.Testing.MSTest\Motus.Testing.MSTest.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Suites that motus run runs from their own output folders rather than referenced: one that
+         hosts an ASP.NET Core app, and one on the oldest published Motus. Their paths reach the
+         tests as metadata. -->
+    <ProjectReference Include="..\Fixtures\Motus.Fixtures.WebApp.Tests\Motus.Fixtures.WebApp.Tests.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\Fixtures\Motus.Fixtures.OldMotus.Tests\Motus.Fixtures.OldMotus.Tests.csproj" ReferenceOutputAssembly="false" />
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>OldMotusFixtureOutput</_Parameter1>
+      <_Parameter2>$(MSBuildThisFileDirectory)..\Fixtures\Motus.Fixtures.OldMotus.Tests\bin\$(Configuration)\</_Parameter2>
+    </AssemblyAttribute>
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>WebAppFixtureOutput</_Parameter1>
+      <_Parameter2>$(MSBuildThisFileDirectory)..\Fixtures\Motus.Fixtures.WebApp.Tests\bin\$(Configuration)\</_Parameter2>
+    </AssemblyAttribute>
+  </ItemGroup>
+
 </Project>

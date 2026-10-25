@@ -27,8 +27,8 @@ public enum RetryPolicy
 
 public sealed class TestRunner(int maxWorkers)
 {
-    private readonly ConcurrentDictionary<Assembly, bool> _initializedAssemblies = new();
-    private readonly ConcurrentDictionary<Type, bool> _initializedClasses = new();
+    // Tests built from reflection metadata rather than discovered run in this process, one host per assembly.
+    private readonly ConcurrentDictionary<Assembly, InProcessTestHost> _inProcessHosts = new();
 
     public Task<TestRunResult> RunAsync(List<DiscoveredTest> tests, IReporter reporter) =>
         RunAsync(tests, reporter, a11yMode: null, enforcePerfBudget: false, coverageReporters: null);
@@ -52,8 +52,8 @@ public sealed class TestRunner(int maxWorkers)
     {
         if (maxRetries < 0)
             maxRetries = 0;
-        var suiteName = tests.Count > 0
-            ? tests[0].TestClass.Assembly.GetName().Name ?? "Motus Tests"
+        var suiteName = tests.Count > 0 && !string.IsNullOrEmpty(tests[0].AssemblyName)
+            ? tests[0].AssemblyName
             : "Motus Tests";
 
         await reporter.OnTestRunStartAsync(
@@ -61,23 +61,18 @@ public sealed class TestRunner(int maxWorkers)
 
         var sw = Stopwatch.StartNew();
 
-        // Run [AssemblyInitialize] for each assembly represented in this batch
-        var failedAssemblies = new HashSet<Assembly>();
-        var assemblies = tests.Select(t => t.TestClass.Assembly).Distinct().ToList();
-        foreach (var assembly in assemblies)
+        // Run [AssemblyInitialize] for each assembly represented in this batch, in the test host
+        // process that assembly runs in
+        var failedHosts = new HashSet<ITestAssemblyHost>();
+        var hosts = tests.Select(HostFor).Distinct().ToList();
+        foreach (var host in hosts)
         {
-            if (_initializedAssemblies.TryAdd(assembly, true))
+            var failure = await host.InitializeAsync();
+            if (failure is not null)
             {
-                try
-                {
-                    await RunAssemblyInitializeAsync(assembly);
-                }
-                catch (Exception ex)
-                {
-                    failedAssemblies.Add(assembly);
-                    var msg = ex.InnerException?.Message ?? ex.Message;
-                    Console.Error.WriteLine($"AssemblyInitialize failed for {assembly.GetName().Name}: {msg}");
-                }
+                failedHosts.Add(host);
+                var assemblyName = tests.First(t => HostFor(t) == host).AssemblyName;
+                Console.Error.WriteLine($"AssemblyInitialize failed for {assemblyName}: {failure.Message}");
             }
         }
 
@@ -85,6 +80,22 @@ public sealed class TestRunner(int maxWorkers)
         var results = new List<CliTestResult>();
         var collectedCoverage = new List<CoverageData>();
         var lockObj = new object();
+
+        // Tests finish on whichever worker gets there, and the reporters keep plain lists, so their
+        // per-test callbacks are made one at a time.
+        var reporterGate = new SemaphoreSlim(1, 1);
+        async Task ReportAsync(Func<Task> callback)
+        {
+            await reporterGate.WaitAsync();
+            try
+            {
+                await callback();
+            }
+            finally
+            {
+                reporterGate.Release();
+            }
+        }
 
         var tasks = tests.Select(async test =>
         {
@@ -96,16 +107,14 @@ public sealed class TestRunner(int maxWorkers)
             try
             {
                 var testInfo = new TestInfo(test.FullName, suiteName);
-                await reporter.OnTestStartAsync(testInfo);
+                await ReportAsync(() => reporter.OnTestStartAsync(testInfo));
 
                 CliTestResult result;
                 var attempts = 1;
+                TestCaseReport? report = null;
 
-                if (failedAssemblies.Contains(test.TestClass.Assembly))
+                if (failedHosts.Contains(HostFor(test)))
                 {
-                    AccessibilityViolationSink.Begin();
-                    PerformanceMetricsSink.Begin();
-                    CoverageSink.Begin();
                     result = new CliTestResult(test.FullName, false, TimeSpan.Zero,
                         "AssemblyInitialize failed", null);
                 }
@@ -113,27 +122,18 @@ public sealed class TestRunner(int maxWorkers)
                 {
                     var totalAttempts = maxRetries + 1;
                     var attempt = 0;
-                    Exception? failure;
                     while (true)
                     {
                         attempt++;
 
-                        AccessibilityViolationSink.Begin();
-                        PerformanceMetricsSink.Begin();
-                        CoverageSink.Begin();
-
                         // Each call rebuilds the test instance (and its browser context),
-                        // so every retry runs against clean state.
-                        (result, failure) = await ExecuteTestAsync(test);
+                        // so every retry runs against clean state. What the failed attempts
+                        // collected is discarded: only the last attempt's report is kept.
+                        report = await ExecuteTestAsync(test);
+                        result = new CliTestResult(test.FullName, report.Passed, report.Duration, report.ErrorMessage, report.StackTrace);
 
-                        if (result.Passed || attempt >= totalAttempts || !ShouldRetry(failure, retryPolicy))
+                        if (result.Passed || attempt >= totalAttempts || !ShouldRetry(report, retryPolicy))
                             break;
-
-                        // Discard sink data captured during the failed attempt; a clean
-                        // Begin() runs at the top of the next iteration.
-                        AccessibilityViolationSink.End();
-                        PerformanceMetricsSink.End();
-                        CoverageSink.End();
 
                         WriteRetryNotice(test.FullName, attempt + 1, totalAttempts, retryPolicy);
                     }
@@ -141,9 +141,9 @@ public sealed class TestRunner(int maxWorkers)
                     attempts = attempt;
                 }
 
-                var violations = AccessibilityViolationSink.End();
-                var perfMetrics = PerformanceMetricsSink.End();
-                var coverage = CoverageSink.End();
+                var violations = TestCaseReportExtras.Violations(report);
+                var perfMetrics = TestCaseReportExtras.PerformanceMetrics(report);
+                var coverage = TestCaseReportExtras.Coverage(report);
 
                 if (coverage is not null)
                 {
@@ -152,30 +152,36 @@ public sealed class TestRunner(int maxWorkers)
                         collectedCoverage.Add(coverage);
                     }
 
-                    if (coverageReporters is not null)
+                    await ReportAsync(async () =>
                     {
-                        foreach (var cr in coverageReporters)
+                        if (coverageReporters is not null)
                         {
-                            try { await cr.OnCoverageCollectedAsync(coverage, testInfo); }
+                            foreach (var cr in coverageReporters)
+                            {
+                                try { await cr.OnCoverageCollectedAsync(coverage, testInfo); }
+                                catch { }
+                            }
+                        }
+
+                        if (reporter is ICoverageReporter testReporterCoverage)
+                        {
+                            try { await testReporterCoverage.OnCoverageCollectedAsync(coverage, testInfo); }
                             catch { }
                         }
-                    }
-
-                    if (reporter is ICoverageReporter testReporterCoverage)
-                    {
-                        try { await testReporterCoverage.OnCoverageCollectedAsync(coverage, testInfo); }
-                        catch { }
-                    }
+                    });
                 }
 
                 // Dispatch violations to IAccessibilityReporter reporters
                 if (violations.Count > 0 && reporter is IAccessibilityReporter a11yReporter)
                 {
-                    foreach (var violation in violations)
+                    await ReportAsync(async () =>
                     {
-                        try { await a11yReporter.OnAccessibilityViolationAsync(violation, testInfo); }
-                        catch { }
-                    }
+                        foreach (var violation in violations)
+                        {
+                            try { await a11yReporter.OnAccessibilityViolationAsync(violation, testInfo); }
+                            catch { }
+                        }
+                    });
                 }
 
                 // Dispatch performance metrics to IPerformanceReporter reporters
@@ -186,8 +192,11 @@ public sealed class TestRunner(int maxWorkers)
 
                     if (reporter is IPerformanceReporter perfReporter)
                     {
-                        try { await perfReporter.OnPerformanceMetricsCollectedAsync(perfMetrics, budgetResult, testInfo); }
-                        catch { }
+                        await ReportAsync(async () =>
+                        {
+                            try { await perfReporter.OnPerformanceMetricsCollectedAsync(perfMetrics, budgetResult, testInfo); }
+                            catch { }
+                        });
                     }
 
                     // In enforce mode, override a passing test to failed when budget is exceeded
@@ -234,7 +243,7 @@ public sealed class TestRunner(int maxWorkers)
                     result.FullName, result.Passed, result.Duration.TotalMilliseconds,
                     result.ErrorMessage, result.StackTrace,
                     Flaky: result.Flaky, Quarantined: result.Quarantined, Attempts: result.Attempts);
-                await reporter.OnTestEndAsync(testInfo, absResult);
+                await ReportAsync(() => reporter.OnTestEndAsync(testInfo, absResult));
             }
             finally
             {
@@ -296,32 +305,9 @@ public sealed class TestRunner(int maxWorkers)
             }
         }
 
-        // Run [ClassCleanup] for all initialized classes
-        foreach (var type in _initializedClasses.Keys)
-        {
-            try
-            {
-                await RunStaticLifecycleMethodAsync(type, "ClassCleanupAttribute");
-                await RunStaticLifecycleMethodAsync(type, "OneTimeTearDownAttribute");
-            }
-            catch (Exception ex)
-            {
-                Console.Error.WriteLine($"ClassCleanup failed for {type.FullName}: {ex.InnerException?.Message ?? ex.Message}");
-            }
-        }
-
-        // Run [AssemblyCleanup] for each initialized assembly
-        foreach (var assembly in assemblies)
-        {
-            try
-            {
-                await RunAssemblyCleanupAsync(assembly);
-            }
-            catch (Exception ex)
-            {
-                Console.Error.WriteLine($"AssemblyCleanup failed for {assembly.GetName().Name}: {ex.InnerException?.Message ?? ex.Message}");
-            }
-        }
+        // Run [ClassCleanup] for each class that ran a test, then [AssemblyCleanup], assembly by assembly
+        foreach (var host in hosts)
+            await host.CleanupAsync();
 
         var skipped = tests.Count(t => t.IsIgnored);
         // Quarantined results occupy their own bucket and are excluded from passed/failed
@@ -370,94 +356,26 @@ public sealed class TestRunner(int maxWorkers)
     /// <see cref="RetryPolicy.Flake"/> retries any failure; <see cref="RetryPolicy.Transient"/>
     /// retries only transient CDP disconnects.
     /// </summary>
-    private static bool ShouldRetry(Exception? failure, RetryPolicy policy)
+    private static bool ShouldRetry(TestCaseReport report, RetryPolicy policy)
     {
-        if (failure is null)
+        if (report.Passed)
             return false;
-        return policy == RetryPolicy.Flake || IsTransientCdpFailure(failure);
+        return policy == RetryPolicy.Flake || report.TransientFailure;
     }
 
     /// <summary>
-    /// Returns true when the exception chain contains a transient CDP failure that
-    /// is safe to recover from by re-running the entire test (which rebuilds a fresh
-    /// browser context and WebSocket). Used to drive --retries.
+    /// The host that runs <paramref name="test"/>: the test host process that discovered it, or for a
+    /// test built from reflection metadata, one in this process for its assembly.
     /// </summary>
-    private static bool IsTransientCdpFailure(Exception? ex)
+    private ITestAssemblyHost HostFor(DiscoveredTest test)
+        => test.Host ?? _inProcessHosts.GetOrAdd(test.TestClass!.Assembly, assembly => new InProcessTestHost(assembly, log: Console.Error.WriteLine));
+
+    private Task<TestCaseReport> ExecuteTestAsync(DiscoveredTest test)
     {
-        if (Abstractions.BrowserFailure.IsBrowserLost(ex))
-            return true;
+        if (test.Host is { } host)
+            return host.RunAsync(test.TestId, test.FullName);
 
-        // The transport's own disconnect reaches the runner unwrapped when it escapes from outside
-        // a command, where nothing has turned it into the public failure yet.
-        for (var current = ex; current is not null; current = current.InnerException)
-        {
-            if (current is CdpDisconnectedException)
-                return true;
-        }
-
-        return false;
-    }
-
-    private async Task<(CliTestResult Result, Exception? Failure)> ExecuteTestAsync(DiscoveredTest test)
-    {
-        var run = await TestCaseInvoker.RunAsync(
-            test.TestClass,
-            test.TestMethod,
-            test.Arguments,
-            DisplayNameOf(test),
-            beforeInstance: async () =>
-            {
-                // Run [ClassInitialize] once per type (static, takes TestContext)
-                if (_initializedClasses.TryAdd(test.TestClass, true))
-                {
-                    await RunStaticLifecycleMethodAsync(test.TestClass, "ClassInitializeAttribute");
-                    await RunStaticLifecycleMethodAsync(test.TestClass, "OneTimeSetUpAttribute");
-                }
-            },
-            onCleanupFailure: ex => Console.Error.WriteLine($"TestCleanup failed for {test.FullName}: {ex.Message}"));
-
-        return run.Failure is null
-            ? (new CliTestResult(test.FullName, true, run.Duration, null, null), null)
-            : (new CliTestResult(test.FullName, false, run.Duration, run.Failure.Message, run.Failure.StackTrace), run.Failure);
-    }
-
-    /// <summary>The test case's name without its class, such as <c>SignsIn ("owner")</c>.</summary>
-    private static string DisplayNameOf(DiscoveredTest test)
-    {
-        var prefix = test.TestClass.FullName + ".";
-        return test.FullName.StartsWith(prefix, StringComparison.Ordinal) ? test.FullName[prefix.Length..] : test.TestMethod.Name;
-    }
-
-    private static async Task RunAssemblyCleanupAsync(Assembly assembly)
-    {
-        foreach (var type in assembly.GetExportedTypes())
-        {
-            var methods = type.GetMethods(BindingFlags.Public | BindingFlags.Static)
-                .Where(m => m.GetCustomAttributes(true).Any(a => a.GetType().Name == "AssemblyCleanupAttribute"));
-
-            foreach (var method in methods)
-                await TestCaseInvoker.InvokeStaticAsync(method, type);
-        }
-    }
-
-    private static async Task RunAssemblyInitializeAsync(Assembly assembly)
-    {
-        foreach (var type in assembly.GetExportedTypes())
-        {
-            var methods = type.GetMethods(BindingFlags.Public | BindingFlags.Static)
-                .Where(m => m.GetCustomAttributes(true).Any(a => a.GetType().Name == "AssemblyInitializeAttribute"));
-
-            foreach (var method in methods)
-                await TestCaseInvoker.InvokeStaticAsync(method, type);
-        }
-    }
-
-    private static async Task RunStaticLifecycleMethodAsync(Type type, string attributeName)
-    {
-        var methods = type.GetMethods(BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy)
-            .Where(m => m.GetCustomAttributes(true).Any(a => a.GetType().Name == attributeName));
-
-        foreach (var method in methods)
-            await TestCaseInvoker.InvokeStaticAsync(method, type);
+        var testCase = new DiscoveredTestCase(test.TestClass!, test.TestMethod!, test.FullName, test.Arguments, test.IsIgnored, null, test.Quarantined, test.TestId);
+        return ((InProcessTestHost)HostFor(test)).RunAsync(testCase);
     }
 }

@@ -1,123 +1,56 @@
-using System.Reflection;
 using Motus.Runner.Services.Execution;
 using Motus.Runner.Services.Models;
 
 namespace Motus.Runner.Services;
 
+/// <summary>
+/// Finds the tests in test assemblies for the visual runner. Each assembly is loaded by a test host
+/// process of its own, started from the assembly's output folder with its own dependencies, which
+/// exits once it has listed the tests. Runs start a fresh one (see <see cref="TestExecutionService"/>),
+/// so a rebuilt assembly is picked up by the next run.
+/// </summary>
 public sealed class TestDiscovery(ILogger<TestDiscovery> logger)
 {
-    private static readonly HashSet<string> ClassAttributes = new(StringComparer.Ordinal)
-    {
-        "TestClassAttribute",
-        "TestFixtureAttribute",
-    };
-
-    private static readonly HashSet<string> MethodAttributes = new(StringComparer.Ordinal)
-    {
-        "TestMethodAttribute",
-        "TestAttribute",
-        "FactAttribute",
-    };
-
-    // xUnit's [Theory] derives from [Fact] but needs data the runners don't supply.
-    private static readonly HashSet<string> ExcludedMethodAttributes = new(StringComparer.Ordinal)
-    {
-        "TheoryAttribute",
-    };
-
-    private static readonly HashSet<string> IgnoreAttributes = new(StringComparer.Ordinal)
-    {
-        "IgnoreAttribute",  // MSTest + NUnit
-    };
-
-    public List<DiscoveredTest> Discover(string[] assemblyPaths, string? filter)
+    /// <summary>
+    /// The tests in <paramref name="assemblyPaths"/> whose full name contains <paramref name="filter"/>,
+    /// ignoring case. An assembly that cannot be loaded is logged and skipped.
+    /// </summary>
+    public async Task<List<DiscoveredTest>> DiscoverAsync(string[] assemblyPaths, string? filter, CancellationToken cancellationToken = default)
     {
         var tests = new List<DiscoveredTest>();
 
         foreach (var path in assemblyPaths)
         {
             var fullPath = Path.GetFullPath(path);
-            Assembly assembly;
             try
             {
-                assembly = Assembly.LoadFrom(fullPath);
+                await using var host = await TestHostClient.StartAsync(
+                    fullPath,
+                    new TestHostOptions { OnLog = message => logger.LogWarning("{Message}", message) },
+                    cancellationToken);
+                var discovery = await host.DiscoverAsync(filter, cancellationToken);
+
+                foreach (var test in discovery.Tests)
+                {
+                    tests.Add(new DiscoveredTest(
+                        TestClass: null,
+                        TestMethod: null,
+                        test.FullName,
+                        discovery.AssemblyName,
+                        test.IsIgnored,
+                        test.IgnoreReason,
+                        CodeBase: fullPath,
+                        ClassFullName: test.ClassName,
+                        MethodName: test.MethodName,
+                        TestId: test.Id));
+                }
             }
-            catch (Exception ex)
+            catch (TestHostException ex)
             {
                 logger.LogError("Failed to load assembly {Path}: {Message}", fullPath, ex.Message);
-                continue;
-            }
-
-            var assemblyName = assembly.GetName().Name ?? Path.GetFileNameWithoutExtension(fullPath);
-
-            foreach (var type in assembly.GetExportedTypes())
-            {
-                if (!IsTestClass(type))
-                    continue;
-
-                var (classIgnored, classReason) = GetIgnoreInfo(type.GetCustomAttributes(true));
-
-                foreach (var method in type.GetMethods(BindingFlags.Public | BindingFlags.Instance))
-                {
-                    if (!IsTestMethod(method))
-                        continue;
-
-                    var (methodIgnored, methodReason) = GetIgnoreInfo(method.GetCustomAttributes(true));
-
-                    foreach (var testCase in TestCaseExpander.Expand(type, method, message => logger.LogWarning("{Message}", message)))
-                    {
-                        if (filter is not null && !testCase.FullName.Contains(filter, StringComparison.OrdinalIgnoreCase))
-                            continue;
-
-                        var isIgnored = classIgnored || methodIgnored || testCase.IgnoreReason is not null;
-                        var reason = classIgnored ? classReason : methodIgnored ? methodReason : testCase.IgnoreReason;
-                        tests.Add(new DiscoveredTest(type, method, testCase.FullName, assemblyName, isIgnored, reason,
-                            Arguments: testCase.Arguments));
-                    }
-                }
             }
         }
 
         return tests;
-    }
-
-    private static bool IsTestClass(Type type)
-    {
-        if (type.IsAbstract || !type.IsClass)
-            return false;
-
-        return type.GetCustomAttributes(true)
-            .Any(a => TestCaseExpander.IsOrDerivesFrom(a, ClassAttributes));
-    }
-
-    private static bool IsTestMethod(MethodInfo method)
-    {
-        return method.GetCustomAttributes(true)
-            .Any(a => TestCaseExpander.IsOrDerivesFrom(a, MethodAttributes)
-                      && !TestCaseExpander.IsOrDerivesFrom(a, ExcludedMethodAttributes));
-    }
-
-    private static (bool IsIgnored, string? Reason) GetIgnoreInfo(object[] attrs)
-    {
-        // MSTest [Ignore] / [Ignore("reason")] / NUnit [Ignore("reason")]
-        var ignoreAttr = attrs.FirstOrDefault(a => IgnoreAttributes.Contains(a.GetType().Name));
-        if (ignoreAttr is not null)
-        {
-            // MSTest uses IgnoreMessage; NUnit uses Reason
-            var msg = ignoreAttr.GetType().GetProperty("IgnoreMessage")?.GetValue(ignoreAttr) as string
-                   ?? ignoreAttr.GetType().GetProperty("Reason")?.GetValue(ignoreAttr) as string;
-            return (true, msg);
-        }
-
-        // xUnit [Fact(Skip = "reason")]
-        var factAttr = attrs.FirstOrDefault(a => a.GetType().Name == "FactAttribute");
-        if (factAttr is not null)
-        {
-            var skip = factAttr.GetType().GetProperty("Skip")?.GetValue(factAttr) as string;
-            if (skip is not null)
-                return (true, skip);
-        }
-
-        return (false, null);
     }
 }

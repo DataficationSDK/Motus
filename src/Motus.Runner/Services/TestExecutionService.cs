@@ -1,25 +1,27 @@
-using System.Collections.Concurrent;
 using System.Diagnostics;
-using System.Reflection;
-using Motus;
 using Motus.Abstractions;
 using Motus.Runner.Services.Coverage;
 using Motus.Runner.Services.Execution;
 using Motus.Runner.Services.Models;
+using Motus.Runner.Services.Timeline;
 
 namespace Motus.Runner.Services;
 
-public sealed class TestExecutionService(ILogger<TestExecutionService> logger, ICoverageService? coverageService = null)
+/// <summary>
+/// Runs tests for the visual runner. Each run starts a test host process for each test assembly
+/// it covers, which streams the browser and the timeline back here, and ends it when the run is
+/// over. Tests built from reflection metadata rather than discovered run in this process.
+/// </summary>
+public sealed class TestExecutionService(
+    ILogger<TestExecutionService> logger,
+    ICoverageService? coverageService = null,
+    IScreencastService? screencast = null,
+    ITimelineService? timeline = null,
+    IStepDebugService? stepDebug = null)
 {
     // Browser automation tests must run sequentially to avoid contention
     // on the shared browser process and screenshot capture pipeline
     private const int MaxWorkers = 1;
-
-    // Track which assemblies have had [AssemblyInitialize] run
-    private readonly ConcurrentDictionary<Assembly, bool> _initializedAssemblies = new();
-
-    // Track which classes have had [ClassInitialize] / [OneTimeSetUp] run in this batch
-    private readonly ConcurrentDictionary<Type, bool> _initializedClasses = new();
 
     public async Task ExecuteAsync(
         List<DiscoveredTest> tests,
@@ -29,46 +31,122 @@ public sealed class TestExecutionService(ILogger<TestExecutionService> logger, I
     {
         foreach (var test in tests)
         {
-            if (test.TestClass is null || test.TestMethod is null)
+            if ((test.TestClass is null || test.TestMethod is null) && string.IsNullOrEmpty(test.CodeBase))
                 throw new InvalidOperationException(
                     $"Test '{test.FullName}' cannot be executed: missing reflection metadata (TRX-loaded tests are read-only).");
         }
 
-        var suiteName = tests.Count > 0
-            ? tests[0].TestClass!.Assembly.GetName().Name ?? "Motus Tests"
-            : "Motus Tests";
+        var suiteName = tests.Count > 0 ? tests[0].AssemblyName : "Motus Tests";
 
         if (reporters is not null)
             await reporters.FireOnTestRunStartAsync(new TestSuiteInfo(suiteName, tests.Count));
 
-        // Run [AssemblyInitialize] for each assembly represented in this batch
-        var assemblies = tests.Select(t => t.TestClass!.Assembly).Distinct().ToList();
-        foreach (var assembly in assemblies)
+        var hosts = new Dictionary<string, ITestAssemblyHost>(StringComparer.Ordinal);
+        var runnable = new List<DiscoveredTest>();
+        var notRun = 0;
+        try
         {
-            if (_initializedAssemblies.TryAdd(assembly, true))
+            // Start a test host for each assembly in this batch and run its [AssemblyInitialize]. An
+            // assembly that can't start or initialize fails its own tests; the others still run.
+            foreach (var group in tests.GroupBy(AssemblyKeyOf))
             {
+                var first = group.First();
+                ITestAssemblyHost host;
                 try
                 {
-                    await RunAssemblyInitializeAsync(assembly);
+                    host = await CreateHostAsync(first, group, ct);
                 }
-                catch (Exception ex)
+                catch (TestHostException ex)
                 {
-                    logger.LogError(ex, "AssemblyInitialize failed for {Assembly}", assembly.GetName().Name);
-                    // Fail all tests in this assembly
-                    foreach (var test in tests.Where(t => t.TestClass!.Assembly == assembly))
-                    {
-                        onStateChanged(new TestNodeState(test.FullName, TestStatus.Failed, null,
-                            $"AssemblyInitialize failed: {ex.InnerException?.Message ?? ex.Message}",
-                            ex.InnerException?.StackTrace ?? ex.StackTrace));
-                    }
+                    logger.LogError("Could not run the tests in {Assembly}: {Message}", first.AssemblyName, ex.Message);
+                    notRun += await FailAllAsync(group, $"Could not run the tests in {first.AssemblyName}: {ex.Message}", null,
+                        suiteName, onStateChanged, reporters);
+                    continue;
+                }
+                catch (OperationCanceledException)
+                {
+                    // Stopped while a test host was starting.
+                    foreach (var test in tests)
+                        onStateChanged(new TestNodeState(test.FullName, TestStatus.Skipped, null, "Cancelled", null));
                     return;
                 }
+
+                hosts[group.Key] = host;
+
+                var failure = await host.InitializeAsync(ct);
+                if (failure is not null)
+                {
+                    logger.LogError("AssemblyInitialize failed for {Assembly}: {Message}", first.AssemblyName, failure.Message);
+                    notRun += await FailAllAsync(group, $"AssemblyInitialize failed: {failure.Message}", failure.StackTrace,
+                        suiteName, onStateChanged, reporters);
+                    hosts.Remove(group.Key);
+                    await host.DisposeAsync();
+                    continue;
+                }
+
+                runnable.AddRange(group);
             }
+
+            await RunTestsAsync(runnable, hosts, suiteName, onStateChanged, ct, reporters, notRun);
+
+            // Run [ClassCleanup] / [OneTimeTearDown] for each class that ran a test, then
+            // [AssemblyCleanup] to close browsers
+            foreach (var host in hosts.Values)
+                await host.CleanupAsync();
+        }
+        finally
+        {
+            foreach (var host in hosts.Values)
+                await host.DisposeAsync();
+
+            (screencast as ScreencastService)?.EndRemoteFrames();
+        }
+    }
+
+    /// <summary>Fails each of <paramref name="tests"/> with <paramref name="message"/>. Returns how many failed.</summary>
+    private static async Task<int> FailAllAsync(
+        IEnumerable<DiscoveredTest> tests,
+        string message,
+        string? stackTrace,
+        string suiteName,
+        Action<TestNodeState> onStateChanged,
+        ReporterCollection? reporters)
+    {
+        var count = 0;
+        foreach (var test in tests)
+        {
+            if (test.IsIgnored)
+            {
+                onStateChanged(new TestNodeState(test.FullName, TestStatus.Skipped, null, test.IgnoreReason ?? "Ignored", null));
+                continue;
+            }
+
+            onStateChanged(new TestNodeState(test.FullName, TestStatus.Failed, null, message, stackTrace));
+            if (reporters is not null)
+            {
+                var info = new TestInfo(test.FullName, suiteName);
+                await reporters.FireOnTestStartAsync(info);
+                await reporters.FireOnTestEndAsync(info, new Abstractions.TestResult(test.FullName, false, 0, message, stackTrace));
+            }
+
+            count++;
         }
 
+        return count;
+    }
+
+    private async Task RunTestsAsync(
+        List<DiscoveredTest> tests,
+        Dictionary<string, ITestAssemblyHost> hosts,
+        string suiteName,
+        Action<TestNodeState> onStateChanged,
+        CancellationToken ct,
+        ReporterCollection? reporters,
+        int alreadyFailed)
+    {
         var sw = reporters is not null ? Stopwatch.StartNew() : null;
         var semaphore = new SemaphoreSlim(MaxWorkers);
-        int passedCount = 0, failedCount = 0, skippedCount = 0;
+        int passedCount = 0, failedCount = alreadyFailed, skippedCount = 0;
         var collectedCoverage = new List<CoverageData>();
         var coverageLock = new object();
 
@@ -91,12 +169,13 @@ public sealed class TestExecutionService(ILogger<TestExecutionService> logger, I
                 if (reporters is not null)
                     await reporters.FireOnTestStartAsync(new TestInfo(test.FullName, suiteName));
 
-                CoverageSink.Begin();
-                var result = await ExecuteTestAsync(test, ct);
+                var report = await hosts[AssemblyKeyOf(test)].RunAsync(test.TestId ?? test.FullName, test.FullName, ct);
+                var result = report.Passed
+                    ? new TestNodeState(test.FullName, TestStatus.Passed, report.Duration, null, null)
+                    : new TestNodeState(test.FullName, TestStatus.Failed, report.Duration, report.ErrorMessage, report.StackTrace);
                 onStateChanged(result);
 
-                var coverage = CoverageSink.End();
-                if (coverage is not null)
+                if (TestCaseReportExtras.Coverage(report) is { } coverage)
                 {
                     lock (coverageLock)
                         collectedCoverage.Add(coverage);
@@ -137,39 +216,6 @@ public sealed class TestExecutionService(ILogger<TestExecutionService> logger, I
             logger.LogInformation("Test run cancelled");
         }
 
-        // Run [ClassCleanup] / [OneTimeTearDown] for each class initialized in this batch
-        foreach (var type in _initializedClasses.Keys.ToList())
-        {
-            if (_initializedClasses.TryRemove(type, out _))
-            {
-                try
-                {
-                    await RunStaticLifecycleMethodsAsync(type, "ClassCleanupAttribute");
-                    await RunStaticLifecycleMethodsAsync(type, "OneTimeTearDownAttribute");
-                }
-                catch (Exception ex)
-                {
-                    logger.LogWarning(ex, "ClassCleanup failed for {Class}", type.FullName);
-                }
-            }
-        }
-
-        // Run [AssemblyCleanup] for each initialized assembly to close browsers
-        foreach (var assembly in assemblies)
-        {
-            if (_initializedAssemblies.TryRemove(assembly, out _))
-            {
-                try
-                {
-                    await RunAssemblyCleanupAsync(assembly);
-                }
-                catch (Exception ex)
-                {
-                    logger.LogWarning(ex, "AssemblyCleanup failed for {Assembly}", assembly.GetName().Name);
-                }
-            }
-        }
-
         if (reporters is not null)
         {
             sw!.Stop();
@@ -195,70 +241,43 @@ public sealed class TestExecutionService(ILogger<TestExecutionService> logger, I
         }
     }
 
-    private static async Task RunAssemblyInitializeAsync(Assembly assembly)
+    /// <summary>Groups the tests of one assembly: by the assembly itself in this process, by its path otherwise.</summary>
+    private static string AssemblyKeyOf(DiscoveredTest test)
+        => test.TestClass is not null && test.TestMethod is not null
+            ? $"in-process:{test.TestClass.Assembly.FullName}"
+            : Path.GetFullPath(test.CodeBase!);
+
+    private async Task<ITestAssemblyHost> CreateHostAsync(DiscoveredTest first, IEnumerable<DiscoveredTest> tests, CancellationToken ct)
     {
-        // [AssemblyInitialize] is a static method that takes TestContext
-        // Look across all types in the assembly for it
-        foreach (var type in assembly.GetExportedTypes())
+        if (first.TestClass is not null && first.TestMethod is not null)
         {
-            var methods = type.GetMethods(BindingFlags.Public | BindingFlags.Static)
-                .Where(m => m.GetCustomAttributes(true).Any(a => a.GetType().Name == "AssemblyInitializeAttribute"));
-
-            foreach (var method in methods)
-                await TestCaseInvoker.InvokeStaticAsync(method, type);
+            var cases = tests.Select(t => new DiscoveredTestCase(t.TestClass!, t.TestMethod!, t.FullName, t.Arguments, t.IsIgnored, t.IgnoreReason, Quarantined: false, t.TestId));
+            return new InProcessTestHost(first.TestClass.Assembly, cases, message => logger.LogWarning("{Message}", message));
         }
-    }
 
-    private static async Task RunAssemblyCleanupAsync(Assembly assembly)
-    {
-        foreach (var type in assembly.GetExportedTypes())
+        var remoteScreencast = screencast as ScreencastService;
+        var host = await TestHostClient.StartAsync(first.CodeBase!, new TestHostOptions
         {
-            var methods = type.GetMethods(BindingFlags.Public | BindingFlags.Static)
-                .Where(m => m.GetCustomAttributes(true).Any(a => a.GetType().Name == "AssemblyCleanupAttribute"));
+            Visual = true,
+            OnLog = message => logger.LogWarning("{Message}", message),
+            OnFrame = remoteScreencast is null ? null : remoteScreencast.ShowRemoteFrame,
+            OnTimelineEntry = timeline is null ? null : entry =>
+                timeline.AddEntry(entry.ToEntry(timeline.Entries.Count, timeline.CurrentTestName)),
+            OnStep = stepDebug is null ? null : (action, selector) => stepDebug.WaitIfPausedAsync(action, selector, CancellationToken.None),
+        }, ct);
 
-            foreach (var method in methods)
-                await TestCaseInvoker.InvokeStaticAsync(method, type);
+        // A fresh process discovers again. The run asks for each test by its id, which a data row keeps
+        // even when its data source names it differently this time, and one that is gone fails saying so.
+        try
+        {
+            await host.DiscoverAsync(filter: null, ct);
         }
-    }
+        catch
+        {
+            await host.DisposeAsync();
+            throw;
+        }
 
-    private static async Task RunStaticLifecycleMethodsAsync(Type type, string attributeName)
-    {
-        var methods = type.GetMethods(BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy)
-            .Where(m => m.GetCustomAttributes(true).Any(a => a.GetType().Name == attributeName));
-
-        foreach (var method in methods)
-            await TestCaseInvoker.InvokeStaticAsync(method, type);
-    }
-
-    private async Task<TestNodeState> ExecuteTestAsync(DiscoveredTest test, CancellationToken ct)
-    {
-        var testClass = test.TestClass!;
-        var run = await TestCaseInvoker.RunAsync(
-            testClass,
-            test.TestMethod!,
-            test.Arguments,
-            DisplayNameOf(test),
-            beforeInstance: async () =>
-            {
-                // Run [ClassInitialize] / [OneTimeSetUp] once per class, before its first test
-                if (_initializedClasses.TryAdd(testClass, true))
-                {
-                    await RunStaticLifecycleMethodsAsync(testClass, "ClassInitializeAttribute");
-                    await RunStaticLifecycleMethodsAsync(testClass, "OneTimeSetUpAttribute");
-                }
-            },
-            onCleanupFailure: ex => logger.LogWarning(ex, "TestCleanup failed for {Test}", test.FullName),
-            cancellationToken: ct);
-
-        return run.Failure is null
-            ? new TestNodeState(test.FullName, TestStatus.Passed, run.Duration, null, null)
-            : new TestNodeState(test.FullName, TestStatus.Failed, run.Duration, run.Failure.Message, run.Failure.StackTrace);
-    }
-
-    /// <summary>The test case's name without its class, such as <c>SignsIn ("owner")</c>.</summary>
-    private static string DisplayNameOf(DiscoveredTest test)
-    {
-        var prefix = test.TestClass!.FullName + ".";
-        return test.FullName.StartsWith(prefix, StringComparison.Ordinal) ? test.FullName[prefix.Length..] : test.TestMethod!.Name;
+        return host;
     }
 }

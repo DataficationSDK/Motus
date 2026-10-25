@@ -414,7 +414,7 @@ Or set environment variables:
 | `MOTUS_FAILURES_TRACE` | `true` / `false` / `1` / `0` | Enables or disables trace capture on failure. |
 | `MOTUS_FAILURES_TRACE_PATH` | string | Directory where trace zips are written. |
 
-When `tracePath` / `MOTUS_FAILURES_TRACE_PATH` is not set, traces are written to `test-results/traces` by default. The directory is created automatically if it does not exist.
+When `tracePath` / `MOTUS_FAILURES_TRACE_PATH` is not set, traces are written to `test-results/traces` by default. The directory is created automatically if it does not exist. A relative path resolves against the current directory, which is the test project's output folder under both `dotnet test` and `motus run`; give an absolute path to collect traces somewhere else.
 
 ### Artifact names
 

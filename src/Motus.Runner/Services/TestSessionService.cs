@@ -33,9 +33,9 @@ public sealed class TestSessionService : ITestSessionService
     public event Action? StateChanged;
     public event Action? RunStarted;
 
-    public Task LoadAssembliesAsync(string[] paths, string? filter)
+    public async Task LoadAssembliesAsync(string[] paths, string? filter)
     {
-        var tests = _discovery.Discover(paths, filter);
+        var tests = await _discovery.DiscoverAsync(paths, filter);
         _discoveredTests = tests;
         _states.Clear();
 
@@ -47,7 +47,6 @@ public sealed class TestSessionService : ITestSessionService
         }
 
         NotifyStateChanged();
-        return Task.CompletedTask;
     }
 
     public void LoadFromTrxResults(IReadOnlyList<DiscoveredTest> tests, IReadOnlyDictionary<string, TestNodeState> states)
@@ -144,7 +143,7 @@ public sealed class TestSessionService : ITestSessionService
         try
         {
             _timeline.Clear();
-            var tests = _discoveredTests.Where(t => t.TestClass?.FullName == className).ToList();
+            var tests = _discoveredTests.Where(t => (t.TestClass?.FullName ?? t.ClassFullName) == className).ToList();
             _lastRunTests = new HashSet<string>(tests.Select(t => t.FullName));
             foreach (var test in tests)
             {

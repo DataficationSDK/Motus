@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Reflection;
 using Motus.Abstractions;
 using Motus.Cli.Commands;
@@ -251,8 +250,8 @@ public class TestRunnerMSTestTests
     [TestMethod]
     public async Task DataRows_AreDiscoveredAsOneTestEach_AndRunWithTheirArguments()
     {
-        DataRowFixture.Seen.Clear();
-        var tests = new TestDiscovery().Discover([typeof(DataRowFixture).Assembly.Location], nameof(DataRowFixture));
+        await using var discovery = new TestDiscovery();
+        var tests = await discovery.DiscoverAsync([typeof(DataRowFixture).Assembly.Location], nameof(DataRowFixture));
 
         var names = tests.Select(t => t.FullName[(typeof(DataRowFixture).FullName!.Length + 1)..]).OrderBy(n => n, StringComparer.Ordinal).ToList();
         Assert.AreEqual(5, names.Count, string.Join(" | ", names));
@@ -261,18 +260,17 @@ public class TestRunnerMSTestTests
         Assert.AreEqual(2, names.Count(n => n.StartsWith(nameof(DataRowFixture.Squares) + " (", StringComparison.Ordinal)), string.Join(" | ", names));
         Assert.AreEqual(names.Count, names.Distinct().Count(), "each row needs a name of its own");
 
+        // The rows run in the test host, where each test checks the arguments it was given.
         var result = await new TestRunner(1).RunAsync(tests, Reporter);
 
         Assert.AreEqual(5, result.Passed, $"failed: {result.Failed}");
-        CollectionAssert.AreEquivalent(
-            new[] { "role owner", "role staff", "adds 1+2", "square 2", "square 3" },
-            DataRowFixture.Seen.ToArray());
     }
 
     [TestMethod]
-    public void QuarantineList_NamesOneRow_OrEveryRowByTheMethod()
+    public async Task QuarantineList_NamesOneRow_OrEveryRowByTheMethod()
     {
-        var rows = new TestDiscovery().Discover([typeof(DataRowFixture).Assembly.Location], $"{nameof(DataRowFixture)}.{nameof(DataRowFixture.SignsIn)}");
+        await using var discovery = new TestDiscovery();
+        var rows = await discovery.DiscoverAsync([typeof(DataRowFixture).Assembly.Location], $"{nameof(DataRowFixture)}.{nameof(DataRowFixture.SignsIn)}");
         var owner = rows.Single(t => t.FullName.Contains("owner"));
         var staff = rows.Single(t => t.FullName.Contains("staff"));
 
@@ -300,30 +298,20 @@ public class TestRunnerMSTestTests
 [TestClass]
 public class DataRowFixture
 {
-    public static ConcurrentBag<string> Seen { get; } = [];
-
     public static IEnumerable<object[]> SquareRows => [[2, 4], [3, 9]];
 
     [TestMethod]
     [DataRow("owner")]
     [DataRow("staff")]
-    public void SignsIn(string role) => Seen.Add($"role {role}");
+    public void SignsIn(string role) => Assert.IsTrue(role is "owner" or "staff", role);
 
     [DataTestMethod]
     [DataRow(1, 2, 3)]
-    public void Adds(int a, int b, int sum)
-    {
-        Assert.AreEqual(sum, a + b);
-        Seen.Add($"adds {a}+{b}");
-    }
+    public void Adds(int a, int b, int sum) => Assert.AreEqual(sum, a + b);
 
     [TestMethod]
     [DynamicData(nameof(SquareRows))]
-    public void Squares(int n, int square)
-    {
-        Assert.AreEqual(square, n * n);
-        Seen.Add($"square {n}");
-    }
+    public void Squares(int n, int square) => Assert.AreEqual(square, n * n);
 }
 
 /// <summary>

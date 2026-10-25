@@ -25,7 +25,7 @@ A malformed spec fails immediately with a message naming the expected form rathe
 
 ## How tests are assigned
 
-Discovered tests are sorted by a stable key, the assembly path followed by the fully qualified test name, compared ordinally. Reflection does not guarantee a consistent enumeration order across machines or runtime versions, so sorting first is what makes the partition reproducible rather than merely deterministic on one box.
+Discovered tests are sorted by a stable key, the assembly path followed by the test's identity (its class, its method with the parameter types, and for a data row, which data source and which row of it), compared ordinally. The identity rather than the display name is used because a data source can name its rows differently in each process, for example when a row carries a Guid or a time. Reflection does not guarantee a consistent enumeration order across machines or runtime versions, so sorting first is what makes the partition reproducible rather than merely deterministic on one box.
 
 The sorted list is then dealt out round-robin: position `i` belongs to shard `i % total`. Round-robin over a stable sort matters more than it looks. Tests from one class sort together, and a class that is slow is usually slow throughout, so handing out contiguous blocks would drop an entire slow class onto one agent. Dealing alternately spreads those tests across every shard without needing any timing data to do it.
 

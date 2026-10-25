@@ -32,6 +32,16 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- A suite on the oldest published Motus, which the visual runner runs in a test host from its
+         own output folder rather than referenced. Its path reaches the tests as metadata. -->
+    <ProjectReference Include="..\Fixtures\Motus.Fixtures.OldMotus.Tests\Motus.Fixtures.OldMotus.Tests.csproj" ReferenceOutputAssembly="false" />
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>OldMotusFixtureOutput</_Parameter1>
+      <_Parameter2>$(MSBuildThisFileDirectory)..\Fixtures\Motus.Fixtures.OldMotus.Tests\bin\$(Configuration)\</_Parameter2>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\Motus\Motus.csproj" />
     <ProjectReference Include="..\..\src\Motus.Abstractions\Motus.Abstractions.csproj" />
     <ProjectReference Include="..\..\src\Motus.Runner\Motus.Runner.csproj" />

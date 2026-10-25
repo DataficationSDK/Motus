@@ -9,8 +9,10 @@ internal sealed class ScreencastService : IScreencastService, IAsyncDisposable
     private CancellationTokenSource? _pumpCts;
     private Task? _pumpTask;
 
+    private volatile bool _showingRemoteFrames;
+
     public string? LatestFrameBase64 { get; private set; }
-    public bool IsStreaming => _pumpTask is { IsCompleted: false };
+    public bool IsStreaming => _pumpTask is { IsCompleted: false } || _showingRemoteFrames;
     public ElementHighlight? CurrentHighlight { get; private set; }
 
     public event Action<string>? FrameReceived;
@@ -55,6 +57,20 @@ internal sealed class ScreencastService : IScreencastService, IAsyncDisposable
 
         _pumpCts?.Cancel();
     }
+
+    /// <summary>
+    /// Shows a frame of a page in another process: the test host streams the pages of the tests it
+    /// runs, which this process cannot attach to.
+    /// </summary>
+    internal void ShowRemoteFrame(string base64)
+    {
+        _showingRemoteFrames = true;
+        LatestFrameBase64 = base64;
+        FrameReceived?.Invoke(base64);
+    }
+
+    /// <summary>Ends what <see cref="ShowRemoteFrame"/> started, when the test host has gone.</summary>
+    internal void EndRemoteFrames() => _showingRemoteFrames = false;
 
     public async Task HighlightElementAsync(string? objectId, CancellationToken ct = default)
     {
